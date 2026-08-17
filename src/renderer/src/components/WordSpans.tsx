@@ -1,0 +1,36 @@
+/** 去掉单词首尾标点，保留字母/数字/撇号，方便词典命中 */
+export function cleanWord(w: string): string {
+  return w.replace(/^[^\p{L}\p{N}']+|[^\p{L}\p{N}']+$/gu, '')
+}
+
+interface Props {
+  text: string
+  sentence?: string
+  onWord: (word: string, rect: DOMRect, sentence: string) => void
+}
+
+/** 把一句文本渲染成可点击的单词序列，空格和纯标点原样保留 */
+export default function WordSpans({ text, sentence, onWord }: Props): JSX.Element {
+  const parts = text.split(/(\s+)/)
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (/^\s*$/.test(part)) return <span key={i}>{part}</span>
+        const word = cleanWord(part)
+        if (!word) return <span key={i}>{part}</span>
+        return (
+          <span
+            key={i}
+            className="word"
+            onClick={(e) => {
+              e.stopPropagation()
+              onWord(word, e.currentTarget.getBoundingClientRect(), sentence ?? text)
+            }}
+          >
+            {part}
+          </span>
+        )
+      })}
+    </>
+  )
+}
