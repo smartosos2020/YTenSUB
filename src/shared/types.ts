@@ -26,6 +26,13 @@ export interface VocabItem {
 
 export type TranslateSource = 'local' | 'google' | 'llm'
 
+export interface TranslateResult {
+  text: string
+  translation: string
+  phonetic?: string
+  source: TranslateSource
+}
+
 export type Theme = 'night' | 'day'
 
 export interface LlmSettings {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { VocabItem } from '../../../shared/types'
+import TrashIcon from '../components/icons/TrashIcon'
 
 function formatTime(sec: number): string {
   const m = Math.floor(sec / 60)
@@ -64,8 +65,12 @@ export default function VocabularyPage(): JSX.Element {
                 <span className="vocab-text">{item.text}</span>
                 {item.phonetic && <span className="vocab-phonetic">[{item.phonetic}]</span>}
                 <span className="vocab-translation">{item.translation}</span>
-                <button className="vocab-remove" onClick={() => void remove(item.id)}>
-                  删除
+                <button
+                  className="vocab-remove icon-btn"
+                  title="删除"
+                  onClick={() => void remove(item.id)}
+                >
+                  <TrashIcon />
                 </button>
               </div>
               {item.sentence && <div className="vocab-sentence">{item.sentence}</div>}

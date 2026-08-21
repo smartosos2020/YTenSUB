@@ -18,6 +18,9 @@ interface Props {
   /** 已加入生词本的单词（小写），字幕中橙色高亮 */
   knownWords: Set<string>
   onWordSelect: (sel: WordSelection) => void
+  /** 悬停/离开字幕（取词时暂停播放防字幕跑走） */
+  onCaptionEnter: () => void
+  onCaptionLeave: () => void
 }
 
 /**
@@ -37,7 +40,9 @@ export default function CaptionOverlay({
   showZh,
   zhLines,
   knownWords,
-  onWordSelect
+  onWordSelect,
+  onCaptionEnter,
+  onCaptionLeave
 }: Props): JSX.Element | null {
   const idx = findActiveCueIndex(cues, time)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
@@ -84,7 +89,13 @@ export default function CaptionOverlay({
       className="caption-overlay"
       style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
     >
-      <div className="caption-stack" style={fontFamily ? { fontFamily } : undefined}>
+      {/* 悬停事件挂在 stack 上：英中两行之间移动不会触发 leave/enter 抖动 */}
+      <div
+        className="caption-stack"
+        style={fontFamily ? { fontFamily } : undefined}
+        onMouseEnter={onCaptionEnter}
+        onMouseLeave={onCaptionLeave}
+      >
         <div
           className="caption-line"
           style={{ background: `rgba(0, 0, 0, ${opacity})`, fontSize }}

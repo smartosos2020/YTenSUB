@@ -1,0 +1,80 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { api } from '../api'
+import { alignCuesToEn, Cue } from '../../../shared/captions'
+
+export interface ZhSubtitlesState {
+  showZh: boolean
+  setShowZh: (v: boolean) => void
+  /** 与 cues 等长对齐的中文字幕；null 表示尚未就绪 */
+  zhLines: (string | null)[] | null
+  zhLoading: boolean
+  toggleZh: (v: boolean) => void
+  resetZh: () => void
+  loadZhNative: (parsed: Cue[], zhParsed: Cue[]) => void
+}
+
+/**
+ * 中文字幕：showZh 来自设置（默认关）；zhNative 为视频自带/YouTube 机翻轨对齐结果，
+ * zhTrans 为 Google 批量翻译结果（zhNative 为空时才翻译）。
+ */
+export function useZhSubtitles(cues: Cue[]): ZhSubtitlesState {
+  const [showZh, setShowZh] = useState(false)
+  const [zhNative, setZhNative] = useState<(string | null)[] | null>(null)
+  const [zhTrans, setZhTrans] = useState<(string | null)[] | null>(null)
+  const [zhLoading, setZhLoading] = useState(false)
+  // 翻译任务序号：换视频或重开开关时作废旧任务
+  const zhJobRef = useRef(0)
+
+  /** 中文字幕开关：写入设置持久化（默认关闭） */
+  const toggleZh = useCallback((v: boolean): void => {
+    setShowZh(v)
+    void api.settingsSet({ showZhSubtitle: v })
+  }, [])
+
+  /** 切换视频或提取失败时重置中文字幕状态，并作废进行中的翻译任务 */
+  const resetZh = useCallback((): void => {
+    zhJobRef.current++
+    setZhNative(null)
+    setZhTrans(null)
+    setZhLoading(false)
+  }, [])
+
+  /** 提取成功：中文轨（视频自带或 YouTube 机翻 tlang）按时间轴对齐到英文字幕 */
+  const loadZhNative = useCallback((parsed: Cue[], zhParsed: Cue[]): void => {
+    zhJobRef.current++
+    setZhNative(zhParsed.length ? alignCuesToEn(parsed, zhParsed) : null)
+    setZhTrans(null)
+    setZhLoading(false)
+  }, [])
+
+  // 视频没有自己的中文字幕（zhNative 为空）时，打开开关后用整句批量翻译代替，分块渐进显示
+  useEffect(() => {
+    if (!showZh || cues.length === 0 || zhNative || zhTrans) return
+    const job = ++zhJobRef.current
+    setZhLoading(true)
+    const CHUNK = 30
+    const acc: (string | null)[] = new Array(cues.length).fill(null)
+    void (async () => {
+      try {
+        for (let i = 0; i < cues.length; i += CHUNK) {
+          const part = await api.translateZhBatch(cues.slice(i, i + CHUNK).map((c) => c.text))
+          if (zhJobRef.current !== job) return
+          for (let j = 0; j < part.length; j++) acc[i + j] = part[j]
+          setZhTrans([...acc])
+        }
+      } finally {
+        if (zhJobRef.current === job) setZhLoading(false)
+      }
+    })()
+  }, [showZh, cues, zhNative, zhTrans])
+
+  return {
+    showZh,
+    setShowZh,
+    zhLines: zhNative ?? zhTrans,
+    zhLoading,
+    toggleZh,
+    resetZh,
+    loadZhNative
+  }
+}

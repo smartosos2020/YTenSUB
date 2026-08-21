@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { Favorite, Folder } from '../../../shared/types'
+import GridIcon from '../components/icons/GridIcon'
+import ListIcon from '../components/icons/ListIcon'
+import TrashIcon from '../components/icons/TrashIcon'
 
 type ViewMode = 'grid' | 'list'
 
@@ -68,8 +71,12 @@ export default function FavoritesPage(): JSX.Element {
             >
               {f.name}
             </button>
-            <span className="folder-del" onClick={() => void removeFolder(f.id)}>
-              ×
+            <span
+              className="folder-del"
+              title="删除分类"
+              onClick={() => void removeFolder(f.id)}
+            >
+              <TrashIcon />
             </span>
           </div>
         ))}
@@ -87,11 +94,19 @@ export default function FavoritesPage(): JSX.Element {
         <div className="fav-toolbar">
           <h2>收藏的视频</h2>
           <div className="mode-toggle">
-            <button className={mode === 'grid' ? 'selected' : ''} onClick={() => setMode('grid')}>
-              缩略图
+            <button
+              className={mode === 'grid' ? 'icon-btn selected' : 'icon-btn'}
+              title="缩略图"
+              onClick={() => setMode('grid')}
+            >
+              <GridIcon />
             </button>
-            <button className={mode === 'list' ? 'selected' : ''} onClick={() => setMode('list')}>
-              列表
+            <button
+              className={mode === 'list' ? 'icon-btn selected' : 'icon-btn'}
+              title="列表"
+              onClick={() => setMode('list')}
+            >
+              <ListIcon />
             </button>
           </div>
         </div>
@@ -106,8 +121,12 @@ export default function FavoritesPage(): JSX.Element {
                 </div>
                 <div className="fav-channel">{fav.channel}</div>
               </div>
-              <button className="fav-remove" onClick={() => void removeFavorite(fav.videoId)}>
-                移除
+              <button
+                className="fav-remove icon-btn"
+                title="移除"
+                onClick={() => void removeFavorite(fav.videoId)}
+              >
+                <TrashIcon />
               </button>
             </div>
           ))}

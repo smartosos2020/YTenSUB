@@ -32,9 +32,6 @@ migrateLegacyData()
 
 const store = new Store(dataFile)
 
-// 自定义标题栏（titleBarStyle: hidden）下，原生窗口按钮由 overlay 绘制，颜色跟随主题
-const TB_OVERLAY_NIGHT = { color: '#0f0f0f', symbolColor: '#f1f1f1', height: 36 }
-const TB_OVERLAY_DAY = { color: '#ffffff', symbolColor: '#0f0f0f', height: 36 }
 let mainWin: BrowserWindow | null = null
 
 // 应用主题映射为全局模拟的 prefers-color-scheme：
@@ -65,6 +62,18 @@ function registerIpc(): void {
   // 字幕整句中译：独立于划词翻译设置，Google 优先，LLM（已配置时）兜底；
   // 进程内缓存，同一视频重复打开或开关切换不重复请求
   const zhLineCache = new Map<string, string>()
+  // 缓存上限 1000 条：超限时清掉最旧的一半（Map 按插入序迭代），防长 session 内存膨胀
+  const cacheZhLine = (key: string, value: string): void => {
+    if (zhLineCache.size >= 1000) {
+      const keys = zhLineCache.keys()
+      for (let i = 0; i < 500; i++) {
+        const k = keys.next()
+        if (k.done) break
+        zhLineCache.delete(k.value)
+      }
+    }
+    zhLineCache.set(key, value)
+  }
   ipcMain.handle('translate:zh-batch', (_e, texts: string[]) => {
     const s = store.getSettings()
     const enabled: TranslateSource[] = ['google']
@@ -79,7 +88,7 @@ function registerIpc(): void {
         enabled
       })
       if (r?.translation) {
-        zhLineCache.set(t, r.translation)
+        cacheZhLine(t, r.translation)
         return r.translation
       }
       return null
@@ -104,13 +113,19 @@ function registerIpc(): void {
   ipcMain.handle('settings:get', () => store.getSettings())
   ipcMain.handle('settings:set', (_e, patch: Partial<Settings>) => {
     const r = store.setSettings(patch)
-    // 主题变更即时反映到全局模拟的 prefers-color-scheme 与标题栏按钮配色
-    if (patch.theme) {
-      nativeTheme.themeSource = patch.theme === 'day' ? 'light' : 'dark'
-      mainWin?.setTitleBarOverlay(patch.theme === 'day' ? TB_OVERLAY_DAY : TB_OVERLAY_NIGHT)
-    }
+    // 主题变更即时反映到全局模拟的 prefers-color-scheme
+    if (patch.theme) nativeTheme.themeSource = patch.theme === 'day' ? 'light' : 'dark'
     return r
   })
+
+  // 自定义标题栏（frame: false）的窗口控制
+  ipcMain.on('window:minimize', () => mainWin?.minimize())
+  ipcMain.on('window:toggle-maximize', () => {
+    if (!mainWin) return
+    if (mainWin.isMaximized()) mainWin.unmaximize()
+    else mainWin.maximize()
+  })
+  ipcMain.on('window:close', () => mainWin?.close())
 
   ipcMain.handle('webview:preload-path', () => {
     const p = path.join(__dirname, '..', 'preload', 'webview-preload.js')
@@ -128,10 +143,8 @@ function createWindow(): void {
     // 窗口/任务栏图标：asar 内路径对 dev 与打包版一致（resources/** 会被打进 app.asar）
     icon: path.join(__dirname, '..', '..', 'resources', 'icon.png'),
     autoHideMenuBar: true,
-    // 隐藏原生标题栏，由渲染进程绘制标题栏；右上角保留原生窗口按钮（overlay）
-    titleBarStyle: 'hidden',
-    titleBarOverlay:
-      store.getSettings().theme === 'day' ? TB_OVERLAY_DAY : TB_OVERLAY_NIGHT,
+    // 无边框窗口：标题栏由渲染进程自绘（含最小化/最大化/关闭按钮）
+    frame: false,
     backgroundColor: '#0f0f0f',
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.js'),
@@ -143,6 +156,9 @@ function createWindow(): void {
   win.on('closed', () => {
     mainWin = null
   })
+  // 最大化状态推给渲染进程，用于切换 最大化/还原 图标
+  win.on('maximize', () => win.webContents.send('window:maximize-changed', true))
+  win.on('unmaximize', () => win.webContents.send('window:maximize-changed', false))
 
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL + '/#/browse')

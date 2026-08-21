@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
-import { TranslateResult } from '../../../main/translate'
+import { TranslateResult } from '../../../shared/types'
 import { VocabItem } from '../../../shared/types'
+import TrashIcon from './icons/TrashIcon'
 
 export interface PopupVideoInfo {
   videoId: string
@@ -105,8 +106,8 @@ export default function TranslatePopup({
             ) : removed ? (
               <span className="popup-saved">已从生词本删除</span>
             ) : savedItem ? (
-              <button className="danger" onClick={remove}>
-                删除生词
+              <button className="danger icon-btn" title="删除生词" onClick={remove}>
+                <TrashIcon />
               </button>
             ) : (
               <button onClick={add}>加入生词本</button>

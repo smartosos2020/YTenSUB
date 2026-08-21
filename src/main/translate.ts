@@ -1,11 +1,6 @@
-import { LlmSettings, TranslateSource } from '../shared/types'
+import { LlmSettings, TranslateResult, TranslateSource } from '../shared/types'
 
-export interface TranslateResult {
-  text: string
-  translation: string
-  phonetic?: string
-  source: TranslateSource
-}
+export type { TranslateResult }
 
 export interface TranslateDeps {
   localLookup: (text: string) => { translation: string; phonetic?: string } | null

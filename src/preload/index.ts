@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import { Favorite, Settings, VocabItem } from '../shared/types'
 
 const api = {
@@ -20,6 +20,18 @@ const api = {
 
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (patch: Partial<Settings>) => ipcRenderer.invoke('settings:set', patch),
+
+  // 自定义标题栏的窗口控制
+  windowMinimize: () => ipcRenderer.send('window:minimize'),
+  windowToggleMaximize: () => ipcRenderer.send('window:toggle-maximize'),
+  windowClose: () => ipcRenderer.send('window:close'),
+  onWindowMaximizeChanged: (cb: (maximized: boolean) => void) => {
+    const listener = (_e: IpcRendererEvent, v: boolean): void => cb(v)
+    ipcRenderer.on('window:maximize-changed', listener)
+    return () => {
+      ipcRenderer.removeListener('window:maximize-changed', listener)
+    }
+  },
 
   getWebviewPreloadPath: () => ipcRenderer.invoke('webview:preload-path')
 }
