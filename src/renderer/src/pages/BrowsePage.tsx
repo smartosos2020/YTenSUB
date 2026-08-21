@@ -444,10 +444,7 @@ export default function BrowsePage(): JSX.Element {
           />
         </div>
         {/* 保持挂载，width 过渡到 0 实现与左侧一致的收缩动效（inner 固定为当前面板宽度防重排抖动） */}
-        <div
-          className={sideCollapsed ? 'side-panel collapsed' : 'side-panel'}
-          style={{ width: sideCollapsed ? 0 : sideWidth }}
-        >
+        <div className="side-panel" style={{ width: sideCollapsed ? 0 : sideWidth }}>
           {!sideCollapsed && (
             <div className="side-resizer" title="拖拽调整宽度" onMouseDown={startSideResize} />
           )}

@@ -5,7 +5,10 @@
 :root[data-theme='night'] {
   /* 夜色对齐 YouTube 深色：底 #0f0f0f，浮层/悬停 #272727，边框 #303030 */
   --bg: #0f0f0f;
-  --bg-panel: #0f0f0f;
+  /* 标题栏/侧栏：左下→右上微渐变，比内容区略浅，拉开层次 */
+  --bg-panel: linear-gradient(to top right, #151515, #202020);
+  /* 内容区底色：与 YouTube 页面底色一致，地址栏/右侧面板/视频区连成一片 */
+  --bg-content: #0f0f0f;
   --bg-elev: #272727;
   --bg-input: #121212;
   --hover-bg: #272727;
@@ -22,13 +25,18 @@
   --text-strong: #ffffff;
   --red: #ff5f6d;
   --known: #f5a623;
+  /* 地址输入框底色：比内容区略深，无边框也能看出输入区域 */
+  --bg-address: #000000;
   --mono: 'Cascadia Code', 'JetBrains Mono', Consolas, 'Courier New', 'Microsoft YaHei', monospace;
 }
 
 :root[data-theme='day'] {
   /* 白色对齐 YouTube 浅色：底 #ffffff，悬停 #f2f2f2，边框 #e5e5e5/#d9d9d9 */
   --bg: #ffffff;
-  --bg-panel: #ffffff;
+  /* 标题栏/侧栏：左下→右上微渐变 */
+  --bg-panel: linear-gradient(to top right, #ececec, #ffffff);
+  /* 内容区底色：与 YouTube 页面底色一致，地址栏/右侧面板/视频区连成一片 */
+  --bg-content: #ffffff;
   --bg-elev: #f2f2f2;
   --bg-input: #ffffff;
   --hover-bg: #f2f2f2;
@@ -45,6 +53,8 @@
   --text-strong: #000000;
   --red: #c0392b;
   --known: #c25e00;
+  /* 地址输入框底色：比内容区略深 */
+  --bg-address: #ebebeb;
 }
 
 * {
@@ -148,9 +158,13 @@ select:focus {
   flex: 1;
   min-height: 0;
   display: flex;
+  /* 内容区左上圆角挖空处露出的底色：与标题栏/侧栏同一渐变（fixed 定位保持连续） */
+  background: var(--bg-panel);
+  background-attachment: fixed;
 }
 
-/* ---------- 自定义标题栏（frame: false，窗口按钮自绘在右上） ---------- */
+/* ---------- 自定义标题栏（frame: false，窗口按钮自绘在右上） ----------
+   无下边框；与左侧菜单共用同一渐变 + fixed 定位（按视口计算），接缝连续成一体 */
 .titlebar {
   height: 36px;
   flex-shrink: 0;
@@ -159,7 +173,7 @@ select:focus {
   gap: 8px;
   padding: 0 0 0 10px;
   background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
+  background-attachment: fixed;
   -webkit-app-region: drag;
   user-select: none;
 }
@@ -179,11 +193,8 @@ select:focus {
 /* 左菜单收缩/展开按钮：标题栏 logo 右方 */
 .titlebar-toggle {
   -webkit-app-region: no-drag;
-  background: transparent;
-  border: none;
   color: var(--text-dim);
   padding: 2px;
-  border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -225,12 +236,14 @@ select:focus {
   color: #ffffff;
 }
 
-/* ---------- Sidebar ---------- */
+/* ---------- Sidebar ----------
+   无右边框：与内容区靠底色差（--bg-panel / --bg-content）分界；
+   与标题栏共用同一渐变 + fixed 定位，视觉上一个整体 */
 .sidebar {
   width: 148px;
   flex-shrink: 0;
   background: var(--bg-panel);
-  border-right: 1px solid var(--border);
+  background-attachment: fixed;
   display: flex;
   flex-direction: column;
   padding: 12px 8px;
@@ -283,11 +296,16 @@ select:focus {
   padding: 8px 0;
 }
 
+/* 标题栏只与左侧菜单融为一体；内容区顶部保留分界线（侧栏右缘起），
+   底色与 chrome 区的渐变拉开层次，左上角 8px 圆角 */
 .content {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  background: var(--bg-content);
+  border-top: 1px solid var(--border);
+  border-top-left-radius: 8px;
 }
 
 .page {
@@ -330,17 +348,25 @@ select:focus {
   height: 100%;
 }
 
+/* 地址栏：无边框，与内容区同底色，靠与 chrome 区的色差分界 */
 .navbar {
   display: flex;
   gap: 6px;
   padding: 8px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
   align-items: center;
 }
 
+/* 地址输入框：无边框、深色底区分区域；聚焦仅显示普通光标，无其他效果 */
 .navbar input {
   flex: 1;
+  background: var(--bg-address);
+  border-color: transparent;
+  caret-color: auto;
+}
+
+.navbar input:focus {
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .fav-wrap {
@@ -408,7 +434,8 @@ select:focus {
   z-index: 20;
 }
 
-/* 英中两行紧贴堆叠：宽度由英文行决定，中文行紧随其下 */
+/* 英中两行紧贴堆叠：宽度由英文行决定，中文行紧随其下。
+   注意：字号由 CaptionOverlay 内联样式（设置项）控制，这里不写 font-size */
 .caption-stack {
   max-width: 80%;
   display: flex;
@@ -422,7 +449,6 @@ select:focus {
   background: rgba(3, 8, 5, 0.85);
   border: 1px solid rgba(0, 255, 159, 0.3);
   color: #eafff5;
-  font-size: 20px;
   line-height: 1.6;
   padding: 4px 14px;
   border-radius: 8px;
@@ -432,10 +458,9 @@ select:focus {
   text-shadow: 0 0 6px rgba(0, 255, 159, 0.25);
 }
 
-/* 中文字幕行：紧贴英文行下方，略小略暗 */
+/* 中文字幕行：紧贴英文行下方，略暗 */
 .caption-zh {
   margin-top: 2px;
-  font-size: 16px;
   color: #b9e8cf;
 }
 
@@ -453,6 +478,12 @@ body.el-app-fs .sidebar,
 body.el-app-fs .navbar,
 body.el-app-fs .side-panel {
   display: none !important;
+}
+
+/* 全屏时内容区顶到窗口上沿，去掉与标题栏的分界线和圆角 */
+body.el-app-fs .content {
+  border-top: none;
+  border-top-left-radius: 0;
 }
 
 /* 应用级全屏时标题栏（含窗口按钮）整体隐藏，退出按钮回右上角 */
@@ -480,7 +511,8 @@ body.el-app-fs .side-panel {
   accent-color: var(--accent);
 }
 
-/* ---------- 右侧标签面板（字幕 / 收藏）：宽度 320px 默认，左缘可拖拽调整 ---------- */
+/* ---------- 右侧标签面板（字幕 / 收藏）：宽度 320px 默认，左缘可拖拽调整 ----------
+   与地址栏/内容区同底色、无左边框，视觉上一个整体 */
 .side-panel {
   position: relative;
   width: 320px;
@@ -488,15 +520,9 @@ body.el-app-fs .side-panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--bg-panel);
-  border-left: 1px solid var(--border);
+  background: var(--bg-content);
   overflow: hidden;
-  transition: width 0.15s, border-color 0.15s;
-}
-
-/* 收缩态：宽度归零，内容被裁剪滑出（与左侧栏一致的动效） */
-.side-panel.collapsed {
-  border-left-color: transparent;
+  transition: width 0.15s;
 }
 
 /* 内壳宽度由内联样式固定为面板当前宽度：收缩动画过程中内容不重排 */
@@ -534,26 +560,23 @@ body.side-resizing .side-panel {
   transition: none;
 }
 
-/* 浏览器风格标签：圆角浮在面板顶部的条带上 */
+/* 面板标签：四角圆润的浮块 */
 .side-tabs {
   display: flex;
   gap: 6px;
-  padding: 8px 8px 0;
+  padding: 8px;
 }
 
 .side-tabs button {
   flex: 1;
-  background: transparent;
   border: none;
-  border-radius: 8px 8px 0 0;
+  border-radius: 8px;
   padding: 8px 0;
   color: var(--text-dim);
 }
 
 .side-tabs button:hover:not(:disabled) {
   color: var(--text);
-  background: var(--hover-bg);
-  box-shadow: none;
 }
 
 .side-tabs button.selected {
@@ -732,7 +755,7 @@ body.side-resizing .side-panel {
   width: 340px;
   background: var(--bg-elev);
   border: 1px solid var(--border-hi);
-  border-radius: 4px;
+  border-radius: 8px;
   padding: 12px;
   z-index: 100;
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
@@ -764,8 +787,6 @@ body.side-resizing .side-panel {
   width: 24px;
   height: 24px;
   padding: 0;
-  border: none;
-  background: transparent;
   color: var(--text-dim);
   font-size: 16px;
   line-height: 1;
@@ -970,7 +991,7 @@ body.side-resizing .side-panel {
 .folder-bar {
   width: 180px;
   flex-shrink: 0;
-  background: var(--bg-panel);
+  background: var(--bg-content);
   border-right: 1px solid var(--border);
   padding: 16px 10px;
   display: flex;
@@ -982,7 +1003,6 @@ body.side-resizing .side-panel {
 .folder-row button {
   width: 100%;
   text-align: left;
-  background: transparent;
   border: none;
   border-radius: 8px;
   padding: 8px 10px;
@@ -1223,7 +1243,6 @@ body.side-resizing .side-panel {
   margin-top: 8px;
   font-size: 12px;
   color: var(--accent-dim);
-  background: transparent;
   border: none;
   padding: 0;
   text-align: left;
