@@ -51,4 +51,41 @@ document.addEventListener(
   },
   true
 )
+
+// 鼠标侧键（后退/前进）与 Alt+←/→：只导航 guest（YouTube）自身历史，
+// preventDefault 阻止 Chromium 默认行为连带宿主一起跳
+document.addEventListener(
+  'mousedown',
+  (e) => {
+    if (e.button === 3 || e.button === 4) e.preventDefault()
+  },
+  true
+)
+document.addEventListener(
+  'mouseup',
+  (e) => {
+    if (e.button === 3) {
+      e.preventDefault()
+      history.back()
+    } else if (e.button === 4) {
+      e.preventDefault()
+      history.forward()
+    }
+  },
+  true
+)
+document.addEventListener(
+  'keydown',
+  (e) => {
+    if (!e.altKey || e.ctrlKey || e.shiftKey || e.metaKey) return
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      history.back()
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      history.forward()
+    }
+  },
+  true
+)
 check()

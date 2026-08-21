@@ -3,44 +3,48 @@
    ============================================================ */
 :root,
 :root[data-theme='night'] {
-  --bg: #060907;
-  --bg-panel: #080c0a;
-  --bg-elev: #0a100d;
-  --bg-input: #05080a;
-  --hover-bg: #0d1512;
-  --active-bg: #0d1a13;
-  --border: #14201a;
-  --border-hi: #1e3a2c;
+  /* 夜色对齐 YouTube 深色：底 #0f0f0f，浮层/悬停 #272727，边框 #303030 */
+  --bg: #0f0f0f;
+  --bg-panel: #0f0f0f;
+  --bg-elev: #272727;
+  --bg-input: #121212;
+  --hover-bg: #272727;
+  --active-bg: #3d3d3d;
+  --border: #272727;
+  --border-hi: #303030;
   --accent: #00ff9f;
   --accent-dim: #0a5c3e;
   --accent-soft: rgba(0, 255, 159, 0.08);
   --accent-strong: rgba(0, 255, 159, 0.22);
   --glow: rgba(0, 255, 159, 0.4);
-  --text: #d0d8d3;
-  --text-dim: #5f7268;
-  --text-strong: #eafff5;
+  --text: #f1f1f1;
+  --text-dim: #aaaaaa;
+  --text-strong: #ffffff;
   --red: #ff5f6d;
+  --known: #f5a623;
   --mono: 'Cascadia Code', 'JetBrains Mono', Consolas, 'Courier New', 'Microsoft YaHei', monospace;
 }
 
 :root[data-theme='day'] {
-  --bg: #eef1ea;
-  --bg-panel: #e2e7dd;
-  --bg-elev: #f7f9f4;
+  /* 白色对齐 YouTube 浅色：底 #ffffff，悬停 #f2f2f2，边框 #e5e5e5/#d9d9d9 */
+  --bg: #ffffff;
+  --bg-panel: #ffffff;
+  --bg-elev: #f2f2f2;
   --bg-input: #ffffff;
-  --hover-bg: #d8dfd2;
-  --active-bg: #cfdccf;
-  --border: #c6cfc0;
-  --border-hi: #9fb3a4;
+  --hover-bg: #f2f2f2;
+  --active-bg: #d9d9d9;
+  --border: #e5e5e5;
+  --border-hi: #d9d9d9;
   --accent: #00794c;
   --accent-dim: #5d8a74;
   --accent-soft: rgba(0, 121, 76, 0.08);
   --accent-strong: rgba(0, 121, 76, 0.2);
   --glow: transparent;
-  --text: #16181a;
-  --text-dim: #66705f;
+  --text: #0f0f0f;
+  --text-dim: #606060;
   --text-strong: #000000;
   --red: #c0392b;
+  --known: #c25e00;
 }
 
 * {
@@ -61,38 +65,37 @@ body {
   overflow: hidden;
 }
 
-/* thin terminal scrollbars */
+/* 页面区滚动条：细、圆润、灰黑 */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-panel);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-hi);
-  border: 2px solid var(--bg-panel);
+  background: #333837;
+  border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-dim);
+  background: #4a514d;
 }
 
+/* 所有按钮：平时无边框、底色融入容器；悬停仅叠加背景色，不高亮图标/边框 */
 button {
-  background: var(--bg-elev);
+  background: transparent;
   color: var(--text);
-  border: 1px solid var(--border-hi);
+  border: 1px solid transparent;
   border-radius: 2px;
   padding: 6px 12px;
   font-family: var(--mono);
   font-size: 13px;
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, box-shadow 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 
 button:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-  box-shadow: 0 0 8px var(--glow);
+  background: var(--hover-bg);
 }
 
 button:disabled {
@@ -120,20 +123,94 @@ input:focus {
   box-shadow: 0 0 8px var(--glow);
 }
 
+select {
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border-hi);
+  border-radius: 2px;
+  padding: 6px 10px;
+  font-family: var(--mono);
+  outline: none;
+}
+
+select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--glow);
+}
+
 .app {
   display: flex;
+  flex-direction: column;
   height: 100vh;
+}
+
+.app-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* ---------- 自定义标题栏（原生窗口按钮由 titleBarOverlay 绘制在右上） ---------- */
+.titlebar {
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 10px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.titlebar-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.titlebar-title {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: var(--text-strong);
+}
+
+/* 左菜单收缩/展开按钮：标题栏 logo 右方 */
+.titlebar-toggle {
+  -webkit-app-region: no-drag;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 3px;
+  border-radius: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.titlebar-toggle svg {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 
 /* ---------- Sidebar ---------- */
 .sidebar {
   width: 148px;
+  flex-shrink: 0;
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   padding: 12px 8px;
   gap: 4px;
+  transition: width 0.15s;
+}
+
+/* 收缩为纯图标栏 */
+.sidebar.collapsed {
+  width: 52px;
 }
 
 .sidebar .logo {
@@ -143,6 +220,8 @@ input:focus {
   padding: 8px 12px 18px;
   color: var(--text-strong);
   user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 /* blinking terminal cursor after the logo */
@@ -163,14 +242,12 @@ input:focus {
   text-decoration: none;
   padding: 8px 12px;
   border-radius: 2px;
-  border-left: 2px solid transparent;
   transition: color 0.15s, background 0.15s;
-}
-
-.sidebar a::before {
-  content: '> ';
-  opacity: 0;
-  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .sidebar a:hover {
@@ -180,11 +257,23 @@ input:focus {
 .sidebar a.active {
   background: var(--hover-bg);
   color: var(--text-strong);
-  border-left-color: var(--accent-dim);
 }
 
-.sidebar a.active::before {
-  opacity: 1;
+.sidebar .nav-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.sidebar .nav-icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+/* 收缩态：图标居中，文字隐藏 */
+.sidebar.collapsed a {
+  justify-content: center;
+  padding: 8px 0;
 }
 
 .content {
@@ -352,16 +441,18 @@ input:focus {
 }
 
 /* ---------- 应用级全屏 ---------- */
+body.el-app-fs .titlebar,
 body.el-app-fs .sidebar,
 body.el-app-fs .navbar,
 body.el-app-fs .side-panel {
   display: none !important;
 }
 
+/* 右上角让给原生窗口按钮（titleBarOverlay 约 138px 宽） */
 .fs-exit {
   position: fixed;
   top: 12px;
-  right: 12px;
+  right: 150px;
   z-index: 200;
   opacity: 0.75;
 }
@@ -391,32 +482,72 @@ body.el-app-fs .side-panel {
   min-height: 0;
   background: var(--bg-panel);
   border-left: 1px solid var(--border);
+  overflow: hidden;
+  transition: width 0.15s, border-color 0.15s;
 }
 
+/* 收缩态：宽度归零，内容被裁剪滑出（与左侧栏一致的动效） */
+.side-panel.collapsed {
+  width: 0;
+  border-left-color: transparent;
+}
+
+/* 固定宽度内壳：收缩过程中内容不重排，随面板裁剪滑出 */
+.side-panel-inner {
+  width: 400px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 浏览器风格标签：圆角浮在面板顶部的条带上 */
 .side-tabs {
   display: flex;
-  border-bottom: 1px solid var(--border);
+  gap: 6px;
+  padding: 8px 8px 0;
 }
 
 .side-tabs button {
   flex: 1;
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
+  border-radius: 8px 8px 0 0;
   padding: 8px 0;
   color: var(--text-dim);
 }
 
 .side-tabs button:hover:not(:disabled) {
   color: var(--text);
+  background: var(--hover-bg);
   box-shadow: none;
 }
 
 .side-tabs button.selected {
   background: var(--hover-bg);
   color: var(--text-strong);
-  border-bottom-color: var(--accent-dim);
+}
+
+/* 地址栏图标按钮（后退/前进/刷新/打开/收藏/右栏开关）：仅布局，配色走全局按钮规则 */
+.navbar > button,
+.fav-wrap > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+}
+
+.navbar > button svg,
+.fav-wrap > button svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+/* 已收藏：星标变橙色（悬停时也保持，不被悬停规则覆盖） */
+.fav-wrap > button.fav-toggle.active,
+.fav-wrap > button.fav-toggle.active:hover {
+  color: var(--known);
 }
 
 /* ---------- Subtitle panel ---------- */
@@ -550,6 +681,11 @@ body.el-app-fs .side-panel {
   padding: 0 1px;
 }
 
+/* 已加入生词本的单词：橙色；悬停色规则在其后，悬停时仍变为 accent 色 */
+.word.known {
+  color: var(--known);
+}
+
 .word:hover {
   background: var(--accent-strong);
   outline: 1px solid var(--accent);
@@ -601,12 +737,6 @@ body.el-app-fs .side-panel {
   line-height: 1;
 }
 
-.popup-close:hover {
-  color: var(--red);
-  background: transparent;
-  box-shadow: none;
-}
-
 .popup-phonetic {
   color: var(--text-dim);
   font-size: 13px;
@@ -647,6 +777,11 @@ body.el-app-fs .side-panel {
 .popup-saved {
   color: var(--accent);
   font-size: 13px;
+}
+
+/* 危险操作（删除）：红色文字区分，悬停与全局一致仅背景 */
+.popup-footer button.danger {
+  color: var(--red);
 }
 
 /* ---------- 右侧收藏标签页（按分类可折叠） ---------- */
@@ -717,6 +852,7 @@ body.el-app-fs .side-panel {
 .favtab-item {
   cursor: pointer;
   border-left: 2px solid transparent;
+  border-radius: 2px;
   min-width: 0;
 }
 
@@ -735,6 +871,7 @@ body.el-app-fs .side-panel {
 .favtab-grid .favtab-item {
   background: var(--bg-elev);
   border: 1px solid var(--border);
+  overflow: hidden;
 }
 
 .favtab-grid .favtab-item:hover {
@@ -810,6 +947,7 @@ body.el-app-fs .side-panel {
   text-align: left;
   background: transparent;
   border: none;
+  border-radius: 2px;
   padding: 8px 10px;
   color: var(--text-dim);
 }
@@ -817,7 +955,6 @@ body.el-app-fs .side-panel {
 .folder-bar > button:hover:not(:disabled),
 .folder-row button:hover:not(:disabled) {
   color: var(--text);
-  box-shadow: none;
 }
 
 .folder-bar button.selected {
@@ -873,10 +1010,28 @@ body.el-app-fs .side-panel {
   gap: 4px;
 }
 
+/* 选中态：用更深的背景区分（无边框可依赖） */
 .mode-toggle button.selected {
-  background: var(--hover-bg);
-  border-color: var(--accent-dim);
+  background: var(--active-bg);
   color: var(--text-strong);
+}
+
+/* 主题图标按钮（月亮 / 太阳） */
+.mode-toggle .icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 10px;
+}
+
+.mode-toggle .icon-btn svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+}
+
+.mode-toggle .icon-btn.selected {
+  color: var(--accent);
 }
 
 .fav-grid {
@@ -1038,11 +1193,11 @@ body.el-app-fs .side-panel {
   text-align: left;
 }
 
-.vocab-source:hover {
+/* 文字型链接按钮：悬停保持无背景，用下划线 + 颜色提示 */
+.vocab-source:hover:not(:disabled) {
   color: var(--accent);
   text-decoration: underline;
   background: transparent;
-  box-shadow: none;
 }
 
 /* ---------- Settings ---------- */
@@ -1101,4 +1256,41 @@ body.el-app-fs .side-panel {
 
 .saved-hint::before {
   content: '[ok] ';
+}
+
+/* ---------- 设置页：主窗字幕字号 / 字体 ---------- */
+.caption-size-label {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.caption-font-row {
+  margin-top: 10px;
+}
+
+/* 预览块模拟视频上的字幕浮层（始终深色，与浮层一致） */
+.caption-preview {
+  margin-top: 12px;
+  background: #000;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 18px 14px;
+  display: flex;
+  justify-content: center;
+}
+
+.caption-preview-line {
+  max-width: 100%;
+  background: rgba(3, 8, 5, 0.85);
+  border: 1px solid rgba(0, 255, 159, 0.3);
+  color: #eafff5;
+  line-height: 1.6;
+  padding: 4px 14px;
+  border-radius: 2px;
+  text-align: center;
+}
+
+.caption-preview-zh {
+  margin-top: 2px;
+  color: #b9e8cf;
 }

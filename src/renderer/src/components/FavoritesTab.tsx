@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, FAVS_CHANGED_EVENT } from '../api'
 import { Favorite, Folder } from '../../../shared/types'
+import GridIcon from './icons/GridIcon'
+import ListIcon from './icons/ListIcon'
 
 interface Group {
   key: string
@@ -49,7 +51,7 @@ export default function FavoritesTab(): JSX.Element {
   }
 
   if (favorites.length === 0) {
-    return <div className="favtab-empty">还没有收藏，点导航栏 ☆ 收藏当前视频</div>
+    return <div className="favtab-empty">还没有收藏，点导航栏收藏按钮收藏当前视频</div>
   }
 
   return (
@@ -57,18 +59,18 @@ export default function FavoritesTab(): JSX.Element {
       <div className="favtab-toolbar">
         <div className="mode-toggle">
           <button
-            className={mode === 'grid' ? 'selected' : ''}
+            className={mode === 'grid' ? 'icon-btn selected' : 'icon-btn'}
             onClick={() => setMode('grid')}
             title="网格"
           >
-            ▦
+            <GridIcon />
           </button>
           <button
-            className={mode === 'list' ? 'selected' : ''}
+            className={mode === 'list' ? 'icon-btn selected' : 'icon-btn'}
             onClick={() => setMode('list')}
             title="列表"
           >
-            ☰
+            <ListIcon />
           </button>
         </div>
       </div>

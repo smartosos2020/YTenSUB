@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { TranslateResult } from '../../../main/translate'
+import { VocabItem } from '../../../shared/types'
 
 export interface PopupVideoInfo {
   videoId: string
@@ -13,6 +14,8 @@ interface Props {
   sentence: string
   video: PopupVideoInfo
   time: number
+  /** 文本已在生词本中时传入对应条目，底部按钮变为"删除生词" */
+  savedItem: VocabItem | null
   onClose: () => void
 }
 
@@ -28,10 +31,12 @@ export default function TranslatePopup({
   sentence,
   video,
   time,
+  savedItem,
   onClose
 }: Props): JSX.Element {
   const [result, setResult] = useState<TranslateResult | null | 'loading'>('loading')
   const [saved, setSaved] = useState(false)
+  const [removed, setRemoved] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -71,6 +76,13 @@ export default function TranslatePopup({
     setTimeout(onClose, 1200)
   }
 
+  const remove = async (): Promise<void> => {
+    if (!savedItem) return
+    await api.vocabRemove(savedItem.id)
+    setRemoved(true)
+    setTimeout(onClose, 1200)
+  }
+
   const top = Math.min(rect.bottom + 8, window.innerHeight - 220)
   const left = Math.min(Math.max(8, rect.left), window.innerWidth - 360)
 
@@ -90,6 +102,12 @@ export default function TranslatePopup({
             <span className="popup-source">{SOURCE_LABEL[result.source]}</span>
             {saved ? (
               <span className="popup-saved">已加入生词本</span>
+            ) : removed ? (
+              <span className="popup-saved">已从生词本删除</span>
+            ) : savedItem ? (
+              <button className="danger" onClick={remove}>
+                删除生词
+              </button>
             ) : (
               <button onClick={add}>加入生词本</button>
             )}

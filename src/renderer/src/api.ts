@@ -4,9 +4,21 @@ const raw = (window as unknown as { api: YTenSubApi }).api
 
 export const SETTINGS_CHANGED_EVENT = 'ytensub:settings-changed'
 export const FAVS_CHANGED_EVENT = 'ytensub:favs-changed'
+export const VOCAB_CHANGED_EVENT = 'ytensub:vocab-changed'
 
 export const api: YTenSubApi = {
   ...raw,
+  // 生词增删后广播事件，让字幕里的已添加单词高亮即时刷新
+  vocabAdd: async (item) => {
+    const r = await raw.vocabAdd(item)
+    window.dispatchEvent(new Event(VOCAB_CHANGED_EVENT))
+    return r
+  },
+  vocabRemove: async (id) => {
+    const r = await raw.vocabRemove(id)
+    window.dispatchEvent(new Event(VOCAB_CHANGED_EVENT))
+    return r
+  },
   // 设置保存后广播事件，让常驻的 Browse 页即时应用（如字幕透明度）
   settingsSet: async (patch) => {
     const r = await raw.settingsSet(patch)

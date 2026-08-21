@@ -6,11 +6,13 @@ export function cleanWord(w: string): string {
 interface Props {
   text: string
   sentence?: string
+  /** 已加入生词本的单词（小写），命中即橙色高亮 */
+  knownWords?: Set<string>
   onWord: (word: string, rect: DOMRect, sentence: string) => void
 }
 
 /** 把一句文本渲染成可点击的单词序列，空格和纯标点原样保留 */
-export default function WordSpans({ text, sentence, onWord }: Props): JSX.Element {
+export default function WordSpans({ text, sentence, knownWords, onWord }: Props): JSX.Element {
   const parts = text.split(/(\s+)/)
   return (
     <>
@@ -18,10 +20,11 @@ export default function WordSpans({ text, sentence, onWord }: Props): JSX.Elemen
         if (/^\s*$/.test(part)) return <span key={i}>{part}</span>
         const word = cleanWord(part)
         if (!word) return <span key={i}>{part}</span>
+        const known = knownWords?.has(word.toLowerCase()) ?? false
         return (
           <span
             key={i}
-            className="word"
+            className={known ? 'word known' : 'word'}
             onClick={(e) => {
               e.stopPropagation()
               onWord(word, e.currentTarget.getBoundingClientRect(), sentence ?? text)

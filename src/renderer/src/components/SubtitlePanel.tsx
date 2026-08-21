@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from 'react'
+import { memo, useCallback, useEffect, useRef } from 'react'
 import { Cue, findActiveCueIndex } from '../../../shared/captions'
 import WordSpans from './WordSpans'
 
@@ -21,6 +21,8 @@ interface Props {
   /** 正在批量翻译中（无自带中文字幕时的回退翻译） */
   zhLoading: boolean
   onShowZhChange: (v: boolean) => void
+  /** 已加入生词本的单词（小写），字幕中橙色高亮 */
+  knownWords: Set<string>
 }
 
 interface RowProps {
@@ -29,6 +31,7 @@ interface RowProps {
   active: boolean
   showZh: boolean
   zh: string | null
+  knownWords: Set<string>
   onSeek: (t: number) => void
   onWord: (text: string, rect: DOMRect, sentence: string) => void
 }
@@ -40,6 +43,7 @@ const CueRow = memo(function CueRow({
   active,
   showZh,
   zh,
+  knownWords,
   onSeek,
   onWord
 }: RowProps): JSX.Element {
@@ -52,7 +56,7 @@ const CueRow = memo(function CueRow({
   return (
     <div data-cue-idx={idx} className={'cue' + (active ? ' active' : '')} onClick={handleClick}>
       <div className="cue-en">
-        <WordSpans text={cue.text} onWord={onWord} />
+        <WordSpans text={cue.text} knownWords={knownWords} onWord={onWord} />
       </div>
       {showZh && zh && <div className="cue-zh">{zh}</div>}
     </div>
@@ -97,7 +101,8 @@ export default function SubtitlePanel({
   showZh,
   zhLines,
   zhLoading,
-  onShowZhChange
+  onShowZhChange,
+  knownWords
 }: Props): JSX.Element {
   const activeIdx = findActiveCueIndex(cues, time)
   const activeRef = useRef<HTMLDivElement | null>(null)
@@ -105,6 +110,13 @@ export default function SubtitlePanel({
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
   }, [activeIdx])
+
+  // 单词点击回调必须引用稳定（useCallback），否则每次渲染都是新函数，
+  // CueRow 的 memo 会失效，导致播放进度刷新（每 300ms）时全列表重渲染
+  const handleWord = useCallback(
+    (text: string, rect: DOMRect, sentence: string) => onWordSelect({ text, rect, sentence }),
+    [onWordSelect]
+  )
 
   // 拖选短语（可跨单词）：mouseup 时取选区文本
   const handleMouseUp = (): void => {
@@ -147,8 +159,9 @@ export default function SubtitlePanel({
                 active={i === activeIdx}
                 showZh={showZh}
                 zh={showZh ? (zhLines?.[i] ?? null) : null}
+                knownWords={knownWords}
                 onSeek={onSeek}
-                onWord={(text, rect, sentence) => onWordSelect({ text, rect, sentence })}
+                onWord={handleWord}
               />
             </div>
           ))}

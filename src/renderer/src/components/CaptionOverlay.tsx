@@ -7,10 +7,16 @@ interface Props {
   cues: Cue[]
   time: number
   opacity: number
+  /** 英文字幕行字号 px；中文行按其 0.8 倍显示 */
+  fontSize: number
+  /** font-family 栈；空字符串表示跟随界面默认等宽字体 */
+  fontFamily: string
   /** 是否显示中文字幕 */
   showZh: boolean
   /** 与 cues 等长对齐的中文字幕；null 表示尚未就绪 */
   zhLines: (string | null)[] | null
+  /** 已加入生词本的单词（小写），字幕中橙色高亮 */
+  knownWords: Set<string>
   onWordSelect: (sel: WordSelection) => void
 }
 
@@ -26,8 +32,11 @@ export default function CaptionOverlay({
   cues,
   time,
   opacity,
+  fontSize,
+  fontFamily,
   showZh,
   zhLines,
+  knownWords,
   onWordSelect
 }: Props): JSX.Element | null {
   const idx = findActiveCueIndex(cues, time)
@@ -75,23 +84,24 @@ export default function CaptionOverlay({
       className="caption-overlay"
       style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
     >
-      <div className="caption-stack">
+      <div className="caption-stack" style={fontFamily ? { fontFamily } : undefined}>
         <div
           className="caption-line"
-          style={{ background: `rgba(0, 0, 0, ${opacity})` }}
+          style={{ background: `rgba(0, 0, 0, ${opacity})`, fontSize }}
           onMouseDown={onMouseDown}
           title="按住空白处可拖动"
         >
           <WordSpans
             text={cue.text}
             sentence={cue.text}
+            knownWords={knownWords}
             onWord={(word, rect, sentence) => onWordSelect({ text: word, rect, sentence })}
           />
         </div>
         {zhText && (
           <div
             className="caption-line caption-zh"
-            style={{ background: `rgba(0, 0, 0, ${opacity})` }}
+            style={{ background: `rgba(0, 0, 0, ${opacity})`, fontSize: Math.round(fontSize * 0.8) }}
             onMouseDown={onMouseDown}
             title="按住空白处可拖动"
           >

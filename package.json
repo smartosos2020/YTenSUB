@@ -10,6 +10,7 @@
     "preview": "electron-vite preview",
     "test": "vitest run",
     "build:dict": "node scripts/build-dict.mjs",
+    "build:icon": "node scripts/build-icon.mjs",
     "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {
