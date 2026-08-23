@@ -1,6 +1,8 @@
 import { memo, useCallback, useEffect, useRef } from 'react'
 import { Cue, findActiveCueIndex } from '../../../shared/captions'
 import WordSpans from './WordSpans'
+import RepeatIcon from './icons/RepeatIcon'
+import DownloadIcon from './icons/DownloadIcon'
 
 export interface WordSelection {
   text: string
@@ -23,6 +25,15 @@ interface Props {
   onShowZhChange: (v: boolean) => void
   /** 已加入生词本的单词（小写），字幕中橙色高亮 */
   knownWords: Set<string>
+  /** 单句循环 */
+  looping: boolean
+  onLoopChange: (v: boolean) => void
+  /** 中文轨时间微调（仅存在原生中文轨时展示） */
+  hasZhNative: boolean
+  zhOffset: number
+  onZhOffset: (delta: number) => void
+  /** 导出双语字幕 */
+  onExport: () => void
 }
 
 interface RowProps {
@@ -63,17 +74,29 @@ const CueRow = memo(function CueRow({
   )
 })
 
-/** 列表顶部的中文字幕滑动开关 */
+/** 列表顶部工具条：中文字幕开关 / 中文轨时间微调 / 单句循环 / 导出字幕 */
 function ZhToolbar({
   showZh,
   disabled,
   loading,
-  onChange
+  onChange,
+  looping,
+  onLoopChange,
+  hasZhNative,
+  zhOffset,
+  onZhOffset,
+  onExport
 }: {
   showZh: boolean
   disabled: boolean
   loading: boolean
   onChange: (v: boolean) => void
+  looping: boolean
+  onLoopChange: (v: boolean) => void
+  hasZhNative: boolean
+  zhOffset: number
+  onZhOffset: (delta: number) => void
+  onExport: () => void
 }): JSX.Element {
   return (
     <div className="subs-toolbar">
@@ -88,6 +111,31 @@ function ZhToolbar({
         <span className="switch-slider" />
       </label>
       {loading && <span className="subs-toolbar-status">翻译中…</span>}
+      <span className="subs-toolbar-spacer" />
+      {showZh && hasZhNative && (
+        <span className="zh-offset" title="中文字幕时间微调">
+          <button className="zh-offset-btn" onClick={() => onZhOffset(-0.5)}>
+            -
+          </button>
+          <span className="zh-offset-value">
+            {zhOffset > 0 ? '+' : ''}
+            {zhOffset.toFixed(1)}s
+          </span>
+          <button className="zh-offset-btn" onClick={() => onZhOffset(0.5)}>
+            +
+          </button>
+        </span>
+      )}
+      <button
+        className={looping ? 'icon-btn looping' : 'icon-btn'}
+        title={looping ? '关闭单句循环' : '单句循环当前字幕'}
+        onClick={() => onLoopChange(!looping)}
+      >
+        <RepeatIcon />
+      </button>
+      <button className="icon-btn" title="导出双语字幕（SRT）" disabled={disabled} onClick={onExport}>
+        <DownloadIcon />
+      </button>
     </div>
   )
 }
@@ -102,7 +150,13 @@ export default function SubtitlePanel({
   zhLines,
   zhLoading,
   onShowZhChange,
-  knownWords
+  knownWords,
+  looping,
+  onLoopChange,
+  hasZhNative,
+  zhOffset,
+  onZhOffset,
+  onExport
 }: Props): JSX.Element {
   const activeIdx = findActiveCueIndex(cues, time)
   const activeRef = useRef<HTMLDivElement | null>(null)
@@ -144,6 +198,12 @@ export default function SubtitlePanel({
         disabled={cues.length === 0}
         loading={zhLoading}
         onChange={onShowZhChange}
+        looping={looping}
+        onLoopChange={onLoopChange}
+        hasZhNative={hasZhNative}
+        zhOffset={zhOffset}
+        onZhOffset={onZhOffset}
+        onExport={onExport}
       />
       {cues.length === 0 ? (
         <div className="subtitle-panel empty">

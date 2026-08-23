@@ -27,6 +27,9 @@
   --known: #f5a623;
   /* 地址输入框底色：比内容区略深，无边框也能看出输入区域 */
   --bg-address: #000000;
+  /* 滚动条 */
+  --scrollbar: #333837;
+  --scrollbar-hover: #4a514d;
   --mono: 'Cascadia Code', 'JetBrains Mono', Consolas, 'Courier New', 'Microsoft YaHei', monospace;
 }
 
@@ -55,6 +58,9 @@
   --known: #c25e00;
   /* 地址输入框底色：比内容区略深 */
   --bg-address: #ebebeb;
+  /* 滚动条：白天调浅 */
+  --scrollbar: #d9d9d9;
+  --scrollbar-hover: #bdbdbd;
 }
 
 * {
@@ -75,7 +81,7 @@ body {
   overflow: hidden;
 }
 
-/* 页面区滚动条：细、圆润、灰黑 */
+/* 页面区滚动条：细、圆润，颜色随主题 */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
@@ -84,11 +90,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #333837;
+  background: var(--scrollbar);
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #4a514d;
+  background: var(--scrollbar-hover);
 }
 
 /* 所有按钮：平时无边框、底色融入容器；悬停仅叠加背景色，不高亮图标/边框 */
@@ -635,6 +641,45 @@ body.side-resizing .side-panel {
   color: var(--accent-dim);
 }
 
+.subs-toolbar-spacer {
+  flex: 1;
+}
+
+/* 中文轨时间微调 */
+.zh-offset {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.zh-offset-btn {
+  padding: 1px 7px;
+  font-size: 12px;
+}
+
+.zh-offset-value {
+  min-width: 38px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+/* 工具条内的小图标按钮（单句循环 / 导出字幕） */
+.subs-toolbar .icon-btn {
+  padding: 3px;
+  color: var(--text-dim);
+}
+
+.subs-toolbar .icon-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.subs-toolbar .icon-btn.looping {
+  background: var(--active-bg);
+  color: var(--text-strong);
+}
+
 /* 中文字幕滑动开关 */
 .switch {
   position: relative;
@@ -780,6 +825,31 @@ body.side-resizing .side-panel {
   text-shadow: 0 0 8px var(--glow);
 }
 
+/* 单词 + 发音按钮行 */
+.popup-word-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 发音按钮：比通用 icon-btn 更小巧 */
+.vocab-speak,
+.popup-speak {
+  padding: 2px;
+  color: var(--text-dim);
+}
+
+.vocab-speak svg,
+.popup-speak svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* vocab-head 是 baseline 对齐，按钮单独垂直居中 */
+.vocab-speak {
+  align-self: center;
+}
+
 .popup-close {
   position: absolute;
   top: 6px;
@@ -812,6 +882,27 @@ body.side-resizing .side-panel {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.popup-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 复制释义按钮：比通用 icon-btn 更小巧 */
+.popup-copy {
+  padding: 3px;
+  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.popup-copy svg {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
 .popup-source {
@@ -1184,6 +1275,24 @@ body.side-resizing .side-panel {
   align-items: center;
 }
 
+.vocab-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+/* 复习达到掌握等级的标记 */
+.vocab-mastered {
+  font-size: 12px;
+  color: var(--text-dim);
+  border: 1px solid var(--border-hi);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
 .vocab-group h3 {
   color: var(--text-dim);
   font-size: 13px;
@@ -1300,6 +1409,13 @@ body.side-resizing .side-panel {
   color: var(--text-dim);
 }
 
+/* 数据备份：导出 / 导入 */
+.data-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .saved-hint {
   color: var(--accent);
   margin-left: 12px;
@@ -1307,6 +1423,121 @@ body.side-resizing .side-panel {
 
 .saved-hint::before {
   content: '[ok] ';
+}
+
+/* ---------- 复习页 ---------- */
+.review-page {
+  display: flex;
+  flex-direction: column;
+}
+
+.review-progress {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+/* 释义显隐滑块开关（复用 .switch 样式） */
+.review-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+
+/* 卡片+提示整体在内容区水平垂直居中，窗口缩放时保持居中 */
+.review-center {
+  margin: auto;
+  width: min(560px, 100%);
+}
+
+.review-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 32px 24px;
+  text-align: center;
+  user-select: none;
+  cursor: grab;
+  transition: transform 0.15s, border-color 0.15s;
+}
+
+.review-card.dragging {
+  transition: none;
+  cursor: grabbing;
+}
+
+/* 拖拽过阈值的方向提示 */
+.review-card.drag-known {
+  border-color: var(--accent);
+}
+
+.review-card.drag-forgot {
+  border-color: var(--red);
+}
+
+.review-hint {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-top: 12px;
+}
+
+.review-word-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.review-word {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.review-phonetic {
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.review-reveal {
+  margin-top: 24px;
+  padding: 8px 32px;
+}
+
+.review-translation {
+  margin-top: 20px;
+  font-size: 16px;
+  white-space: pre-wrap;
+}
+
+.review-sentence {
+  margin-top: 10px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.review-actions {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.review-actions button {
+  padding: 8px 32px;
+}
+
+.review-forgot {
+  color: var(--red);
+}
+
+.review-known {
+  color: var(--accent);
 }
 
 /* ---------- 设置页：主窗字幕字号 / 字体 ---------- */

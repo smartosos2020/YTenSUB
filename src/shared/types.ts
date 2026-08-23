@@ -22,7 +22,24 @@ export interface VocabItem {
   timestamp: number
   sentence: string
   addedAt: number
+  /** 复习等级（REVIEW_INTERVALS_MS 的下标）；undefined 表示从未复习 */
+  reviewLevel?: number
+  /** 下次复习到期时间戳 */
+  reviewDue?: number
 }
+
+/** 复习间隔：等级 0~5 对应 10分钟/1天/3天/7天/15天/30天 */
+export const REVIEW_INTERVALS_MS = [
+  10 * 60_000,
+  86_400_000,
+  3 * 86_400_000,
+  7 * 86_400_000,
+  15 * 86_400_000,
+  30 * 86_400_000
+]
+
+/** 达到该等级视为已掌握：字幕中不再橙色高亮 */
+export const MASTERED_LEVEL = 5
 
 export type TranslateSource = 'local' | 'google' | 'llm'
 

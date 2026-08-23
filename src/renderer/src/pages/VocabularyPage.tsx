@@ -1,13 +1,34 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
-import { VocabItem } from '../../../shared/types'
+import { speakWord } from '../speech'
+import { MASTERED_LEVEL, VocabItem } from '../../../shared/types'
 import TrashIcon from '../components/icons/TrashIcon'
+import VolumeIcon from '../components/icons/VolumeIcon'
 
 function formatTime(sec: number): string {
   const m = Math.floor(sec / 60)
   const s = Math.floor(sec % 60)
   return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function isMastered(v: VocabItem): boolean {
+  return v.reviewLevel !== undefined && v.reviewLevel >= MASTERED_LEVEL
+}
+
+/** 导出 CSV（Excel / Anki 均可导入） */
+function toCsv(items: VocabItem[]): string {
+  const esc = (s: string | number | undefined): string => {
+    const v = String(s ?? '')
+    return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v
+  }
+  const rows = items.map((v) =>
+    [v.text, v.phonetic ?? '', v.translation, v.sentence, v.videoTitle, v.timestamp,
+      new Date(v.addedAt).toISOString()]
+      .map(esc)
+      .join(',')
+  )
+  return 'word,phonetic,translation,sentence,video,timestamp,addedAt\n' + rows.join('\n')
 }
 
 export default function VocabularyPage(): JSX.Element {
@@ -44,14 +65,31 @@ export default function VocabularyPage(): JSX.Element {
     <div className="page vocab-page">
       <div className="vocab-toolbar">
         <h2>生词本（{vocab.length}）</h2>
-        <label>
-          <input
-            type="checkbox"
-            checked={groupByVideo}
-            onChange={(e) => setGroupByVideo(e.target.checked)}
-          />
-          按来源视频分组
-        </label>
+        <div className="vocab-toolbar-actions">
+          <label>
+            <input
+              type="checkbox"
+              checked={groupByVideo}
+              onChange={(e) => setGroupByVideo(e.target.checked)}
+            />
+            按来源视频分组
+          </label>
+          <button
+            disabled={vocab.length === 0}
+            title="导出为 CSV（Excel / Anki 可导入）"
+            onClick={() =>
+              void api.saveTextFile({
+                defaultName: 'ytensub-vocab.csv',
+                content: toCsv(vocab),
+                filterName: 'CSV',
+                ext: 'csv'
+              })
+            }
+          >
+            导出
+          </button>
+          <button onClick={() => navigate('/review')}>去复习</button>
+        </div>
       </div>
       {vocab.length === 0 && (
         <div className="empty-hint">在浏览页字幕里选中单词，就能加入生词本</div>
@@ -63,8 +101,16 @@ export default function VocabularyPage(): JSX.Element {
             <div key={item.id} className="vocab-item">
               <div className="vocab-head">
                 <span className="vocab-text">{item.text}</span>
+                <button
+                  className="vocab-speak icon-btn"
+                  title="发音"
+                  onClick={() => speakWord(item.text)}
+                >
+                  <VolumeIcon />
+                </button>
                 {item.phonetic && <span className="vocab-phonetic">[{item.phonetic}]</span>}
                 <span className="vocab-translation">{item.translation}</span>
+                {isMastered(item) && <span className="vocab-mastered">已掌握</span>}
                 <button
                   className="vocab-remove icon-btn"
                   title="删除"

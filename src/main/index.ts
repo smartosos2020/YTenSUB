@@ -1,10 +1,11 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeTheme, net } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import fs from 'node:fs'
 import path from 'node:path'
 import { Store } from './store'
 import { Dict } from './dict'
 import { googleTranslateFree, llmTranslate, translateBatch, translateText } from './translate'
-import { Favorite, Settings, TranslateSource, VocabItem } from '../shared/types'
+import { Favorite, Settings, TranslateSource, VocabItem, defaultData } from '../shared/types'
 
 const dataFile = path.join(app.getPath('userData'), 'ytensub-data.json')
 
@@ -100,6 +101,9 @@ function registerIpc(): void {
   ipcMain.handle('vocab:add', (_e, item: Omit<VocabItem, 'id' | 'addedAt'>) => store.addVocab(item))
   ipcMain.handle('vocab:list', () => store.listVocab())
   ipcMain.handle('vocab:remove', (_e, id: string) => store.removeVocab(id))
+  ipcMain.handle('vocab:review', (_e, id: string, level: number) =>
+    store.updateVocabReview(id, level)
+  )
 
   ipcMain.handle('fav:add', (_e, fav: Omit<Favorite, 'addedAt'>) => store.addFavorite(fav))
   ipcMain.handle('fav:list', (_e, folderId?: string | null) => store.listFavorites(folderId))
@@ -130,6 +134,90 @@ function registerIpc(): void {
   ipcMain.handle('webview:preload-path', () => {
     const p = path.join(__dirname, '..', 'preload', 'webview-preload.js')
     return 'file:///' + p.replace(/\\/g, '/')
+  })
+
+  // 通用文本保存（生词 CSV、双语字幕等）：保存对话框 + 写文件，取消返回 null
+  ipcMain.handle(
+    'file:save-text',
+    async (_e, opts: { defaultName: string; content: string; filterName: string; ext: string }) => {
+      if (!mainWin) return null
+      const r = await dialog.showSaveDialog(mainWin, {
+        defaultPath: opts.defaultName,
+        filters: [{ name: opts.filterName, extensions: [opts.ext] }]
+      })
+      if (r.canceled || !r.filePath) return null
+      fs.writeFileSync(r.filePath, opts.content, 'utf8')
+      return r.filePath
+    }
+  )
+
+  // 数据备份：导出当前数据文件副本
+  ipcMain.handle('data:export', async () => {
+    if (!mainWin) return null
+    store.flush()
+    const r = await dialog.showSaveDialog(mainWin, {
+      defaultPath: 'ytensub-backup.json',
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    })
+    if (r.canceled || !r.filePath) return null
+    fs.copyFileSync(dataFile, r.filePath)
+    return r.filePath
+  })
+
+  // 数据恢复：校验结构后整体替换（先留 .bak），渲染进程随后自行 reload
+  ipcMain.handle('data:import', async () => {
+    if (!mainWin) return null
+    const r = await dialog.showOpenDialog(mainWin, {
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+      properties: ['openFile']
+    })
+    if (r.canceled || r.filePaths.length === 0) return null
+    try {
+      const parsed = JSON.parse(fs.readFileSync(r.filePaths[0], 'utf8'))
+      if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        !Array.isArray(parsed.vocab) ||
+        !Array.isArray(parsed.favorites) ||
+        !Array.isArray(parsed.folders) ||
+        typeof parsed.settings !== 'object'
+      ) {
+        return 'invalid'
+      }
+      const base = defaultData()
+      store.replaceAll({
+        ...base,
+        ...parsed,
+        settings: { ...base.settings, ...(parsed.settings ?? {}) }
+      })
+      store.flush()
+      return 'ok'
+    } catch {
+      return 'invalid'
+    }
+  })
+
+  // 真人发音：dictionaryapi.dev 免费接口，查到音频 URL 交给渲染进程播放；进程内缓存
+  const pronounceCache = new Map<string, string | null>()
+  ipcMain.handle('dict:pronounce', async (_e, word: string) => {
+    const w = String(word ?? '').trim().toLowerCase()
+    if (!/^[a-z][a-z'-]*$/.test(w)) return null
+    const cached = pronounceCache.get(w)
+    if (cached !== undefined) return cached
+    let url: string | null = null
+    try {
+      const res = await net.fetch(
+        'https://api.dictionaryapi.dev/api/v2/entries/en/' + encodeURIComponent(w)
+      )
+      if (res.ok) {
+        const data = (await res.json()) as { phonetics?: { audio?: string }[] }[]
+        url = data?.[0]?.phonetics?.map((p) => p?.audio).find((a) => !!a) ?? null
+      }
+    } catch {
+      // 网络失败按无发音处理
+    }
+    pronounceCache.set(w, url)
+    return url
   })
 }
 
@@ -173,6 +261,8 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null)
   registerIpc()
   createWindow()
+  // 自动更新（GitHub Releases）：静默检查，下载完成后提示重启安装；dev 环境静默跳过
+  autoUpdater.checkForUpdatesAndNotify().catch(() => {})
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

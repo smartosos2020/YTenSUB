@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { alignCuesToEn, findActiveCueIndex, parseJson3Captions } from '../src/shared/captions'
+import {
+  alignCuesToEn,
+  findActiveCueIndex,
+  parseJson3Captions,
+  toBilingualSrt
+} from '../src/shared/captions'
 
 describe('parseJson3Captions', () => {
   it('解析 json3 events 为 cue 数组', () => {
@@ -83,5 +88,19 @@ describe('alignCuesToEn', () => {
     const en = [{ start: 1, dur: 0, text: 'a' }]
     const zh = [{ start: 1.2, dur: 0, text: '甲' }]
     expect(alignCuesToEn(en, zh)).toEqual(['甲'])
+  })
+})
+
+describe('toBilingualSrt', () => {
+  it('生成带时间轴的双语 SRT，中文缺失时只有英文行', () => {
+    const cues = [
+      { start: 1.5, dur: 2, text: 'Hello' },
+      { start: 4, dur: 0, text: 'World' }
+    ]
+    const srt = toBilingualSrt(cues, ['你好', null])
+    expect(srt).toContain('1\n00:00:01,500 --> 00:00:03,500\nHello\n你好')
+    // 时长为 0 按 0.4s 计
+    expect(srt).toContain('2\n00:00:04,000 --> 00:00:04,400\nWorld')
+    expect(srt.endsWith('\n')).toBe(true)
   })
 })

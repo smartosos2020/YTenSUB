@@ -21,6 +21,7 @@ const THEMES: { key: Theme; label: string; icon: JSX.Element }[] = [
 export default function SettingsPage(): JSX.Element {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [saved, setSaved] = useState(false)
+  const [dataMsg, setDataMsg] = useState('')
 
   useEffect(() => {
     api.settingsGet().then(setSettings)
@@ -39,6 +40,23 @@ export default function SettingsPage(): JSX.Element {
     await api.settingsSet(settings)
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
+  }
+
+  const flashDataMsg = (msg: string): void => {
+    setDataMsg(msg)
+    setTimeout(() => setDataMsg(''), 2000)
+  }
+
+  const exportData = async (): Promise<void> => {
+    const r = await api.dataExport()
+    if (typeof r === 'string') flashDataMsg('已导出')
+  }
+
+  /** 导入成功后数据已整体替换，重载渲染进程让所有页面读新数据 */
+  const importData = async (): Promise<void> => {
+    const r = await api.dataImport()
+    if (r === 'ok') window.location.reload()
+    else if (r === 'invalid') flashDataMsg('文件无效')
   }
 
   return (
@@ -168,6 +186,16 @@ export default function SettingsPage(): JSX.Element {
               placeholder="gpt-4o-mini"
             />
           </label>
+        </div>
+      </section>
+      <section>
+        <h3>数据备份</h3>
+        <div className="data-row">
+          <button onClick={() => void exportData()}>导出数据</button>
+          <button title="从备份文件恢复（导入后自动重载）" onClick={() => void importData()}>
+            导入数据
+          </button>
+          {dataMsg && <span className="saved-hint">{dataMsg}</span>}
         </div>
       </section>
       <button className="icon-btn" title="保存" onClick={() => void save()}>

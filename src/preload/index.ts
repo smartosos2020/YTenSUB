@@ -21,6 +21,13 @@ const api = {
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (patch: Partial<Settings>) => ipcRenderer.invoke('settings:set', patch),
 
+  vocabReview: (id: string, level: number) => ipcRenderer.invoke('vocab:review', id, level),
+  saveTextFile: (opts: { defaultName: string; content: string; filterName: string; ext: string }) =>
+    ipcRenderer.invoke('file:save-text', opts),
+  dataExport: () => ipcRenderer.invoke('data:export'),
+  dataImport: () => ipcRenderer.invoke('data:import'),
+  dictPronounce: (word: string) => ipcRenderer.invoke('dict:pronounce', word),
+
   // 自定义标题栏的窗口控制
   windowMinimize: () => ipcRenderer.send('window:minimize'),
   windowToggleMaximize: () => ipcRenderer.send('window:toggle-maximize'),

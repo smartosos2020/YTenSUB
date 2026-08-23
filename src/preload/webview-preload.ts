@@ -58,6 +58,31 @@ function main(): void {
     true
   )
 
+  // 划词翻译：guest 页面任何文本（评论区、简介等），拖选或双击选中后上报宿主弹翻译框。
+  // 只在确有选区时触发，不影响普通点击/链接跳转
+  document.addEventListener(
+    'mouseup',
+    () => {
+      const sel = window.getSelection()
+      if (!sel || sel.isCollapsed) return
+      const text = sel.toString().trim()
+      // 至少含一个字母，且不是整段框选
+      if (!text || text.length > 200 || !/\p{L}/u.test(text)) return
+      const r = sel.getRangeAt(0).getBoundingClientRect()
+      // 所在块文本作为翻译语境（存生词本的例句）
+      let el: Node | null = sel.anchorNode
+      while (el && el.nodeType !== Node.ELEMENT_NODE) el = el.parentNode
+      const sentence = ((el instanceof HTMLElement ? el.textContent : '') ?? '').trim()
+      send({
+        kind: 'word',
+        text,
+        sentence: sentence.slice(0, 500),
+        rect: { x: r.x, y: r.y, width: r.width, height: r.height }
+      })
+    },
+    true
+  )
+
   // 鼠标侧键（后退/前进）与 Alt+←/→：只导航 guest（YouTube）自身历史，
   // preventDefault 阻止 Chromium 默认行为连带宿主一起跳
   document.addEventListener(

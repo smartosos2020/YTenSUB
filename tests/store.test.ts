@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Store } from '../src/main/store'
+import { REVIEW_INTERVALS_MS } from '../src/shared/types'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -77,5 +78,51 @@ describe('Store', () => {
     const store = new Store(file)
     expect(store.listVocab()).toEqual([])
     expect(store.getSettings().enabledTranslators).toContain('local')
+  })
+
+  it('复习结算：写入等级并计算到期时间；越界等级被钳制', () => {
+    const { store } = makeStore()
+    const item = store.addVocab({
+      text: 'word',
+      translation: '词',
+      videoId: 'v1',
+      videoTitle: 't',
+      timestamp: 0,
+      sentence: ''
+    })
+    const before = Date.now()
+    store.updateVocabReview(item.id, 2)
+    const after = store.listVocab()[0]
+    expect(after.reviewLevel).toBe(2)
+    expect(after.reviewDue).toBeGreaterThanOrEqual(before + REVIEW_INTERVALS_MS[2])
+    store.updateVocabReview(item.id, 99)
+    expect(store.listVocab()[0].reviewLevel).toBe(REVIEW_INTERVALS_MS.length - 1)
+    // 不存在的 id 静默忽略
+    store.updateVocabReview('nope', 1)
+  })
+
+  it('主文件损坏时从 .bak 恢复上一次完好的数据', () => {
+    const { store, file } = makeStore()
+    store.addVocab({
+      text: 'backup',
+      translation: '备份',
+      videoId: 'v1',
+      videoTitle: 't',
+      timestamp: 0,
+      sentence: ''
+    })
+    store.flush() // 第一次写：尚无 .bak
+    store.addVocab({
+      text: 'newer',
+      translation: '更新',
+      videoId: 'v2',
+      videoTitle: 't',
+      timestamp: 1,
+      sentence: ''
+    })
+    store.flush() // 第二次写：.bak = 第一次的内容
+    fs.writeFileSync(file, 'corrupted!!!', 'utf8')
+    const store2 = new Store(file)
+    expect(store2.listVocab().map((v) => v.text)).toEqual(['backup'])
   })
 })

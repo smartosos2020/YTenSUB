@@ -6,17 +6,20 @@ import { usePersistentState } from './hooks/usePersistentState'
 import BrowsePage from './pages/BrowsePage'
 import FavoritesPage from './pages/FavoritesPage'
 import VocabularyPage from './pages/VocabularyPage'
+import ReviewPage from './pages/ReviewPage'
 import SettingsPage from './pages/SettingsPage'
 import TitleBar from './components/TitleBar'
 import PlayIcon from './components/icons/PlayIcon'
 import StarOutlineIcon from './components/icons/StarOutlineIcon'
 import BookIcon from './components/icons/BookIcon'
+import RepeatIcon from './components/icons/RepeatIcon'
 import GearIcon from './components/icons/GearIcon'
 
 const NAV_ITEMS: { to: string; label: string; icon: JSX.Element }[] = [
   { to: '/browse', label: '浏览', icon: <PlayIcon /> },
   { to: '/favorites', label: '收藏', icon: <StarOutlineIcon /> },
   { to: '/vocabulary', label: '生词本', icon: <BookIcon /> },
+  { to: '/review', label: '复习', icon: <RepeatIcon /> },
   { to: '/settings', label: '设置', icon: <GearIcon /> }
 ]
 
@@ -41,6 +44,7 @@ function MainArea(): JSX.Element {
         <Routes>
           <Route path="/favorites" element={<FavoritesPage />} />
           <Route path="/vocabulary" element={<VocabularyPage />} />
+          <Route path="/review" element={<ReviewPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       )}

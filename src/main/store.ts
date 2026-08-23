@@ -5,13 +5,14 @@ import {
   AppData,
   Favorite,
   Folder,
+  REVIEW_INTERVALS_MS,
   Settings,
   VocabItem,
   defaultData
 } from '../shared/types'
 
 /**
- * 单 JSON 文件存储，防抖 + 原子写入。
+ * 单 JSON 文件存储，防抖 + 原子写入 + .bak 备份。
  * 不依赖 electron，方便单元测试（由 main/index.ts 传入 userData 路径）。
  */
 export class Store {
@@ -24,19 +25,23 @@ export class Store {
     this.data = this.load()
   }
 
+  /** 依次尝试主文件和 .bak 备份，都损坏才回退默认值（避免"损坏即全丢"） */
   private load(): AppData {
-    try {
-      const raw = fs.readFileSync(this.file, 'utf8')
-      const parsed = JSON.parse(raw)
-      const base = defaultData()
-      return {
-        ...base,
-        ...parsed,
-        settings: { ...base.settings, ...(parsed.settings ?? {}) }
+    for (const f of [this.file, this.file + '.bak']) {
+      try {
+        const raw = fs.readFileSync(f, 'utf8')
+        const parsed = JSON.parse(raw)
+        const base = defaultData()
+        return {
+          ...base,
+          ...parsed,
+          settings: { ...base.settings, ...(parsed.settings ?? {}) }
+        }
+      } catch {
+        // 文件不存在或损坏，尝试下一份
       }
-    } catch {
-      return defaultData()
     }
+    return defaultData()
   }
 
   private scheduleSave(): void {
@@ -52,6 +57,12 @@ export class Store {
     fs.mkdirSync(path.dirname(this.file), { recursive: true })
     const tmp = this.file + '.tmp'
     fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2), 'utf8')
+    // 覆盖前把上一份完好数据留作 .bak：主文件损坏时 load 可回滚
+    try {
+      if (fs.existsSync(this.file)) fs.copyFileSync(this.file, this.file + '.bak')
+    } catch {
+      // 备份失败不阻断写入
+    }
     fs.renameSync(tmp, this.file)
   }
 
@@ -125,6 +136,22 @@ export class Store {
 
   removeVocab(id: string): void {
     this.data.vocab = this.data.vocab.filter((v) => v.id !== id)
+    this.scheduleSave()
+  }
+
+  /** 复习结算：写入新等级并按间隔表算出下次到期时间 */
+  updateVocabReview(id: string, level: number): void {
+    const item = this.data.vocab.find((v) => v.id === id)
+    if (!item) return
+    const lv = Math.max(0, Math.min(REVIEW_INTERVALS_MS.length - 1, level))
+    item.reviewLevel = lv
+    item.reviewDue = Date.now() + REVIEW_INTERVALS_MS[lv]
+    this.scheduleSave()
+  }
+
+  /** 数据导入：整体替换并重读（调用方负责校验过结构） */
+  replaceAll(data: AppData): void {
+    this.data = data
     this.scheduleSave()
   }
 

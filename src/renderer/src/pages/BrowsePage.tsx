@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { WebviewTag } from 'electron'
 import { api, SETTINGS_CHANGED_EVENT, VOCAB_CHANGED_EVENT } from '../api'
-import { Cue, parseCaptionText } from '../../../shared/captions'
+import { Cue, findActiveCueIndex, parseCaptionText, toBilingualSrt } from '../../../shared/captions'
 import { EXTRACT_SCRIPT } from '../../../shared/extract'
-import { Folder, Theme, VocabItem } from '../../../shared/types'
+import { Folder, MASTERED_LEVEL, Theme, VocabItem } from '../../../shared/types'
 import { captionFontCss } from '../caption-fonts'
 import { useSidePanel } from '../hooks/useSidePanel'
 import { useGuestTheme } from '../hooks/useGuestTheme'
@@ -29,10 +29,14 @@ interface VideoInfo {
 }
 
 interface HostMessage {
-  kind: 'page' | 'time' | 'guest-mousedown' | 'esc'
+  kind: 'page' | 'time' | 'guest-mousedown' | 'esc' | 'word'
   videoId?: string | null
   url?: string
   time?: number
+  /** guest 划词：选中文本、语境（所在块文本）、guest 视口坐标 */
+  text?: string
+  sentence?: string
+  rect?: { x: number; y: number; width: number; height: number }
 }
 
 function toUrl(input: string): string {
@@ -65,10 +69,16 @@ export default function BrowsePage(): JSX.Element {
   const [captionOpacity, setCaptionOpacity] = useState(0.72)
   const [captionFontSize, setCaptionFontSize] = useState(20)
   const [captionFont, setCaptionFont] = useState('default')
-  // 生词本：vocabWords 供字幕橙色高亮；列表本身供翻译弹窗判断"已添加"→显示删除按钮
+  // 生词本：vocabWords 供字幕橙色高亮（已掌握的满级单词不再高亮）；
+  // 列表本身供翻译弹窗判断"已添加"→显示删除按钮
   const [vocabList, setVocabList] = useState<VocabItem[]>([])
   const vocabWords = useMemo(
-    () => new Set(vocabList.map((v) => v.text.trim().toLowerCase())),
+    () =>
+      new Set(
+        vocabList
+          .filter((v) => (v.reviewLevel ?? 0) < MASTERED_LEVEL)
+          .map((v) => v.text.trim().toLowerCase())
+      ),
     [vocabList]
   )
   // 应用主题：useGuestTheme 同步到 YouTube guest 页面
@@ -79,7 +89,7 @@ export default function BrowsePage(): JSX.Element {
   const { sideTab, setSideTab, sideCollapsed, toggleSide, sideWidth, startSideResize } =
     useSidePanel()
   const { themeRef, applyGuestTheme } = useGuestTheme(wvRef, theme)
-  const { showZh, setShowZh, zhLines, zhLoading, toggleZh, resetZh, loadZhNative } =
+  const { showZh, setShowZh, zhLines, zhLoading, toggleZh, resetZh, loadZhNative, hasZhNative, zhOffset, adjustZhOffset } =
     useZhSubtitles(cues)
   const { fsMode, fsModeRef, fsIgnoreLeaveRef, enterFs, exitFs } = useAppFullscreen(wvRef)
   useBackForwardNav(wvRef)
@@ -237,6 +247,25 @@ export default function BrowsePage(): JSX.Element {
     else if (fsModeRef.current) exitFs()
   }, [closeSelection, exitFs, fsModeRef])
 
+  /** 跳转到指定时间并播放 */
+  const seek = useCallback((t: number): void => {
+    wvRef.current?.executeJavaScript(
+      `(() => { const v = document.querySelector("video"); if (v) { v.currentTime = ${JSON.stringify(t)}; void v.play(); } })()`
+    )
+  }, [])
+
+  // 单句循环与快捷键需要最新值：用 ref 镜像，避免事件回调闭包过期
+  const timeRef = useRef(0)
+  const cuesRef = useRef<Cue[]>([])
+  const [looping, setLooping] = useState(false)
+  const loopRef = useRef(false)
+  useEffect(() => {
+    cuesRef.current = cues
+  }, [cues])
+  useEffect(() => {
+    loopRef.current = looping
+  }, [looping])
+
   // webview 事件接线（ipc-message / dom-ready / 原生全屏拦截）
   useEffect(() => {
     const wv = wvRef.current
@@ -257,29 +286,41 @@ export default function BrowsePage(): JSX.Element {
         }
       } else if (msg.kind === 'time' && typeof msg.time === 'number') {
         setTime(msg.time)
+        timeRef.current = msg.time
+        // 单句循环：越过当前句结尾就跳回句首重播
+        if (loopRef.current) {
+          const cs = cuesRef.current
+          const idx = findActiveCueIndex(cs, msg.time)
+          if (idx >= 0) {
+            const c = cs[idx]
+            if (msg.time > c.start + Math.max(c.dur, 0.4) + 0.15) seek(c.start)
+          }
+        }
       } else if (msg.kind === 'guest-mousedown') {
         closeSelection()
       } else if (msg.kind === 'esc') {
         // webview 获得焦点时按键只进 guest，由 preload 转发回来
         handleEscape()
+      } else if (msg.kind === 'word' && msg.text && msg.rect) {
+        // guest 页面划词（评论区等）：guest 视口坐标 + webview 在宿主中的偏移 = 宿主坐标
+        const wvBox = wv.getBoundingClientRect()
+        const r = msg.rect
+        openSelection({
+          text: msg.text,
+          sentence: msg.sentence || msg.text,
+          rect: new DOMRect(wvBox.left + r.x, wvBox.top + r.y, r.width, r.height)
+        })
       }
     }
-    // 隐藏 YouTube 原生字幕 + 应用级全屏的播放器样式（同时隐藏会遮挡播放器的页面元素）
-    // + guest 页面滚动条：与宿主一致的细圆角灰黑样式（渲染进程 CSS 管不到 webview 内部，必须注入）
+    // 隐藏 YouTube 原生字幕 + 应用级全屏的播放器样式（同时隐藏会遮挡播放器的页面元素）；
+    // guest 页面滚动条样式由 useGuestTheme 按主题注入
     const onDomReady = (): void => {
       wv
         .insertCSS(
           '.caption-window, .ytp-caption-window-container { display: none !important; }' +
             'body.el-fs #movie_player { position: fixed !important; inset: 0 !important; z-index: 2147483646 !important; width: 100vw !important; height: 100vh !important; background: #000 !important; }' +
             'body.el-fs .html5-video-container, body.el-fs #movie_player video { width: 100% !important; height: 100% !important; }' +
-            'body.el-fs #secondary, body.el-fs #chat, body.el-fs #masthead-container { display: none !important; }' +
-            // YouTube 在 html/body 设了标准 scrollbar-color，会禁用 ::-webkit-scrollbar
-            // 自定义，必须先重置为 auto；下面的 webkit 规则才生效
-            'html, body { scrollbar-color: auto !important; scrollbar-width: auto !important; }' +
-            '::-webkit-scrollbar { width: 5px !important; height: 5px !important; }' +
-            '::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent !important; }' +
-            '::-webkit-scrollbar-thumb { background: #333837 !important; border-radius: 999px !important; border: none !important; }' +
-            '::-webkit-scrollbar-thumb:hover { background: #4a514d !important; }'
+            'body.el-fs #secondary, body.el-fs #chat, body.el-fs #masthead-container { display: none !important; }'
         )
         .catch(() => {})
       // 整页加载后同步应用主题（SPA 导航不触发 dom-ready，由 page 消息覆盖）
@@ -315,13 +356,15 @@ export default function BrowsePage(): JSX.Element {
     extract,
     preloadPath,
     closeSelection,
+    openSelection,
     enterFs,
     exitFs,
     handleEscape,
     resetZh,
     applyGuestTheme,
     themeRef,
-    fsIgnoreLeaveRef
+    fsIgnoreLeaveRef,
+    seek
   ])
 
   // Escape：先关翻译弹窗，其次退出应用级全屏
@@ -334,11 +377,50 @@ export default function BrowsePage(): JSX.Element {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [handleEscape])
 
-  const seek = useCallback((t: number): void => {
-    wvRef.current?.executeJavaScript(
-      `(() => { const v = document.querySelector('video'); if (v) { v.currentTime = ${JSON.stringify(t)}; void v.play(); } })()`
-    )
-  }, [])
+  // 播控快捷键（宿主侧）：空格播放/暂停，←/→ 快退快进 5s，↑/↓ 跳上/下一句字幕。
+  // webview 聚焦时按键进 guest，由 YouTube 原生快捷键接管；输入框/按钮聚焦时不劫持
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      const t = e.target as HTMLElement
+      if (t.closest('input, textarea, select, button, [contenteditable="true"]')) return
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+      if (e.key === ' ') {
+        e.preventDefault()
+        wvRef.current
+          ?.executeJavaScript(
+            '(() => { const v = document.querySelector("video"); if (v) { if (v.paused) void v.play(); else v.pause() } })()'
+          )
+          .catch(() => {})
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        seek(Math.max(0, timeRef.current - 5))
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        seek(timeRef.current + 5)
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        const cs = cuesRef.current
+        if (cs.length === 0) return
+        const idx = findActiveCueIndex(cs, timeRef.current)
+        const step = e.key === 'ArrowDown' ? 1 : -1
+        const next = Math.min(cs.length - 1, Math.max(0, (idx < 0 ? 0 : idx) + step))
+        seek(cs[next].start)
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [seek])
+
+  /** 导出双语字幕（SRT）：英文行 + 当前中文行（如有） */
+  const exportSubs = (): void => {
+    if (cues.length === 0) return
+    void api.saveTextFile({
+      defaultName: `${video?.title || video?.videoId || 'subtitles'}.srt`,
+      content: toBilingualSrt(cues, showZh ? zhLines : null),
+      filterName: 'SRT 字幕',
+      ext: 'srt'
+    })
+  }
 
   const navigate = (): void => {
     const url = toUrl(addressInput)
@@ -475,6 +557,12 @@ export default function BrowsePage(): JSX.Element {
                 zhLoading={zhLoading}
                 onShowZhChange={toggleZh}
                 knownWords={vocabWords}
+                looping={looping}
+                onLoopChange={setLooping}
+                hasZhNative={hasZhNative}
+                zhOffset={zhOffset}
+                onZhOffset={adjustZhOffset}
+                onExport={exportSubs}
               />
             ) : (
               <FavoritesTab />

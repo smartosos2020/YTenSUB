@@ -15,12 +15,15 @@
     "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20.16.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
@@ -30,6 +33,7 @@
     "electron-vite": "^2.3.0",
     "eslint": "^10.8.1",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "jsdom": "^29.1.1",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.67.0",
     "vite": "^5.4.10",
@@ -42,6 +46,7 @@
       "out/**",
       "resources/**"
     ],
+    "publish": [{ "provider": "github", "owner": "smartosos2020", "repo": "YTenSUB" }],
     "win": {
       "target": "nsis"
     }

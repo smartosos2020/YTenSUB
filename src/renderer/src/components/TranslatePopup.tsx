@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
-import { TranslateResult } from '../../../shared/types'
-import { VocabItem } from '../../../shared/types'
+import { speakWord } from '../speech'
+import { TranslateResult, VocabItem } from '../../../shared/types'
 import TrashIcon from './icons/TrashIcon'
+import VolumeIcon from './icons/VolumeIcon'
+import CopyIcon from './icons/CopyIcon'
 
 export interface PopupVideoInfo {
   videoId: string
@@ -38,6 +40,7 @@ export default function TranslatePopup({
   const [result, setResult] = useState<TranslateResult | null | 'loading'>('loading')
   const [saved, setSaved] = useState(false)
   const [removed, setRemoved] = useState(false)
+  const [copied, setCopied] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -84,6 +87,14 @@ export default function TranslatePopup({
     setTimeout(onClose, 1200)
   }
 
+  const copyTranslation = (): void => {
+    if (!result || result === 'loading') return
+    void navigator.clipboard.writeText(result.translation).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    })
+  }
+
   const top = Math.min(rect.bottom + 8, window.innerHeight - 220)
   const left = Math.min(Math.max(8, rect.left), window.innerWidth - 360)
 
@@ -92,7 +103,12 @@ export default function TranslatePopup({
       <button className="popup-close" onClick={onClose} aria-label="关闭">
         ×
       </button>
-      <div className="popup-word">{text}</div>
+      <div className="popup-word-row">
+        <div className="popup-word">{text}</div>
+        <button className="icon-btn popup-speak" title="发音" onClick={() => speakWord(text)}>
+          <VolumeIcon />
+        </button>
+      </div>
       {result === 'loading' && <div className="popup-translation">翻译中…</div>}
       {result === null && <div className="popup-translation error">翻译失败</div>}
       {result && result !== 'loading' && (
@@ -101,17 +117,22 @@ export default function TranslatePopup({
           <div className="popup-translation">{result.translation}</div>
           <div className="popup-footer">
             <span className="popup-source">{SOURCE_LABEL[result.source]}</span>
-            {saved ? (
-              <span className="popup-saved">已加入生词本</span>
-            ) : removed ? (
-              <span className="popup-saved">已从生词本删除</span>
-            ) : savedItem ? (
-              <button className="danger icon-btn" title="删除生词" onClick={remove}>
-                <TrashIcon />
+            <span className="popup-footer-actions">
+              <button className="popup-copy" title="复制释义" onClick={copyTranslation}>
+                {copied ? '✓' : <CopyIcon />}
               </button>
-            ) : (
-              <button onClick={add}>加入生词本</button>
-            )}
+              {saved ? (
+                <span className="popup-saved">已加入生词本</span>
+              ) : removed ? (
+                <span className="popup-saved">已从生词本删除</span>
+              ) : savedItem ? (
+                <button className="danger icon-btn" title="删除生词" onClick={remove}>
+                  <TrashIcon />
+                </button>
+              ) : (
+                <button onClick={add}>加入生词本</button>
+              )}
+            </span>
           </div>
         </>
       )}

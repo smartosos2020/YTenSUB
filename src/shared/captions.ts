@@ -100,6 +100,35 @@ export function findActiveCueIndex(cues: Cue[], time: number): number {
   return time <= cue.start + Math.max(cue.dur, 0) + 0.5 ? ans : -1
 }
 
+function srtTime(sec: number): string {
+  const ms = Math.max(0, Math.round(sec * 1000))
+  const h = Math.floor(ms / 3_600_000)
+  const m = Math.floor((ms % 3_600_000) / 60_000)
+  const s = Math.floor((ms % 60_000) / 1000)
+  return (
+    `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:` +
+    `${String(s).padStart(2, '0')},${String(ms % 1000).padStart(3, '0')}`
+  )
+}
+
+/** 导出双语 SRT：英文行 + （可选的）中文行；时长缺失按 0.4s 计 */
+export function toBilingualSrt(cues: Cue[], zhLines: (string | null)[] | null): string {
+  return (
+    cues
+      .map((c, i) => {
+        const lines = [
+          String(i + 1),
+          `${srtTime(c.start)} --> ${srtTime(c.start + Math.max(c.dur, 0.4))}`,
+          c.text
+        ]
+        const zh = zhLines?.[i]
+        if (zh) lines.push(zh)
+        return lines.join('\n')
+      })
+      .join('\n\n') + '\n'
+  )
+}
+
 /**
  * 把中文字幕按时间重叠对齐到英文字幕：对每条英文 cue，收集与其时间区间
  * 相交的中文 cue 文本并顺序拼接，结果与 enCues 等长对齐，无重叠为 null。

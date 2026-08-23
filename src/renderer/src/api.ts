@@ -19,6 +19,12 @@ export const api: YTenSubApi = {
     window.dispatchEvent(new Event(VOCAB_CHANGED_EVENT))
     return r
   },
+  // 复习结算后同样广播：达到掌握等级的单词要即时从字幕高亮里移除
+  vocabReview: async (id, level) => {
+    const r = await raw.vocabReview(id, level)
+    window.dispatchEvent(new Event(VOCAB_CHANGED_EVENT))
+    return r
+  },
   // 设置保存后广播事件，让常驻的 Browse 页即时应用（如字幕透明度）
   settingsSet: async (patch) => {
     const r = await raw.settingsSet(patch)
