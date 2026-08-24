@@ -63,9 +63,10 @@ export default function VocabularyPage(): JSX.Element {
 
   return (
     <div className="page vocab-page">
-      <div className="vocab-toolbar">
-        <h2>生词本（{vocab.length}）</h2>
-        <div className="vocab-toolbar-actions">
+      <div className="page-head">
+        <div className="page-head-row">
+          <h2>生词本（{vocab.length}）</h2>
+          <div className="vocab-toolbar-actions">
           <label>
             <input
               type="checkbox"
@@ -89,7 +90,9 @@ export default function VocabularyPage(): JSX.Element {
             导出
           </button>
           <button onClick={() => navigate('/review')}>去复习</button>
+          </div>
         </div>
+        <div className="page-desc">收藏的生词与例句，支持 CSV 导出与间隔重复复习</div>
       </div>
       {vocab.length === 0 && (
         <div className="empty-hint">在浏览页字幕里选中单词，就能加入生词本</div>

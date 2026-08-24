@@ -80,6 +80,18 @@ describe('Store', () => {
     expect(store.getSettings().enabledTranslators).toContain('local')
   })
 
+  it('跟读脚本按 videoId 存取', () => {
+    const { store } = makeStore()
+    expect(store.getShadowing('v1')).toBeNull()
+    store.setShadowing({
+      videoId: 'v1',
+      title: 't',
+      generatedAt: 1,
+      items: [{ text: 'Hello there.', zh: '你好。', start: 1, dur: 2 }]
+    })
+    expect(store.getShadowing('v1')?.items).toHaveLength(1)
+  })
+
   it('复习结算：写入等级并计算到期时间；越界等级被钳制', () => {
     const { store } = makeStore()
     const item = store.addVocab({

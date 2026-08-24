@@ -12,6 +12,17 @@ export function speakWord(text: string): void {
   })
 }
 
+/**
+ * 句子级示范音（跟读页"原声"）：当前为系统 TTS。
+ * 预留 provider 链：LLM 语音模型（OpenAI 兼容 /audio/speech）成熟后作为顶级源接入，
+ * 按句子文本哈希缓存音频，voice/model 变更时换 key 不串味。
+ */
+export function speakText(text: string): void {
+  const t = text.trim()
+  if (!t) return
+  speakSystem(t)
+}
+
 async function playRealVoice(t: string): Promise<boolean> {
   try {
     const url = await api.dictPronounce(t)

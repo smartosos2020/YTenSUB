@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { speakWord } from '../speech'
 import { TranslateResult, VocabItem } from '../../../shared/types'
@@ -54,6 +54,16 @@ export default function TranslatePopup({
     }
   }, [text])
 
+  // 设置项：打开弹窗自动朗读发音
+  useEffect(() => {
+    api
+      .settingsGet()
+      .then((s) => {
+        if (s.autoSpeakOnLookup) speakWord(text)
+      })
+      .catch(() => {})
+  }, [text])
+
   useEffect(() => {
     const onDocMouseDown = (e: MouseEvent): void => {
       if (ref.current && ref.current.contains(e.target as Node)) return
@@ -65,7 +75,7 @@ export default function TranslatePopup({
     return () => document.removeEventListener('mousedown', onDocMouseDown)
   }, [onClose])
 
-  const add = async (): Promise<void> => {
+  const add = useCallback(async (): Promise<void> => {
     if (!result || result === 'loading') return
     await api.vocabAdd({
       text,
@@ -78,7 +88,18 @@ export default function TranslatePopup({
     })
     setSaved(true)
     setTimeout(onClose, 1200)
-  }
+  }, [result, text, video.videoId, video.title, time, sentence, onClose])
+
+  // 设置项：翻译成功且未收藏时自动加入生词本
+  useEffect(() => {
+    if (!result || result === 'loading' || savedItem || saved) return
+    api
+      .settingsGet()
+      .then((s) => {
+        if (s.autoCollectWord) void add()
+      })
+      .catch(() => {})
+  }, [result, savedItem, saved, add])
 
   const remove = async (): Promise<void> => {
     if (!savedItem) return

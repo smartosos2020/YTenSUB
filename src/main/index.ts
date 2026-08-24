@@ -4,8 +4,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Store } from './store'
 import { Dict } from './dict'
-import { googleTranslateFree, llmTranslate, translateBatch, translateText } from './translate'
-import { Favorite, Settings, TranslateSource, VocabItem, defaultData } from '../shared/types'
+import { googleTranslateFree, llmChat, llmTranslate, translateBatch, translateText } from './translate'
+import { buildShadowingMessages, fetchEnglishCues, parseShadowingResponse } from './shadowing'
+import { Favorite, Settings, ShadowingScript, TranslateSource, VocabItem, defaultData } from '../shared/types'
 
 const dataFile = path.join(app.getPath('userData'), 'ytensub-data.json')
 
@@ -37,7 +38,9 @@ let mainWin: BrowserWindow | null = null
 
 // 应用主题映射为全局模拟的 prefers-color-scheme：
 // YouTube（设备主题模式）跟随系统媒体查询，借此让 guest 页面跟随我们的夜晚/白天
-nativeTheme.themeSource = store.getSettings().theme === 'day' ? 'light' : 'dark'
+const initialTheme = store.getSettings().theme
+nativeTheme.themeSource =
+  initialTheme === 'day' ? 'light' : initialTheme === 'night' ? 'dark' : 'system'
 
 // resources/** 打进 app.asar，dev 与打包版用同一相对路径（Electron 的 fs 可直接读 asar 内文件）
 const dictPath = path.join(__dirname, '..', '..', 'resources', 'dict.json')
@@ -118,7 +121,10 @@ function registerIpc(): void {
   ipcMain.handle('settings:set', (_e, patch: Partial<Settings>) => {
     const r = store.setSettings(patch)
     // 主题变更即时反映到全局模拟的 prefers-color-scheme
-    if (patch.theme) nativeTheme.themeSource = patch.theme === 'day' ? 'light' : 'dark'
+    if (patch.theme) {
+      nativeTheme.themeSource =
+        patch.theme === 'day' ? 'light' : patch.theme === 'night' ? 'dark' : 'system'
+    }
     return r
   })
 
@@ -130,6 +136,20 @@ function registerIpc(): void {
     else mainWin.maximize()
   })
   ipcMain.on('window:close', () => mainWin?.close())
+
+  // LLM 连通性测试：发一条最小请求并计时
+  ipcMain.handle('llm:test', async () => {
+    const s = store.getSettings()
+    const t0 = Date.now()
+    try {
+      const r = await llmChat(s.llm, [{ role: 'user', content: 'ping' }], (u, i) =>
+        net.fetch(u, i)
+      )
+      return { ok: r !== null, ms: Date.now() - t0 }
+    } catch {
+      return { ok: false, ms: Date.now() - t0 }
+    }
+  })
 
   ipcMain.handle('webview:preload-path', () => {
     const p = path.join(__dirname, '..', 'preload', 'webview-preload.js')
@@ -218,6 +238,62 @@ function registerIpc(): void {
     }
     pronounceCache.set(w, url)
     return url
+  })
+
+  // 跟读脚本：读取已生成结果
+  ipcMain.handle('shadowing:get', (_e, videoId: string) => store.getShadowing(videoId))
+
+  /**
+   * 跟读脚本生成：主进程直接拉字幕（不依赖浏览页），LLM 精选清洗句子，
+   * Google 批量出中文释义，写库后返回。已生成过直接返回缓存。
+   */
+  ipcMain.handle('shadowing:generate', async (_e, videoId: string) => {
+    const vid = String(videoId ?? '').trim()
+    if (!vid) return { error: 'no-captions' }
+    const existing = store.getShadowing(vid)
+    if (existing) return { script: existing }
+
+    const caps = await fetchEnglishCues(vid, (u, init) => net.fetch(u, init))
+    if (!caps) return { error: 'no-captions' }
+
+    const s = store.getSettings()
+    if (!s.llm.baseUrl || !s.llm.apiKey || !s.llm.model) return { error: 'no-llm' }
+
+    const raw = await llmChat(s.llm, buildShadowingMessages(caps.cues), (u, init) =>
+      net.fetch(u, init)
+    )
+    const picked = raw ? parseShadowingResponse(raw, caps.cues.length) : []
+    if (picked.length === 0) return { error: 'llm-failed' }
+
+    // 中文释义：Google 优先，LLM 兜底（与字幕中译同链）
+    const translateOne = async (t: string): Promise<string | null> => {
+      const r = await translateText(t, {
+        localLookup: () => null,
+        googleTranslate: (x) => googleTranslateFree(x, (u) => net.fetch(u)),
+        llmTranslate: (x) => llmTranslate(x, s.llm, (u, init) => net.fetch(u, init)),
+        enabled: ['google', 'llm']
+      })
+      return r?.translation ?? null
+    }
+    const zh = await translateBatch(
+      picked.map((p) => p.text),
+      translateOne,
+      4
+    )
+
+    const script: ShadowingScript = {
+      videoId: vid,
+      title: caps.title,
+      generatedAt: Date.now(),
+      items: picked.map((p, idx) => {
+        const start = caps.cues[p.i].start
+        const next = picked[idx + 1]
+        const dur = next ? caps.cues[next.i].start - start : 4
+        return { text: p.text, zh: zh[idx] ?? null, start, dur: Math.max(1, dur) }
+      })
+    }
+    store.setShadowing(script)
+    return { script }
   })
 }
 

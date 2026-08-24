@@ -50,7 +50,34 @@ export interface TranslateResult {
   source: TranslateSource
 }
 
-export type Theme = 'night' | 'day'
+/** 跟读脚本的一条句子（LLM 从字幕提炼、清洗口头禅） */
+export interface ShadowingItem {
+  /** 清洗后的英文句子（练习目标文本） */
+  text: string
+  /** 中文释义 */
+  zh: string | null
+  /** 对应原视频的起始秒（备用：将来原声切片/视频跳转） */
+  start: number
+  dur: number
+}
+
+/** 一个视频的跟读脚本：按 videoId 存储，生成一次终身复用 */
+export interface ShadowingScript {
+  videoId: string
+  title: string
+  generatedAt: number
+  items: ShadowingItem[]
+}
+
+/** shadowing:generate 的返回：成功给脚本，失败给原因码 */
+export type ShadowingResult =
+  | { script: ShadowingScript }
+  | { error: 'no-captions' | 'no-llm' | 'llm-failed' }
+
+export type Theme = 'night' | 'day' | 'system'
+
+/** 字幕浮层质感：纯色 / 毛玻璃 / 无边框纯文字 */
+export type CaptionTexture = 'solid' | 'glass' | 'none'
 
 export interface LlmSettings {
   baseUrl: string
@@ -64,14 +91,22 @@ export interface Settings {
   llm: LlmSettings
   /** 视频字幕浮层背景透明度 0.2 ~ 1 */
   captionOpacity: number
-  /** 界面主题：夜晚（深色底灰白字）/ 白天（浅色底黑字） */
+  /** 界面主题：夜晚 / 白天 / 跟随系统 */
   theme: Theme
+  /** 界面强调色 key（见 renderer theme.ts 的 ACCENTS 色板） */
+  accentColor: string
   /** 是否显示中文字幕（默认关闭，由字幕列表顶部的滑动开关控制） */
   showZhSubtitle: boolean
   /** 主窗字幕（视频浮层）英文行字号 px，中文行按其 0.8 倍显示 */
   captionFontSize: number
   /** 主窗字幕字体 key（见 renderer caption-fonts.ts）；'default' 跟随界面等宽字体 */
   captionFont: string
+  /** 字幕浮层质感：纯色 / 毛玻璃 / 无边框 */
+  captionTexture: CaptionTexture
+  /** 取词弹窗打开时自动朗读发音 */
+  autoSpeakOnLookup: boolean
+  /** 查词成功后自动加入生词本 */
+  autoCollectWord: boolean
 }
 
 export interface AppData {
@@ -79,6 +114,8 @@ export interface AppData {
   favorites: Favorite[]
   vocab: VocabItem[]
   settings: Settings
+  /** 跟读脚本，按 videoId 索引 */
+  shadowing: Record<string, ShadowingScript>
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -86,9 +123,13 @@ export const DEFAULT_SETTINGS: Settings = {
   llm: { baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini' },
   captionOpacity: 0.72,
   theme: 'night',
+  accentColor: 'green',
   showZhSubtitle: false,
   captionFontSize: 20,
-  captionFont: 'default'
+  captionFont: 'default',
+  captionTexture: 'solid',
+  autoSpeakOnLookup: false,
+  autoCollectWord: false
 }
 
 export function defaultData(): AppData {
@@ -96,6 +137,7 @@ export function defaultData(): AppData {
     folders: [],
     favorites: [],
     vocab: [],
-    settings: DEFAULT_SETTINGS
+    settings: DEFAULT_SETTINGS,
+    shadowing: {}
   }
 }

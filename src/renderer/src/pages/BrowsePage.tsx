@@ -4,7 +4,7 @@ import type { WebviewTag } from 'electron'
 import { api, SETTINGS_CHANGED_EVENT, VOCAB_CHANGED_EVENT } from '../api'
 import { Cue, findActiveCueIndex, parseCaptionText, toBilingualSrt } from '../../../shared/captions'
 import { EXTRACT_SCRIPT } from '../../../shared/extract'
-import { Folder, MASTERED_LEVEL, Theme, VocabItem } from '../../../shared/types'
+import { CaptionTexture, Folder, MASTERED_LEVEL, Theme, VocabItem } from '../../../shared/types'
 import { captionFontCss } from '../caption-fonts'
 import { useSidePanel } from '../hooks/useSidePanel'
 import { useGuestTheme } from '../hooks/useGuestTheme'
@@ -69,6 +69,7 @@ export default function BrowsePage(): JSX.Element {
   const [captionOpacity, setCaptionOpacity] = useState(0.72)
   const [captionFontSize, setCaptionFontSize] = useState(20)
   const [captionFont, setCaptionFont] = useState('default')
+  const [captionTexture, setCaptionTexture] = useState<CaptionTexture>('solid')
   // 生词本：vocabWords 供字幕橙色高亮（已掌握的满级单词不再高亮）；
   // 列表本身供翻译弹窗判断"已添加"→显示删除按钮
   const [vocabList, setVocabList] = useState<VocabItem[]>([])
@@ -191,6 +192,7 @@ export default function BrowsePage(): JSX.Element {
         setTheme(s.theme ?? 'night')
         setCaptionFontSize(s.captionFontSize ?? 20)
         setCaptionFont(s.captionFont ?? 'default')
+        setCaptionTexture(s.captionTexture ?? 'solid')
       })
     }
     load()
@@ -517,6 +519,7 @@ export default function BrowsePage(): JSX.Element {
             opacity={captionOpacity}
             fontSize={captionFontSize}
             fontFamily={captionFontCss(captionFont)}
+            texture={captionTexture}
             showZh={showZh}
             zhLines={zhLines}
             knownWords={vocabWords}

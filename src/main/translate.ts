@@ -58,11 +58,17 @@ export async function googleTranslateFree(
   return out || null
 }
 
-/** OpenAI 兼容 chat/completions 翻译 */
-export async function llmTranslate(
-  text: string,
+/** OpenAI 兼容 chat/completions 通用调用 */
+export interface ChatMessage {
+  role: 'system' | 'user'
+  content: string
+}
+
+export async function llmChat(
   cfg: LlmSettings,
-  fetchFn: FetchLike
+  messages: ChatMessage[],
+  fetchFn: FetchLike,
+  temperature = 0.2
 ): Promise<string | null> {
   if (!cfg.baseUrl || !cfg.apiKey || !cfg.model) return null
   const res = await fetchFn(`${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
@@ -71,24 +77,33 @@ export async function llmTranslate(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${cfg.apiKey}`
     },
-    body: JSON.stringify({
-      model: cfg.model,
-      temperature: 0.2,
-      messages: [
-        {
-          role: 'system',
-          content:
-            '你是英译中翻译助手。用户会给你英语单词或短语，请只返回简洁的中文释义，不要解释、不要加引号。'
-        },
-        { role: 'user', content: text }
-      ]
-    })
+    body: JSON.stringify({ model: cfg.model, temperature, messages })
   })
   if (!res.ok) return null
   const data = (await res.json()) as {
     choices?: { message?: { content?: string } }[]
   }
   return data.choices?.[0]?.message?.content?.trim() || null
+}
+
+/** OpenAI 兼容 chat/completions 翻译 */
+export async function llmTranslate(
+  text: string,
+  cfg: LlmSettings,
+  fetchFn: FetchLike
+): Promise<string | null> {
+  return llmChat(
+    cfg,
+    [
+      {
+        role: 'system',
+        content:
+          '你是英译中翻译助手。用户会给你英语单词或短语，请只返回简洁的中文释义，不要解释、不要加引号。'
+      },
+      { role: 'user', content: text }
+    ],
+    fetchFn
+  )
 }
 
 /**

@@ -7,6 +7,7 @@ import {
   Folder,
   REVIEW_INTERVALS_MS,
   Settings,
+  ShadowingScript,
   VocabItem,
   defaultData
 } from '../shared/types'
@@ -146,6 +147,16 @@ export class Store {
     const lv = Math.max(0, Math.min(REVIEW_INTERVALS_MS.length - 1, level))
     item.reviewLevel = lv
     item.reviewDue = Date.now() + REVIEW_INTERVALS_MS[lv]
+    this.scheduleSave()
+  }
+
+  // ---------- shadowing ----------
+  getShadowing(videoId: string): ShadowingScript | null {
+    return this.data.shadowing[videoId] ?? null
+  }
+
+  setShadowing(script: ShadowingScript): void {
+    this.data.shadowing[script.videoId] = script
     this.scheduleSave()
   }
 

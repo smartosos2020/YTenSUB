@@ -7,6 +7,7 @@ import BrowsePage from './pages/BrowsePage'
 import FavoritesPage from './pages/FavoritesPage'
 import VocabularyPage from './pages/VocabularyPage'
 import ReviewPage from './pages/ReviewPage'
+import ShadowingPage from './pages/ShadowingPage'
 import SettingsPage from './pages/SettingsPage'
 import TitleBar from './components/TitleBar'
 import PlayIcon from './components/icons/PlayIcon'
@@ -45,6 +46,7 @@ function MainArea(): JSX.Element {
           <Route path="/favorites" element={<FavoritesPage />} />
           <Route path="/vocabulary" element={<VocabularyPage />} />
           <Route path="/review" element={<ReviewPage />} />
+          <Route path="/shadowing" element={<ShadowingPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       )}
@@ -56,10 +58,17 @@ export default function App(): JSX.Element {
   const [collapsed, setCollapsed] = usePersistentState<boolean>('ytensub:nav-collapsed', false)
 
   useEffect(() => {
-    const syncTheme = (): void => void api.settingsGet().then((s) => applyTheme(s.theme))
+    const syncTheme = (): void =>
+      void api.settingsGet().then((s) => applyTheme(s.theme, s.accentColor))
     syncTheme()
+    // 跟随系统模式下，系统明暗变化时重新解析
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    mq.addEventListener('change', syncTheme)
     window.addEventListener(SETTINGS_CHANGED_EVENT, syncTheme)
-    return () => window.removeEventListener(SETTINGS_CHANGED_EVENT, syncTheme)
+    return () => {
+      mq.removeEventListener('change', syncTheme)
+      window.removeEventListener(SETTINGS_CHANGED_EVENT, syncTheme)
+    }
   }, [])
 
   return (

@@ -27,6 +27,9 @@ const api = {
   dataExport: () => ipcRenderer.invoke('data:export'),
   dataImport: () => ipcRenderer.invoke('data:import'),
   dictPronounce: (word: string) => ipcRenderer.invoke('dict:pronounce', word),
+  shadowingGet: (videoId: string) => ipcRenderer.invoke('shadowing:get', videoId),
+  shadowingGenerate: (videoId: string) => ipcRenderer.invoke('shadowing:generate', videoId),
+  llmTest: () => ipcRenderer.invoke('llm:test'),
 
   // 自定义标题栏的窗口控制
   windowMinimize: () => ipcRenderer.send('window:minimize'),

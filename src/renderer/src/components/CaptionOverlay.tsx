@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Cue, findActiveCueIndex } from '../../../shared/captions'
+import { CaptionTexture } from '../../../shared/types'
+import { captionTextureStyle } from '../caption-style'
 import WordSpans from './WordSpans'
 import { WordSelection } from './SubtitlePanel'
 
@@ -11,6 +13,8 @@ interface Props {
   fontSize: number
   /** font-family 栈；空字符串表示跟随界面默认等宽字体 */
   fontFamily: string
+  /** 浮层质感：纯色 / 毛玻璃 / 无边框 */
+  texture: CaptionTexture
   /** 是否显示中文字幕 */
   showZh: boolean
   /** 与 cues 等长对齐的中文字幕；null 表示尚未就绪 */
@@ -37,6 +41,7 @@ export default function CaptionOverlay({
   opacity,
   fontSize,
   fontFamily,
+  texture,
   showZh,
   zhLines,
   knownWords,
@@ -98,7 +103,7 @@ export default function CaptionOverlay({
       >
         <div
           className="caption-line"
-          style={{ background: `rgba(0, 0, 0, ${opacity})`, fontSize }}
+          style={{ ...captionTextureStyle(texture, opacity), fontSize }}
           onMouseDown={onMouseDown}
           title="按住空白处可拖动"
         >
@@ -112,7 +117,7 @@ export default function CaptionOverlay({
         {zhText && (
           <div
             className="caption-line caption-zh"
-            style={{ background: `rgba(0, 0, 0, ${opacity})`, fontSize: Math.round(fontSize * 0.8) }}
+            style={{ ...captionTextureStyle(texture, opacity), fontSize: Math.round(fontSize * 0.8) }}
             onMouseDown={onMouseDown}
             title="按住空白处可拖动"
           >

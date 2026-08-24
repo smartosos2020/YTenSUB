@@ -47,7 +47,12 @@ export default function ReviewPage(): JSX.Element {
   if (queue.length === 0) {
     return (
       <div className="page review-page">
-        <h2>复习</h2>
+        <div className="page-head">
+          <div className="page-head-row">
+            <h2>复习</h2>
+          </div>
+          <div className="page-desc">间隔重复记忆卡片：按住卡片左滑不认识，右滑认识</div>
+        </div>
         <div className="empty-hint">
           {total === 0 ? '今天没有到期的生词，去看看新视频吧' : '全部复习完了'}
         </div>
@@ -100,22 +105,24 @@ export default function ReviewPage(): JSX.Element {
 
   return (
     <div className="page review-page">
-      <h2>复习</h2>
-      <div className="review-progress">
-        <span>
-          第 {done + 1} / {total} 张
-        </span>
-        <label className="review-toggle">
-          <span>释义</span>
-          <span className="switch" title="显示 / 隐藏释义">
-            <input
-              type="checkbox"
-              checked={revealed}
-              onChange={(e) => setRevealed(e.target.checked)}
-            />
-            <span className="switch-slider" />
-          </span>
-        </label>
+      <div className="page-head">
+        <div className="page-head-row">
+          <h2>复习</h2>
+          <label className="review-toggle">
+            <span>释义</span>
+            <span className="switch" title="显示 / 隐藏释义">
+              <input
+                type="checkbox"
+                checked={revealed}
+                onChange={(e) => setRevealed(e.target.checked)}
+              />
+              <span className="switch-slider" />
+            </span>
+          </label>
+        </div>
+        <div className="page-desc">
+          间隔重复记忆卡片：按住卡片左滑不认识，右滑认识（第 {done + 1} / {total} 张）
+        </div>
       </div>
       <div className="review-center">
         <div
