@@ -59,6 +59,8 @@ export interface ShadowingItem {
   /** 对应原视频的起始秒（备用：将来原声切片/视频跳转） */
   start: number
   dur: number
+  /** 场景号：连续句子同属一个场景，保持视频的叙事延续性 */
+  scene?: number
 }
 
 /** 一个视频的跟读脚本：按 videoId 存储，生成一次终身复用 */
@@ -66,13 +68,20 @@ export interface ShadowingScript {
   videoId: string
   title: string
   generatedAt: number
+  /** 生成方式（老数据可能缺失） */
+  generatedBy?: 'llm' | 'rules'
+  /** LLM 调用失败的原因（规则兜底产物上记录，便于诊断） */
+  llmError?: string
   items: ShadowingItem[]
 }
 
-/** shadowing:generate 的返回：成功给脚本，失败给原因码 */
+/** shadowing:generate 的返回：成功给脚本，失败给原因码（detail 为具体错误） */
 export type ShadowingResult =
   | { script: ShadowingScript }
-  | { error: 'no-captions' | 'no-llm' | 'llm-failed' }
+  | { error: 'no-captions' | 'no-llm' | 'llm-failed'; detail?: string }
+
+/** 跟读脚本生成策略：仅 LLM / LLM 优先本地规则兜底 / 仅本地规则（免费，质量较低） */
+export type ShadowingStrategy = 'llm-only' | 'llm-fallback' | 'rules-only'
 
 export type Theme = 'night' | 'day' | 'system'
 
@@ -86,7 +95,7 @@ export interface LlmSettings {
 }
 
 export interface Settings {
-  /** 翻译链按固定优先级 local → google → llm 执行，这里只控制各级的开关 */
+  /** 翻译链：数组顺序即优先级，依次回退 */
   enabledTranslators: TranslateSource[]
   llm: LlmSettings
   /** 视频字幕浮层背景透明度 0.2 ~ 1 */
@@ -97,16 +106,24 @@ export interface Settings {
   accentColor: string
   /** 是否显示中文字幕（默认关闭，由字幕列表顶部的滑动开关控制） */
   showZhSubtitle: boolean
-  /** 主窗字幕（视频浮层）英文行字号 px，中文行按其 0.8 倍显示 */
+  /** 主窗字幕（视频浮层）英文行字号 px */
   captionFontSize: number
+  /** 主窗字幕中文行字号 px */
+  captionZhSize: number
   /** 主窗字幕字体 key（见 renderer caption-fonts.ts）；'default' 跟随界面等宽字体 */
   captionFont: string
+  /** 英文行字重：400 常规 / 500 适中 / 700 加粗 / 800 特粗 */
+  captionWeight: number
+  /** 字幕文字阴影 */
+  captionShadow: boolean
   /** 字幕浮层质感：纯色 / 毛玻璃 / 无边框 */
   captionTexture: CaptionTexture
   /** 取词弹窗打开时自动朗读发音 */
   autoSpeakOnLookup: boolean
   /** 查词成功后自动加入生词本 */
   autoCollectWord: boolean
+  /** 跟读脚本生成策略 */
+  shadowingStrategy: ShadowingStrategy
 }
 
 export interface AppData {
@@ -126,10 +143,14 @@ export const DEFAULT_SETTINGS: Settings = {
   accentColor: 'green',
   showZhSubtitle: false,
   captionFontSize: 20,
+  captionZhSize: 16,
   captionFont: 'default',
+  captionWeight: 400,
+  captionShadow: true,
   captionTexture: 'solid',
   autoSpeakOnLookup: false,
-  autoCollectWord: false
+  autoCollectWord: false,
+  shadowingStrategy: 'llm-fallback'
 }
 
 export function defaultData(): AppData {

@@ -68,7 +68,10 @@ export default function BrowsePage(): JSX.Element {
   const [selection, setSelection] = useState<WordSelection | null>(null)
   const [captionOpacity, setCaptionOpacity] = useState(0.72)
   const [captionFontSize, setCaptionFontSize] = useState(20)
+  const [captionZhSize, setCaptionZhSize] = useState(16)
   const [captionFont, setCaptionFont] = useState('default')
+  const [captionWeight, setCaptionWeight] = useState(400)
+  const [captionShadow, setCaptionShadow] = useState(true)
   const [captionTexture, setCaptionTexture] = useState<CaptionTexture>('solid')
   // 生词本：vocabWords 供字幕橙色高亮（已掌握的满级单词不再高亮）；
   // 列表本身供翻译弹窗判断"已添加"→显示删除按钮
@@ -192,6 +195,9 @@ export default function BrowsePage(): JSX.Element {
         setTheme(s.theme ?? 'night')
         setCaptionFontSize(s.captionFontSize ?? 20)
         setCaptionFont(s.captionFont ?? 'default')
+        setCaptionZhSize(s.captionZhSize ?? 16)
+        setCaptionWeight(s.captionWeight ?? 400)
+        setCaptionShadow(s.captionShadow ?? true)
         setCaptionTexture(s.captionTexture ?? 'solid')
       })
     }
@@ -518,7 +524,10 @@ export default function BrowsePage(): JSX.Element {
             time={time}
             opacity={captionOpacity}
             fontSize={captionFontSize}
+            zhSize={captionZhSize}
             fontFamily={captionFontCss(captionFont)}
+            weight={captionWeight}
+            shadow={captionShadow}
             texture={captionTexture}
             showZh={showZh}
             zhLines={zhLines}

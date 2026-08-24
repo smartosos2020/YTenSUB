@@ -1,11 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
-import { Favorite, Folder, ShadowingResult } from '../../../shared/types'
+import { Favorite, Folder, ShadowingResult, ShadowingScript } from '../../../shared/types'
 import GridIcon from '../components/icons/GridIcon'
 import ListIcon from '../components/icons/ListIcon'
 import TrashIcon from '../components/icons/TrashIcon'
 import UserSpeakIcon from '../components/icons/UserSpeakIcon'
+
+const STRATEGY_LABEL: Record<string, string> = {
+  'llm-only': '仅 LLM',
+  'llm-fallback': 'LLM 优先，本地规则兜底',
+  'rules-only': '仅本地规则'
+}
+
+const GENERATED_BY_LABEL: Record<string, string> = {
+  llm: 'LLM',
+  rules: '本地规则'
+}
 
 type ViewMode = 'grid' | 'list'
 
@@ -19,6 +30,12 @@ export default function FavoritesPage(): JSX.Element {
   // 跟读脚本生成中：卡片按钮置灰；genMsg 为失败提示
   const [genId, setGenId] = useState<string | null>(null)
   const [genMsg, setGenMsg] = useState('')
+  // 已有脚本与当前生成策略不一致时的确认目标
+  const [regenTarget, setRegenTarget] = useState<{
+    fav: Favorite
+    existing: ShadowingScript
+    strategy: string
+  } | null>(null)
 
   const reload = useCallback(async (): Promise<void> => {
     setFolders(await api.folderList())
@@ -52,17 +69,11 @@ export default function FavoritesPage(): JSX.Element {
     navigate(`/browse?v=${encodeURIComponent(fav.videoId)}`)
   }
 
-  /** 跟读入口：已生成直接跳转；未生成则调 LLM 生成后跳转 */
-  const openShadowing = async (fav: Favorite): Promise<void> => {
-    const vid = fav.videoId
+  /** 生成脚本并跳转跟读页；force 时覆盖已有脚本 */
+  const generateAndGo = async (vid: string, force = false): Promise<void> => {
     setGenId(vid)
     try {
-      const existing = await api.shadowingGet(vid)
-      if (existing) {
-        navigate(`/shadowing?v=${encodeURIComponent(vid)}`)
-        return
-      }
-      const r = (await api.shadowingGenerate(vid)) as ShadowingResult
+      const r = (await api.shadowingGenerate(vid, force)) as ShadowingResult
       if ('script' in r) {
         navigate(`/shadowing?v=${encodeURIComponent(vid)}`)
       } else {
@@ -71,13 +82,37 @@ export default function FavoritesPage(): JSX.Element {
             ? '请先在设置页配置 LLM API'
             : r.error === 'no-captions'
               ? '该视频没有可用字幕，无法生成脚本'
-              : 'LLM 生成失败，请稍后重试'
+              : `生成失败${'detail' in r && r.detail ? `：${r.detail}` : '，请稍后重试'}`
         )
         setTimeout(() => setGenMsg(''), 3000)
       }
     } finally {
       setGenId(null)
     }
+  }
+
+  /** 跟读入口：未生成则生成后跳转；已生成且生成方式与当前策略不符时先确认 */
+  const openShadowing = async (fav: Favorite): Promise<void> => {
+    const vid = fav.videoId
+    const existing = (await api.shadowingGet(vid)) as ShadowingScript | null
+    if (!existing) {
+      await generateAndGo(vid)
+      return
+    }
+    const s = await api.settingsGet()
+    const strategy = s.shadowingStrategy ?? 'llm-fallback'
+    const by = existing.generatedBy
+    // 老数据无 generatedBy 也算不一致，提示用户
+    const mismatch =
+      by === undefined ||
+      (strategy === 'rules-only' && by !== 'rules') ||
+      (strategy === 'llm-only' && by !== 'llm') ||
+      (strategy === 'llm-fallback' && by === 'rules')
+    if (mismatch) {
+      setRegenTarget({ fav, existing, strategy })
+      return
+    }
+    navigate(`/shadowing?v=${encodeURIComponent(vid)}`)
   }
 
   return (
@@ -178,6 +213,39 @@ export default function FavoritesPage(): JSX.Element {
           ))}
         </div>
       </div>
+      {regenTarget && (
+        <div className="regen-overlay" onClick={() => setRegenTarget(null)}>
+          <div className="regen-card" onClick={(e) => e.stopPropagation()}>
+            <div className="regen-title">该视频已有跟读脚本</div>
+            <div className="regen-desc">
+              脚本由「
+              {GENERATED_BY_LABEL[regenTarget.existing.generatedBy ?? ''] ?? '未知方式（旧版本）'}
+              」生成；当前生成策略为「{STRATEGY_LABEL[regenTarget.strategy]}」。 是否按当前策略重新生成？
+            </div>
+            <div className="regen-actions">
+              <button
+                onClick={() => {
+                  const t = regenTarget
+                  setRegenTarget(null)
+                  navigate(`/shadowing?v=${encodeURIComponent(t.fav.videoId)}`)
+                }}
+              >
+                继续使用旧脚本
+              </button>
+              <button
+                className="regen-yes"
+                onClick={() => {
+                  const t = regenTarget
+                  setRegenTarget(null)
+                  void generateAndGo(t.fav.videoId, true)
+                }}
+              >
+                重新生成
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

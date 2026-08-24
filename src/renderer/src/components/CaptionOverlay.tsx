@@ -9,10 +9,16 @@ interface Props {
   cues: Cue[]
   time: number
   opacity: number
-  /** 英文字幕行字号 px；中文行按其 0.8 倍显示 */
+  /** 英文字幕行字号 px */
   fontSize: number
+  /** 中文字幕行字号 px */
+  zhSize: number
   /** font-family 栈；空字符串表示跟随界面默认等宽字体 */
   fontFamily: string
+  /** 英文行字重：400 常规 / 500 适中 / 700 加粗 / 800 特粗 */
+  weight: number
+  /** 文字阴影 */
+  shadow: boolean
   /** 浮层质感：纯色 / 毛玻璃 / 无边框 */
   texture: CaptionTexture
   /** 是否显示中文字幕 */
@@ -40,7 +46,10 @@ export default function CaptionOverlay({
   time,
   opacity,
   fontSize,
+  zhSize,
   fontFamily,
+  weight,
+  shadow,
   texture,
   showZh,
   zhLines,
@@ -89,6 +98,10 @@ export default function CaptionOverlay({
   if (idx === -1) return null
   const cue = cues[idx]
   const zhText = showZh ? (zhLines?.[idx] ?? null) : null
+  const lineStyle: React.CSSProperties = {
+    ...captionTextureStyle(texture, opacity),
+    ...(shadow ? {} : { textShadow: 'none' })
+  }
   return (
     <div
       className="caption-overlay"
@@ -103,7 +116,7 @@ export default function CaptionOverlay({
       >
         <div
           className="caption-line"
-          style={{ ...captionTextureStyle(texture, opacity), fontSize }}
+          style={{ ...lineStyle, fontSize, fontWeight: weight === 400 ? undefined : weight }}
           onMouseDown={onMouseDown}
           title="按住空白处可拖动"
         >
@@ -117,7 +130,7 @@ export default function CaptionOverlay({
         {zhText && (
           <div
             className="caption-line caption-zh"
-            style={{ ...captionTextureStyle(texture, opacity), fontSize: Math.round(fontSize * 0.8) }}
+            style={{ ...lineStyle, fontSize: zhSize }}
             onMouseDown={onMouseDown}
             title="按住空白处可拖动"
           >

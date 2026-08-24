@@ -4,8 +4,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Store } from './store'
 import { Dict } from './dict'
-import { googleTranslateFree, llmChat, llmTranslate, translateBatch, translateText } from './translate'
-import { buildShadowingMessages, fetchEnglishCues, parseShadowingResponse } from './shadowing'
+import { googleTranslateFree, llmChatDetailed, llmTranslate, translateBatch, translateText } from './translate'
+import { buildShadowingMessages, fetchEnglishCues, mergeCuesToSentences, parseShadowingResponse, ruleBasedPick, withSceneNumbers } from './shadowing'
 import { Favorite, Settings, ShadowingScript, TranslateSource, VocabItem, defaultData } from '../shared/types'
 
 const dataFile = path.join(app.getPath('userData'), 'ytensub-data.json')
@@ -51,7 +51,8 @@ const TRANSLATOR_ORDER: TranslateSource[] = ['local', 'google', 'llm']
 function registerIpc(): void {
   ipcMain.handle('translate:text', (_e, text: string) => {
     const s = store.getSettings()
-    const enabled = TRANSLATOR_ORDER.filter((t) => s.enabledTranslators.includes(t))
+    // 数组顺序即优先级（设置页可上下移调整）
+    const enabled = s.enabledTranslators.filter((t) => TRANSLATOR_ORDER.includes(t))
     return translateText(text, {
       localLookup: (w) => {
         const hit = dict.lookup(w)
@@ -141,14 +142,10 @@ function registerIpc(): void {
   ipcMain.handle('llm:test', async () => {
     const s = store.getSettings()
     const t0 = Date.now()
-    try {
-      const r = await llmChat(s.llm, [{ role: 'user', content: 'ping' }], (u, i) =>
-        net.fetch(u, i)
-      )
-      return { ok: r !== null, ms: Date.now() - t0 }
-    } catch {
-      return { ok: false, ms: Date.now() - t0 }
-    }
+    const r = await llmChatDetailed(s.llm, [{ role: 'user', content: 'ping' }], (u, i) =>
+      net.fetch(u, i)
+    )
+    return { ok: r.error === null && r.content !== null, ms: Date.now() - t0 }
   })
 
   ipcMain.handle('webview:preload-path', () => {
@@ -245,25 +242,57 @@ function registerIpc(): void {
 
   /**
    * 跟读脚本生成：主进程直接拉字幕（不依赖浏览页），LLM 精选清洗句子，
-   * Google 批量出中文释义，写库后返回。已生成过直接返回缓存。
+   * Google 批量出中文释义，写库后返回。已生成过且未指定 force 时直接返回缓存。
    */
-  ipcMain.handle('shadowing:generate', async (_e, videoId: string) => {
+  ipcMain.handle('shadowing:generate', async (_e, videoId: string, force?: boolean) => {
     const vid = String(videoId ?? '').trim()
     if (!vid) return { error: 'no-captions' }
     const existing = store.getShadowing(vid)
-    if (existing) return { script: existing }
+    if (existing && !force) return { script: existing }
 
     const caps = await fetchEnglishCues(vid, (u, init) => net.fetch(u, init))
     if (!caps) return { error: 'no-captions' }
 
-    const s = store.getSettings()
-    if (!s.llm.baseUrl || !s.llm.apiKey || !s.llm.model) return { error: 'no-llm' }
+    // 碎片 cue 先合并成完整句子：LLM 精选和规则兜底都在句子上工作，效果好得多
+    const sentences = mergeCuesToSentences(caps.cues)
+    if (sentences.length === 0) return { error: 'no-captions' }
 
-    const raw = await llmChat(s.llm, buildShadowingMessages(caps.cues), (u, init) =>
-      net.fetch(u, init)
-    )
-    const picked = raw ? parseShadowingResponse(raw, caps.cues.length) : []
-    if (picked.length === 0) return { error: 'llm-failed' }
+    const s = store.getSettings()
+    const strategy = s.shadowingStrategy ?? 'llm-fallback'
+    let picked: { i: number; text: string }[] = []
+    let generatedBy: 'llm' | 'rules' = 'rules'
+    let llmError: string | undefined
+
+    // 管道策略：rules-only 直接用本地规则；llm-only 失败即报错；llm-fallback 失败回落规则
+    if (strategy !== 'rules-only') {
+      const llmReady = s.llm.baseUrl && s.llm.apiKey && s.llm.model
+      if (!llmReady) {
+        llmError = 'LLM 未配置完整'
+        if (strategy === 'llm-only') return { error: 'no-llm' }
+      } else {
+        const r = await llmChatDetailed(s.llm, buildShadowingMessages(sentences), (u, init) =>
+          net.fetch(u, init)
+        )
+        if (r.error) {
+          llmError = r.error
+          console.error('[ytensub] 跟读脚本 LLM 调用失败:', r.error)
+        } else if (r.content) {
+          picked = parseShadowingResponse(r.content, sentences.length)
+          if (picked.length === 0) {
+            llmError = 'LLM 输出无法解析'
+            console.error('[ytensub] 跟读脚本 LLM 输出解析失败:', r.content.slice(0, 200))
+          }
+        }
+        if (picked.length > 0) generatedBy = 'llm'
+      }
+      if (picked.length === 0 && strategy === 'llm-only')
+        return { error: 'llm-failed', detail: llmError }
+    }
+    if (picked.length === 0) {
+      picked = ruleBasedPick(sentences)
+      generatedBy = 'rules'
+      if (picked.length === 0) return { error: 'llm-failed', detail: llmError }
+    }
 
     // 中文释义：Google 优先，LLM 兜底（与字幕中译同链）
     const translateOne = async (t: string): Promise<string | null> => {
@@ -281,15 +310,24 @@ function registerIpc(): void {
       4
     )
 
+    // 场景分组：连续序号为同一场景，断开开新场景，保持叙事延续性
+    const scenes = withSceneNumbers(picked)
+
     const script: ShadowingScript = {
       videoId: vid,
       title: caps.title,
       generatedAt: Date.now(),
+      generatedBy,
+      llmError,
       items: picked.map((p, idx) => {
-        const start = caps.cues[p.i].start
-        const next = picked[idx + 1]
-        const dur = next ? caps.cues[next.i].start - start : 4
-        return { text: p.text, zh: zh[idx] ?? null, start, dur: Math.max(1, dur) }
+        const unit = sentences[p.i]
+        return {
+          text: p.text,
+          zh: zh[idx] ?? null,
+          start: unit.start,
+          dur: Math.max(1, unit.end - unit.start),
+          scene: scenes[idx]
+        }
       })
     }
     store.setShadowing(script)

@@ -28,7 +28,8 @@ const api = {
   dataImport: () => ipcRenderer.invoke('data:import'),
   dictPronounce: (word: string) => ipcRenderer.invoke('dict:pronounce', word),
   shadowingGet: (videoId: string) => ipcRenderer.invoke('shadowing:get', videoId),
-  shadowingGenerate: (videoId: string) => ipcRenderer.invoke('shadowing:generate', videoId),
+  shadowingGenerate: (videoId: string, force?: boolean) =>
+    ipcRenderer.invoke('shadowing:generate', videoId, force),
   llmTest: () => ipcRenderer.invoke('llm:test'),
 
   // 自定义标题栏的窗口控制

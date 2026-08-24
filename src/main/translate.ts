@@ -64,26 +64,48 @@ export interface ChatMessage {
   content: string
 }
 
+export interface LlmChatResult {
+  content: string | null
+  /** 失败原因（未配置 / HTTP 状态码 / 网络异常），成功为 null */
+  error: string | null
+}
+
+/** 带错误详情的 LLM 调用（需要诊断的场景用；静默回退场景继续用 llmChat） */
+export async function llmChatDetailed(
+  cfg: LlmSettings,
+  messages: ChatMessage[],
+  fetchFn: FetchLike,
+  temperature = 0.2
+): Promise<LlmChatResult> {
+  if (!cfg.baseUrl || !cfg.apiKey || !cfg.model)
+    return { content: null, error: 'LLM 未配置完整（baseUrl/apiKey/model）' }
+  try {
+    const res = await fetchFn(`${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${cfg.apiKey}`
+      },
+      body: JSON.stringify({ model: cfg.model, temperature, messages })
+    })
+    if (!res.ok) return { content: null, error: `HTTP ${res.status}` }
+    const data = (await res.json()) as {
+      choices?: { message?: { content?: string } }[]
+    }
+    const content = data.choices?.[0]?.message?.content?.trim()
+    return content ? { content, error: null } : { content: null, error: '响应中没有内容' }
+  } catch (e) {
+    return { content: null, error: String(e) }
+  }
+}
+
 export async function llmChat(
   cfg: LlmSettings,
   messages: ChatMessage[],
   fetchFn: FetchLike,
   temperature = 0.2
 ): Promise<string | null> {
-  if (!cfg.baseUrl || !cfg.apiKey || !cfg.model) return null
-  const res = await fetchFn(`${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${cfg.apiKey}`
-    },
-    body: JSON.stringify({ model: cfg.model, temperature, messages })
-  })
-  if (!res.ok) return null
-  const data = (await res.json()) as {
-    choices?: { message?: { content?: string } }[]
-  }
-  return data.choices?.[0]?.message?.content?.trim() || null
+  return (await llmChatDetailed(cfg, messages, fetchFn, temperature)).content
 }
 
 /** OpenAI 兼容 chat/completions 翻译 */

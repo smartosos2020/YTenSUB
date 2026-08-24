@@ -146,19 +146,32 @@ export default function ShadowingPage(): JSX.Element {
             <BackIcon />
           </button>
         </div>
-        <div className="page-desc">跟随提词器朗读练习；"原声"为 TTS 示范音</div>
+        <div className="page-desc">
+          跟随提词器朗读练习；共 {script.items.length} 句 ·{' '}
+          {script.generatedBy === 'llm'
+            ? '由 LLM 生成'
+            : script.llmError
+              ? `LLM 调用失败（${script.llmError}），已回退本地规则生成`
+              : '由本地规则生成（当前策略未使用 LLM）'}
+          ；"原声"为 TTS 示范音
+        </div>
       </div>
       <div className="shadow-script">
-        {script.items.map((it, i) => (
-          <div
-            key={i}
-            className={i === currentIdx ? 'shadow-line active' : 'shadow-line'}
-            onClick={() => setPosition(starts[i])}
-          >
-            <div className="shadow-en">{it.text}</div>
-            {it.zh && <div className="shadow-zh">{it.zh}</div>}
-          </div>
-        ))}
+        {script.items.map((it, i) => {
+          const newScene = it.scene !== undefined && (i === 0 || it.scene !== script.items[i - 1].scene)
+          return (
+            <div key={i}>
+              {newScene && <div className="shadow-scene">场景 {it.scene}</div>}
+              <div
+                className={i === currentIdx ? 'shadow-line active' : 'shadow-line'}
+                onClick={() => setPosition(starts[i])}
+              >
+                <div className="shadow-en">{it.text}</div>
+                {it.zh && <div className="shadow-zh">{it.zh}</div>}
+              </div>
+            </div>
+          )
+        })}
       </div>
       <div className="shadow-player">
         <input

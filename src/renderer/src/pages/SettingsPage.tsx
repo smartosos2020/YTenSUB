@@ -3,7 +3,7 @@ import { api } from '../api'
 import { applyTheme, ACCENTS } from '../theme'
 import { CAPTION_FONTS, captionFontCss } from '../caption-fonts'
 import { captionTextureStyle } from '../caption-style'
-import { CaptionTexture, DEFAULT_SETTINGS, Settings, Theme, TranslateResult, TranslateSource } from '../../../shared/types'
+import { CaptionTexture, DEFAULT_SETTINGS, Settings, ShadowingStrategy, Theme, TranslateResult, TranslateSource } from '../../../shared/types'
 import MoonIcon from '../components/icons/MoonIcon'
 import SunIcon from '../components/icons/SunIcon'
 import AutoIcon from '../components/icons/AutoIcon'
@@ -114,11 +114,14 @@ export default function SettingsPage(): JSX.Element {
   const applyPreset = (key: string): void => {
     const p = LLM_PRESETS.find((x) => x.key === key)
     if (!p) return
+    // 用户手动改过的模型名不被预设覆盖：仅当模型为空、或仍是某预设默认值时才替换
+    const isPresetModel = LLM_PRESETS.some((x) => x.model === settings.llm.model)
+    const model = settings.llm.model && !isPresetModel ? settings.llm.model : p.model
     update({
       ...settings,
       llm: {
         baseUrl: p.baseUrl,
-        model: p.model,
+        model,
         apiKey: p.key === 'ollama' ? settings.llm.apiKey || 'ollama' : settings.llm.apiKey
       }
     })
@@ -171,9 +174,7 @@ export default function SettingsPage(): JSX.Element {
       <div className="settings-center">
         <header className="settings-head">
         <div>
-          <h2>
-            偏好设置 <span className="settings-title-en">(Preferences)</span>
-          </h2>
+          <h2>偏好设置</h2>
           <div className="settings-sub">配置外观主题、字幕排版、翻译管道与本地 LLM 大模型推理服务</div>
         </div>
         <div className="settings-head-right">
@@ -202,7 +203,7 @@ export default function SettingsPage(): JSX.Element {
                 <span className="card-note">主题即时生效</span>
               </div>
               <section className="settings-card">
-              <div className="field-label">界面主题（Appearance Theme）</div>
+              <div className="field-label">界面主题</div>
               <div className="theme-cards">
                 {THEMES.map((t) => (
                   <button
@@ -221,7 +222,6 @@ export default function SettingsPage(): JSX.Element {
                 ))}
               </div>
               <div className="card-divider" />
-              <div className="field-label">主题强调色（Accent Color）</div>
               <div className="accent-row">
                 <span className="engine-info">
                   <span className="engine-name">主题强调色</span>
@@ -302,30 +302,64 @@ export default function SettingsPage(): JSX.Element {
                   <b>3</b> LLM 大模型 API
                 </span>
               </div>
-              {TRANSLATORS.map((t, i) => (
-                <label
-                  key={t.key}
-                  className={
-                    settings.enabledTranslators.includes(t.key) ? 'engine-row' : 'engine-row off'
-                  }
-                >
-                  <span className="engine-num">{i + 1}</span>
-                  <span className="engine-info">
-                    <span className="engine-name">{t.label}</span>
-                    <span className="engine-hint">{t.hint}</span>
-                  </span>
-                  <span className="switch">
-                    <input
-                      type="checkbox"
-                      checked={settings.enabledTranslators.includes(t.key)}
-                      onChange={() => toggle(t.key)}
-                    />
-                    <span className="switch-slider" />
-                  </span>
-                </label>
-              ))}
+              {(() => {
+                const enabledOrder = settings.enabledTranslators.filter((t) =>
+                  TRANSLATORS.some((x) => x.key === t)
+                )
+                const disabledList = TRANSLATORS.map((t) => t.key).filter(
+                  (k) => !enabledOrder.includes(k)
+                )
+                const moveEngine = (key: TranslateSource, dir: -1 | 1): void => {
+                  const arr = [...enabledOrder]
+                  const i = arr.indexOf(key)
+                  const j = i + dir
+                  if (i < 0 || j < 0 || j >= arr.length) return
+                  ;[arr[i], arr[j]] = [arr[j], arr[i]]
+                  update({ ...settings, enabledTranslators: arr })
+                }
+                return [...enabledOrder, ...disabledList].map((key) => {
+                  const t = TRANSLATORS.find((x) => x.key === key)!
+                  const idx = enabledOrder.indexOf(key)
+                  const enabled = idx >= 0
+                  return (
+                    <div key={key} className={enabled ? 'engine-row' : 'engine-row off'}>
+                      <span className="engine-num">{enabled ? idx + 1 : '–'}</span>
+                      <span className="engine-info">
+                        <span className="engine-name">{t.label}</span>
+                        <span className="engine-hint">{t.hint}</span>
+                      </span>
+                      {enabled && (
+                        <span className="engine-arrows">
+                          <button
+                            title="上移"
+                            disabled={idx === 0}
+                            onClick={() => moveEngine(key, -1)}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            title="下移"
+                            disabled={idx === enabledOrder.length - 1}
+                            onClick={() => moveEngine(key, 1)}
+                          >
+                            ↓
+                          </button>
+                        </span>
+                      )}
+                      <label className="switch">
+                        <input
+                          type="checkbox"
+                          checked={enabled}
+                          onChange={() => toggle(key)}
+                        />
+                        <span className="switch-slider" />
+                      </label>
+                    </div>
+                  )
+                })
+              })()}
               <div className="card-divider" />
-              <div className="field-label">管道测试（Pipeline Debugger）</div>
+              <div className="field-label">管道测试</div>
               <div className="pipe-test">
                 <input
                   value={pipeText}
@@ -345,6 +379,18 @@ export default function SettingsPage(): JSX.Element {
                   <div className="pipe-result-text">{pipeResult.translation}</div>
                 </div>
               )}
+              <div className="card-divider" />
+              <div className="field-label">跟读脚本生成策略</div>
+              <select
+                value={settings.shadowingStrategy}
+                onChange={(e) =>
+                  update({ ...settings, shadowingStrategy: e.target.value as ShadowingStrategy })
+                }
+              >
+                <option value="llm-fallback">LLM 优先，本地规则兜底（推荐）</option>
+                <option value="llm-only">仅 LLM（质量最佳，需配置 API）</option>
+                <option value="rules-only">仅本地规则（免费离线，质量较低）</option>
+              </select>
               </section>
             </div>
           )}
@@ -358,7 +404,7 @@ export default function SettingsPage(): JSX.Element {
               <section className="settings-card">
               <div className="field-2col">
                 <div>
-                  <div className="field-label">原文主字号（{settings.captionFontSize}px）</div>
+                  <div className="field-label">原文字号（{settings.captionFontSize}px）</div>
                   <div className="opacity-row">
                     <input
                       type="range"
@@ -370,6 +416,42 @@ export default function SettingsPage(): JSX.Element {
                         update({ ...settings, captionFontSize: Number(e.target.value) })
                       }
                     />
+                  </div>
+                </div>
+                <div>
+                  <div className="field-label">中文字号（{settings.captionZhSize}px）</div>
+                  <div className="opacity-row">
+                    <input
+                      type="range"
+                      min={12}
+                      max={28}
+                      step={1}
+                      value={settings.captionZhSize}
+                      onChange={(e) =>
+                        update({ ...settings, captionZhSize: Number(e.target.value) })
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="field-2col">
+                <div>
+                  <div className="field-label">英文字幕字重</div>
+                  <div className="seg-tabs">
+                    {[
+                      { w: 400, label: '常规' },
+                      { w: 500, label: '适中' },
+                      { w: 700, label: '加粗' },
+                      { w: 800, label: '特粗' }
+                    ].map((o) => (
+                      <button
+                        key={o.w}
+                        className={settings.captionWeight === o.w ? 'selected' : ''}
+                        onClick={() => update({ ...settings, captionWeight: o.w })}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
                 <div>
@@ -390,32 +472,50 @@ export default function SettingsPage(): JSX.Element {
                   </div>
                 </div>
               </div>
-              <div className="card-divider" />
-              <div className="field-label">字体族（Font Family）</div>
-              <select
-                value={settings.captionFont}
-                onChange={(e) => update({ ...settings, captionFont: e.target.value })}
-              >
-                {CAPTION_FONTS.map((f) => (
-                  <option key={f.key} value={f.key}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
-              <div className="card-divider" />
-              <div className="field-label">浮层边框质感（Container Texture）</div>
-              <select
-                value={settings.captionTexture}
-                onChange={(e) =>
-                  update({ ...settings, captionTexture: e.target.value as CaptionTexture })
-                }
-              >
-                {TEXTURES.map((t) => (
-                  <option key={t.key} value={t.key}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+              <div className="field-2col">
+                <div>
+                  <div className="field-label">字体族</div>
+                  <select
+                    value={settings.captionFont}
+                    onChange={(e) => update({ ...settings, captionFont: e.target.value })}
+                  >
+                    {CAPTION_FONTS.map((f) => (
+                      <option key={f.key} value={f.key}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div className="field-label">浮层边框质感</div>
+                  <select
+                    value={settings.captionTexture}
+                    onChange={(e) =>
+                      update({ ...settings, captionTexture: e.target.value as CaptionTexture })
+                    }
+                  >
+                    {TEXTURES.map((t) => (
+                      <option key={t.key} value={t.key}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <label className="behavior-row">
+                <span className="engine-info">
+                  <span className="engine-name">文字阴影</span>
+                  <span className="engine-hint">复杂画面背景下提升字幕可读性</span>
+                </span>
+                <span className="switch">
+                  <input
+                    type="checkbox"
+                    checked={settings.captionShadow}
+                    onChange={(e) => update({ ...settings, captionShadow: e.target.checked })}
+                  />
+                  <span className="switch-slider" />
+                </span>
+              </label>
               </section>
             </div>
           )}
@@ -427,7 +527,7 @@ export default function SettingsPage(): JSX.Element {
                 <span className="card-note">支持 OpenAI 兼容协议</span>
               </div>
               <section className="settings-card">
-              <div className="field-label">服务商预设（Provider Preset）</div>
+              <div className="field-label">服务商预设</div>
               <div className="preset-grid">
                 {LLM_PRESETS.map((p) => (
                   <button
@@ -456,7 +556,7 @@ export default function SettingsPage(): JSX.Element {
               <div className="card-divider" />
               <div className="field-2col">
                 <label className="llm-field">
-                  <span className="field-label">接口 Base URL</span>
+                  <span className="field-label">Base URL</span>
                   <input
                     value={settings.llm.baseUrl}
                     onChange={(e) =>
@@ -466,7 +566,7 @@ export default function SettingsPage(): JSX.Element {
                   />
                 </label>
                 <label className="llm-field">
-                  <span className="field-label">模型名称（Model）</span>
+                  <span className="field-label">模型</span>
                   <input
                     value={settings.llm.model}
                     onChange={(e) =>
@@ -477,7 +577,7 @@ export default function SettingsPage(): JSX.Element {
                 </label>
               </div>
               <label className="llm-field">
-                <span className="field-label">API 授权密钥（API Key）</span>
+                <span className="field-label">API Key</span>
                 <span className="key-row">
                   <input
                     type={showKey ? 'text' : 'password'}
@@ -574,15 +674,22 @@ export default function SettingsPage(): JSX.Element {
                 className="caption-preview-line"
                 style={{
                   fontFamily: captionFontCss(settings.captionFont) || undefined,
-                  ...captionTextureStyle(settings.captionTexture, settings.captionOpacity)
+                  ...captionTextureStyle(settings.captionTexture, settings.captionOpacity),
+                  ...(settings.captionShadow ? {} : { textShadow: 'none' })
                 }}
               >
-                <div style={{ fontSize: settings.captionFontSize }}>
+                <div
+                  style={{
+                    fontSize: settings.captionFontSize,
+                    fontWeight:
+                      settings.captionWeight === 400 ? undefined : settings.captionWeight
+                  }}
+                >
                   The quick brown fox <span className="stage-word">jumps</span> over the lazy dog.
                 </div>
                 <div
                   className="caption-preview-zh"
-                  style={{ fontSize: Math.round(settings.captionFontSize * 0.8) }}
+                  style={{ fontSize: settings.captionZhSize }}
                 >
                   敏捷的棕色狐狸跳过了那只懒狗。
                 </div>
