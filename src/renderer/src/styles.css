@@ -101,8 +101,9 @@ body {
   background-clip: content-box;
 }
 
-/* 所有按钮：平时无边框、底色融入容器；悬停仅叠加背景色，不高亮图标/边框 */
-button {
+/* 所有按钮：平时无边框、底色融入容器；悬停仅叠加背景色，不高亮图标/边框。
+   Mantine 组件自带完整样式，排除在外 */
+button:not([class*='mantine']) {
   background: transparent;
   color: var(--text);
   border: 1px solid transparent;
@@ -114,16 +115,16 @@ button {
   transition: background 0.15s, color 0.15s;
 }
 
-button:hover:not(:disabled) {
+button:not([class*='mantine']):hover:not(:disabled) {
   background: var(--hover-bg);
 }
 
-button:disabled {
+button:not([class*='mantine']):disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-input {
+input:not([class*='mantine']) {
   background: var(--bg-input);
   color: var(--text);
   border: 1px solid var(--border-hi);
@@ -134,17 +135,17 @@ input {
   caret-color: var(--accent);
 }
 
-input::placeholder {
+input:not([class*='mantine'])::placeholder {
   color: var(--text-dim);
 }
 
-input:focus {
+input:not([class*='mantine']):focus {
   border-color: var(--accent);
   box-shadow: 0 0 8px var(--glow);
 }
 
 /* macOS 风格滑杆：细轨道 + 白色圆形拇指（hover 放大 / 按下缩小） */
-input[type='range'] {
+input[type='range']:not([class*='mantine']) {
   -webkit-appearance: none;
   appearance: none;
   background: transparent;

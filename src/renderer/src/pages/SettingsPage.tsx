@@ -1,4 +1,14 @@
 import { useEffect, useState } from 'react'
+import {
+  ActionIcon,
+  Button,
+  PasswordInput,
+  SegmentedControl,
+  Select,
+  Slider,
+  Switch,
+  TextInput
+} from '@mantine/core'
 import { api } from '../api'
 import { applyTheme, ACCENTS } from '../theme'
 import { CAPTION_FONTS, captionFontCss } from '../caption-fonts'
@@ -7,8 +17,6 @@ import { CaptionTexture, DEFAULT_SETTINGS, Settings, ShadowingStrategy, Theme, T
 import MoonIcon from '../components/icons/MoonIcon'
 import SunIcon from '../components/icons/SunIcon'
 import AutoIcon from '../components/icons/AutoIcon'
-import EyeIcon from '../components/icons/EyeIcon'
-import EyeOffIcon from '../components/icons/EyeOffIcon'
 import VolumeIcon from '../components/icons/VolumeIcon'
 import BookIcon from '../components/icons/BookIcon'
 
@@ -49,12 +57,6 @@ const THEMES: { key: Theme; label: string; desc: string; icon: JSX.Element }[] =
   { key: 'system', label: '跟随系统', desc: '随系统外观自动切换', icon: <AutoIcon /> }
 ]
 
-const TEXTURES: { key: CaptionTexture; label: string }[] = [
-  { key: 'solid', label: '纯色（默认）' },
-  { key: 'glass', label: '毛玻璃' },
-  { key: 'none', label: '无边框纯文字' }
-]
-
 type SettingsTab = 'all' | 'appearance' | 'caption' | 'translate' | 'llm' | 'data'
 
 const TABS: { key: SettingsTab; label: string }[] = [
@@ -64,6 +66,13 @@ const TABS: { key: SettingsTab; label: string }[] = [
   { key: 'translate', label: '翻译管道' },
   { key: 'llm', label: 'LLM 模型' },
   { key: 'data', label: '数据维护' }
+]
+
+const WEIGHTS = [
+  { value: '400', label: '常规' },
+  { value: '500', label: '适中' },
+  { value: '700', label: '加粗' },
+  { value: '800', label: '特粗' }
 ]
 
 export default function SettingsPage(): JSX.Element {
@@ -84,7 +93,6 @@ export default function SettingsPage(): JSX.Element {
   // LLM 连通性测试
   const [llmTestState, setLlmTestState] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
   const [llmMs, setLlmMs] = useState(0)
-  const [showKey, setShowKey] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
 
   useEffect(() => {
@@ -181,17 +189,11 @@ export default function SettingsPage(): JSX.Element {
           <span className={saveFlash ? 'save-badge flash' : 'save-badge'}>
             {saveFlash ? '✓ 已保存' : '实时保存生效'}
           </span>
-          <div className="seg-tabs">
-            {TABS.map((t) => (
-              <button
-                key={t.key}
-                className={tab === t.key ? 'selected' : ''}
-                onClick={() => setTab(t.key)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            value={tab}
+            onChange={(v) => setTab(v as SettingsTab)}
+            data={TABS.map((t) => ({ value: t.key, label: t.label }))}
+          />
         </div>
       </header>
 
@@ -244,7 +246,7 @@ export default function SettingsPage(): JSX.Element {
               </div>
               <div className="card-divider" />
               <div className="field-label">取词行为</div>
-              <label className="behavior-row">
+              <div className="behavior-row">
                 <span className="behavior-icon">
                   <VolumeIcon />
                 </span>
@@ -252,16 +254,12 @@ export default function SettingsPage(): JSX.Element {
                   <span className="engine-name">查词后自动朗读发音</span>
                   <span className="engine-hint">翻译弹窗打开即播放单词发音</span>
                 </span>
-                <span className="switch">
-                  <input
-                    type="checkbox"
-                    checked={settings.autoSpeakOnLookup}
-                    onChange={(e) => update({ ...settings, autoSpeakOnLookup: e.target.checked })}
-                  />
-                  <span className="switch-slider" />
-                </span>
-              </label>
-              <label className="behavior-row">
+                <Switch
+                  checked={settings.autoSpeakOnLookup}
+                  onChange={(e) => update({ ...settings, autoSpeakOnLookup: e.currentTarget.checked })}
+                />
+              </div>
+              <div className="behavior-row">
                 <span className="behavior-icon">
                   <BookIcon />
                 </span>
@@ -269,15 +267,11 @@ export default function SettingsPage(): JSX.Element {
                   <span className="engine-name">查词后自动加入生词本</span>
                   <span className="engine-hint">翻译成功即收藏，无需再点按钮</span>
                 </span>
-                <span className="switch">
-                  <input
-                    type="checkbox"
-                    checked={settings.autoCollectWord}
-                    onChange={(e) => update({ ...settings, autoCollectWord: e.target.checked })}
-                  />
-                  <span className="switch-slider" />
-                </span>
-              </label>
+                <Switch
+                  checked={settings.autoCollectWord}
+                  onChange={(e) => update({ ...settings, autoCollectWord: e.currentTarget.checked })}
+                />
+              </div>
               </section>
             </div>
           )}
@@ -330,30 +324,27 @@ export default function SettingsPage(): JSX.Element {
                       </span>
                       {enabled && (
                         <span className="engine-arrows">
-                          <button
+                          <ActionIcon
+                            variant="subtle"
+                            size="sm"
                             title="上移"
                             disabled={idx === 0}
                             onClick={() => moveEngine(key, -1)}
                           >
                             ↑
-                          </button>
-                          <button
+                          </ActionIcon>
+                          <ActionIcon
+                            variant="subtle"
+                            size="sm"
                             title="下移"
                             disabled={idx === enabledOrder.length - 1}
                             onClick={() => moveEngine(key, 1)}
                           >
                             ↓
-                          </button>
+                          </ActionIcon>
                         </span>
                       )}
-                      <label className="switch">
-                        <input
-                          type="checkbox"
-                          checked={enabled}
-                          onChange={() => toggle(key)}
-                        />
-                        <span className="switch-slider" />
-                      </label>
+                      <Switch checked={enabled} onChange={() => toggle(key)} />
                     </div>
                   )
                 })
@@ -361,15 +352,16 @@ export default function SettingsPage(): JSX.Element {
               <div className="card-divider" />
               <div className="field-label">管道测试</div>
               <div className="pipe-test">
-                <input
+                <TextInput
                   value={pipeText}
-                  onChange={(e) => setPipeText(e.target.value)}
+                  onChange={(e) => setPipeText(e.currentTarget.value)}
                   onKeyDown={(e) => e.key === 'Enter' && void testPipe()}
                   placeholder="输入单词或句子，回车测试"
+                  style={{ flex: 1 }}
                 />
-                <button disabled={pipeTesting} onClick={() => void testPipe()}>
-                  {pipeTesting ? '测试中…' : '测试'}
-                </button>
+                <Button variant="light" loading={pipeTesting} onClick={() => void testPipe()}>
+                  测试
+                </Button>
               </div>
               {pipeResult && (
                 <div className="pipe-result">
@@ -381,17 +373,19 @@ export default function SettingsPage(): JSX.Element {
               )}
               <div className="card-divider" />
               <div className="field-label">跟读脚本生成策略</div>
-              <select
+              <Select
                 value={settings.shadowingStrategy}
-                onChange={(e) =>
-                  update({ ...settings, shadowingStrategy: e.target.value as ShadowingStrategy })
+                onChange={(v) =>
+                  v && update({ ...settings, shadowingStrategy: v as ShadowingStrategy })
                 }
-              >
-                <option value="llm-fallback">LLM 优先，本地规则兜底（推荐）</option>
-                <option value="llm-only">仅 LLM（质量最佳，需配置 API）</option>
-                <option value="rules-only">仅本地规则（免费离线，质量较低）</option>
-                <option value="raw">直接使用字幕（不提炼，保留完整语境）</option>
-              </select>
+                data={[
+                  { value: 'llm-fallback', label: 'LLM 优先，本地规则兜底（推荐）' },
+                  { value: 'llm-only', label: '仅 LLM（质量最佳，需配置 API）' },
+                  { value: 'rules-only', label: '仅本地规则（免费离线，质量较低）' },
+                  { value: 'raw', label: '直接使用字幕（不提炼，保留完整语境）' }
+                ]}
+                allowDeselect={false}
+              />
               </section>
             </div>
           )}
@@ -406,117 +400,87 @@ export default function SettingsPage(): JSX.Element {
               <div className="field-2col">
                 <div>
                   <div className="field-label">原文字号（{settings.captionFontSize}px）</div>
-                  <div className="opacity-row">
-                    <input
-                      type="range"
-                      min={14}
-                      max={32}
-                      step={1}
-                      value={settings.captionFontSize}
-                      onChange={(e) =>
-                        update({ ...settings, captionFontSize: Number(e.target.value) })
-                      }
-                    />
-                  </div>
+                  <Slider
+                    min={14}
+                    max={32}
+                    step={1}
+                    value={settings.captionFontSize}
+                    onChange={(v) => update({ ...settings, captionFontSize: v })}
+                    label={(v) => `${v}px`}
+                  />
                 </div>
                 <div>
                   <div className="field-label">中文字号（{settings.captionZhSize}px）</div>
-                  <div className="opacity-row">
-                    <input
-                      type="range"
-                      min={12}
-                      max={28}
-                      step={1}
-                      value={settings.captionZhSize}
-                      onChange={(e) =>
-                        update({ ...settings, captionZhSize: Number(e.target.value) })
-                      }
-                    />
-                  </div>
+                  <Slider
+                    min={12}
+                    max={28}
+                    step={1}
+                    value={settings.captionZhSize}
+                    onChange={(v) => update({ ...settings, captionZhSize: v })}
+                    label={(v) => `${v}px`}
+                  />
                 </div>
               </div>
               <div className="field-2col">
                 <div>
                   <div className="field-label">英文字幕字重</div>
-                  <div className="seg-tabs">
-                    {[
-                      { w: 400, label: '常规' },
-                      { w: 500, label: '适中' },
-                      { w: 700, label: '加粗' },
-                      { w: 800, label: '特粗' }
-                    ].map((o) => (
-                      <button
-                        key={o.w}
-                        className={settings.captionWeight === o.w ? 'selected' : ''}
-                        onClick={() => update({ ...settings, captionWeight: o.w })}
-                      >
-                        {o.label}
-                      </button>
-                    ))}
-                  </div>
+                  <SegmentedControl
+                    value={String(settings.captionWeight)}
+                    onChange={(v) => update({ ...settings, captionWeight: Number(v) })}
+                    data={WEIGHTS}
+                    fullWidth
+                  />
                 </div>
                 <div>
                   <div className="field-label">
                     浮层背景透明度（{Math.round(settings.captionOpacity * 100)}%）
                   </div>
-                  <div className="opacity-row">
-                    <input
-                      type="range"
-                      min={0.2}
-                      max={1}
-                      step={0.05}
-                      value={settings.captionOpacity}
-                      onChange={(e) =>
-                        update({ ...settings, captionOpacity: Number(e.target.value) })
-                      }
-                    />
-                  </div>
+                  <Slider
+                    min={0.2}
+                    max={1}
+                    step={0.05}
+                    value={settings.captionOpacity}
+                    onChange={(v) => update({ ...settings, captionOpacity: v })}
+                    label={(v) => `${Math.round(v * 100)}%`}
+                  />
                 </div>
               </div>
               <div className="field-2col">
                 <div>
                   <div className="field-label">字体族</div>
-                  <select
+                  <Select
                     value={settings.captionFont}
-                    onChange={(e) => update({ ...settings, captionFont: e.target.value })}
-                  >
-                    {CAPTION_FONTS.map((f) => (
-                      <option key={f.key} value={f.key}>
-                        {f.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => v && update({ ...settings, captionFont: v })}
+                    data={CAPTION_FONTS.map((f) => ({ value: f.key, label: f.label }))}
+                    allowDeselect={false}
+                  />
                 </div>
                 <div>
                   <div className="field-label">浮层边框质感</div>
-                  <select
+                  <Select
                     value={settings.captionTexture}
-                    onChange={(e) =>
-                      update({ ...settings, captionTexture: e.target.value as CaptionTexture })
+                    onChange={(v) =>
+                      v && update({ ...settings, captionTexture: v as CaptionTexture })
                     }
-                  >
-                    {TEXTURES.map((t) => (
-                      <option key={t.key} value={t.key}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
+                    data={[
+                      { value: 'solid', label: '纯色（默认）' },
+                      { value: 'glass', label: '毛玻璃' },
+                      { value: 'none', label: '无边框纯文字' }
+                    ]}
+                    allowDeselect={false}
+                  />
                 </div>
               </div>
-              <label className="behavior-row">
+              <div className="behavior-row">
                 <span className="engine-info">
                   <span className="engine-name">文字阴影</span>
                   <span className="engine-hint">复杂画面背景下提升字幕可读性</span>
                 </span>
-                <span className="switch">
-                  <input
-                    type="checkbox"
-                    checked={settings.captionShadow}
-                    onChange={(e) => update({ ...settings, captionShadow: e.target.checked })}
-                  />
-                  <span className="switch-slider" />
-                </span>
-              </label>
+                <Switch
+                  checked={settings.captionShadow}
+                  onChange={(e) => update({ ...settings, captionShadow: e.currentTarget.checked })}
+                />
+              </div>
               </section>
             </div>
           )}
@@ -556,52 +520,43 @@ export default function SettingsPage(): JSX.Element {
               )}
               <div className="card-divider" />
               <div className="field-2col">
-                <label className="llm-field">
-                  <span className="field-label">Base URL</span>
-                  <input
-                    value={settings.llm.baseUrl}
-                    onChange={(e) =>
-                      update({ ...settings, llm: { ...settings.llm, baseUrl: e.target.value } })
-                    }
-                    placeholder="https://api.openai.com/v1"
-                  />
-                </label>
-                <label className="llm-field">
-                  <span className="field-label">模型</span>
-                  <input
-                    value={settings.llm.model}
-                    onChange={(e) =>
-                      update({ ...settings, llm: { ...settings.llm, model: e.target.value } })
-                    }
-                    placeholder="gpt-4o-mini"
-                  />
-                </label>
+                <TextInput
+                  label="Base URL"
+                  labelProps={{ className: 'field-label' }}
+                  value={settings.llm.baseUrl}
+                  onChange={(e) =>
+                    update({ ...settings, llm: { ...settings.llm, baseUrl: e.currentTarget.value } })
+                  }
+                  placeholder="https://api.openai.com/v1"
+                />
+                <TextInput
+                  label="模型"
+                  labelProps={{ className: 'field-label' }}
+                  value={settings.llm.model}
+                  onChange={(e) =>
+                    update({ ...settings, llm: { ...settings.llm, model: e.currentTarget.value } })
+                  }
+                  placeholder="gpt-4o-mini"
+                />
               </div>
-              <label className="llm-field">
-                <span className="field-label">API Key</span>
-                <span className="key-row">
-                  <input
-                    type={showKey ? 'text' : 'password'}
-                    value={settings.llm.apiKey}
-                    onChange={(e) =>
-                      update({ ...settings, llm: { ...settings.llm, apiKey: e.target.value } })
-                    }
-                    placeholder="sk-..."
-                  />
-                  <button
-                    className="key-eye"
-                    title={showKey ? '隐藏' : '显示'}
-                    onClick={() => setShowKey(!showKey)}
-                  >
-                    {showKey ? <EyeOffIcon /> : <EyeIcon />}
-                  </button>
-                </span>
-              </label>
+              <PasswordInput
+                label="API Key"
+                labelProps={{ className: 'field-label' }}
+                value={settings.llm.apiKey}
+                onChange={(e) =>
+                  update({ ...settings, llm: { ...settings.llm, apiKey: e.currentTarget.value } })
+                }
+                placeholder="sk-..."
+              />
               <div className="card-divider" />
               <div className="llm-test-row">
-                <button disabled={llmTestState === 'testing'} onClick={() => void runLlmTest()}>
-                  {llmTestState === 'testing' ? '测试中…' : '测试接口连通性'}
-                </button>
+                <Button
+                  variant="light"
+                  loading={llmTestState === 'testing'}
+                  onClick={() => void runLlmTest()}
+                >
+                  测试接口连通性
+                </Button>
                 {llmTestState === 'ok' && (
                   <span className="llm-test-ok">连接正常 · {llmMs}ms</span>
                 )}
@@ -632,30 +587,38 @@ export default function SettingsPage(): JSX.Element {
               </div>
               <div className="card-divider" />
               <div className="data-row">
-                <button onClick={() => void exportData()}>导出数据（JSON）</button>
-                <button title="从备份文件恢复（导入后自动重载）" onClick={() => void importData()}>
+                <Button variant="default" onClick={() => void exportData()}>
+                  导出数据（JSON）
+                </Button>
+                <Button
+                  variant="default"
+                  title="从备份文件恢复（导入后自动重载）"
+                  onClick={() => void importData()}
+                >
                   导入数据
-                </button>
+                </Button>
                 {dataMsg && <span className="saved-hint">{dataMsg}</span>}
               </div>
               {/* 危险操作：原地两段确认，不弹系统对话框 */}
               <div className="data-row danger-zone">
                 {!confirmReset ? (
-                  <button className="reset-btn" onClick={() => setConfirmReset(true)}>
+                  <Button variant="subtle" color="red" onClick={() => setConfirmReset(true)}>
                     恢复默认设置
-                  </button>
+                  </Button>
                 ) : (
                   <span className="reset-confirm">
                     确定恢复默认设置？（生词/收藏不受影响）
-                    <button
-                      className="reset-yes"
+                    <Button
+                      color="red"
                       onClick={() => {
                         void api.settingsSet(DEFAULT_SETTINGS).then(() => window.location.reload())
                       }}
                     >
                       确认重置
-                    </button>
-                    <button onClick={() => setConfirmReset(false)}>取消</button>
+                    </Button>
+                    <Button variant="default" onClick={() => setConfirmReset(false)}>
+                      取消
+                    </Button>
                   </span>
                 )}
               </div>

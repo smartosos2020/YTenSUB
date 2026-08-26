@@ -15,6 +15,8 @@
     "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {
+    "@mantine/core": "^7.17.8",
+    "@mantine/hooks": "^7.17.8",
     "electron-updater": "^6.8.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -46,7 +48,13 @@
       "out/**",
       "resources/**"
     ],
-    "publish": [{ "provider": "github", "owner": "smartosos2020", "repo": "YTenSUB" }],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "smartosos2020",
+        "repo": "YTenSUB"
+      }
+    ],
     "win": {
       "target": "nsis"
     }
