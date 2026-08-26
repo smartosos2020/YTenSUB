@@ -125,20 +125,20 @@ button:not([class*='mantine']):disabled {
   cursor: default;
 }
 
-/* 纯图标按钮：无边框 */
-.icon-btn,
-.titlebar-toggle,
+/* 纯图标按钮：无边框（注意特异性要带 button 前缀，与上面带 :not() 的基础规则同级） */
+button.icon-btn,
+button.titlebar-toggle,
 .titlebar-controls button,
 .navbar > button,
 .fav-wrap > button,
-.key-eye {
+button.key-eye {
   border-color: transparent;
 }
 
 /* 彩色底按钮：边框与底色同色 */
-.reset-yes,
-.fav-del-yes,
-.regen-yes {
+button.reset-yes,
+button.fav-del-yes,
+button.regen-yes {
   border-color: transparent;
 }
 
