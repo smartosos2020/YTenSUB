@@ -6,12 +6,6 @@ import { MASTERED_LEVEL, VocabItem } from '../../../shared/types'
 import TrashIcon from '../components/icons/TrashIcon'
 import VolumeIcon from '../components/icons/VolumeIcon'
 
-function formatTime(sec: number): string {
-  const m = Math.floor(sec / 60)
-  const s = Math.floor(sec % 60)
-  return `${m}:${String(s).padStart(2, '0')}`
-}
-
 function isMastered(v: VocabItem): boolean {
   return v.reviewLevel !== undefined && v.reviewLevel >= MASTERED_LEVEL
 }
@@ -49,10 +43,6 @@ export default function VocabularyPage(): JSX.Element {
     void reload()
   }
 
-  const openSource = (item: VocabItem): void => {
-    navigate(`/browse?v=${encodeURIComponent(item.videoId)}&t=${item.timestamp}`)
-  }
-
   const groups = groupByVideo
     ? vocab.reduce<Record<string, VocabItem[]>>((acc, item) => {
         const key = item.videoTitle || item.videoId
@@ -66,7 +56,7 @@ export default function VocabularyPage(): JSX.Element {
       <div className="page-head">
         <div className="page-head-row">
           <h2>生词本（{vocab.length}）</h2>
-          <div className="vocab-toolbar-actions">
+          <div className="page-head-actions">
           <label>
             <input
               type="checkbox"
@@ -100,34 +90,32 @@ export default function VocabularyPage(): JSX.Element {
       {Object.entries(groups).map(([group, items]) => (
         <div key={group} className="vocab-group">
           <h3>{group}</h3>
-          {items.map((item) => (
-            <div key={item.id} className="vocab-item">
-              <div className="vocab-head">
-                <span className="vocab-text">{item.text}</span>
-                <button
-                  className="vocab-speak icon-btn"
-                  title="发音"
-                  onClick={() => speakWord(item.text)}
-                >
-                  <VolumeIcon />
-                </button>
-                {item.phonetic && <span className="vocab-phonetic">[{item.phonetic}]</span>}
-                <span className="vocab-translation">{item.translation}</span>
-                {isMastered(item) && <span className="vocab-mastered">已掌握</span>}
-                <button
-                  className="vocab-remove icon-btn"
-                  title="删除"
-                  onClick={() => void remove(item.id)}
-                >
-                  <TrashIcon />
-                </button>
+          <div className="vocab-grid">
+            {items.map((item) => (
+              <div key={item.id} className="vocab-item">
+                <div className="vocab-head">
+                  <span className="vocab-text">{item.text}</span>
+                  <button
+                    className="vocab-speak icon-btn"
+                    title="发音"
+                    onClick={() => speakWord(item.text)}
+                  >
+                    <VolumeIcon />
+                  </button>
+                  {isMastered(item) && <span className="vocab-mastered">已掌握</span>}
+                  <button
+                    className="vocab-remove icon-btn"
+                    title="删除"
+                    onClick={() => void remove(item.id)}
+                  >
+                    <TrashIcon />
+                  </button>
+                </div>
+                {item.phonetic && <div className="vocab-phonetic">[{item.phonetic}]</div>}
+                <div className="vocab-translation">{item.translation}</div>
               </div>
-              {item.sentence && <div className="vocab-sentence">{item.sentence}</div>}
-              <button className="vocab-source" onClick={() => openSource(item)}>
-                来源：{item.videoTitle || item.videoId} @{formatTime(item.timestamp)}
-              </button>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       ))}
     </div>

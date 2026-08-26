@@ -5,7 +5,7 @@ import path from 'node:path'
 import { Store } from './store'
 import { Dict } from './dict'
 import { googleTranslateFree, llmChatDetailed, llmTranslate, translateBatch, translateText } from './translate'
-import { buildShadowingMessages, fetchEnglishCues, mergeCuesToSentences, parseShadowingResponse, ruleBasedPick, withSceneNumbers } from './shadowing'
+import { buildShadowingMessages, fetchEnglishCues, fetchVideoInfo, mergeCuesToSentences, parseShadowingResponse, ruleBasedPick, withSceneNumbers } from './shadowing'
 import { Favorite, Settings, ShadowingScript, TranslateSource, VocabItem, defaultData } from '../shared/types'
 
 const dataFile = path.join(app.getPath('userData'), 'ytensub-data.json')
@@ -113,6 +113,13 @@ function registerIpc(): void {
   ipcMain.handle('fav:list', (_e, folderId?: string | null) => store.listFavorites(folderId))
   ipcMain.handle('fav:remove', (_e, videoId: string) => store.removeFavorite(videoId))
   ipcMain.handle('fav:is', (_e, videoId: string) => store.isFavorite(videoId))
+  ipcMain.handle('fav:move', (_e, videoId: string, folderId: string | null) =>
+    store.moveFavorite(videoId, folderId)
+  )
+  // 粘贴链接快速收藏：主进程拉视频标题/作者
+  ipcMain.handle('video:fetch-info', (_e, videoId: string) =>
+    fetchVideoInfo(String(videoId ?? ''), (u, i) => net.fetch(u, i))
+  )
 
   ipcMain.handle('folder:add', (_e, name: string) => store.addFolder(name))
   ipcMain.handle('folder:list', () => store.listFolders())
@@ -137,6 +144,10 @@ function registerIpc(): void {
     else mainWin.maximize()
   })
   ipcMain.on('window:close', () => mainWin?.close())
+
+  // 版本与更新：侧栏版本号 + 更新可用提示
+  ipcMain.handle('app:version', () => app.getVersion())
+  ipcMain.on('update:install', () => autoUpdater.quitAndInstall())
 
   // LLM 连通性测试：发一条最小请求并计时
   ipcMain.handle('llm:test', async () => {
@@ -260,11 +271,14 @@ function registerIpc(): void {
     const s = store.getSettings()
     const strategy = s.shadowingStrategy ?? 'llm-fallback'
     let picked: { i: number; text: string }[] = []
-    let generatedBy: 'llm' | 'rules' = 'rules'
+    let generatedBy: 'llm' | 'rules' | 'raw' = 'rules'
     let llmError: string | undefined
 
-    // 管道策略：rules-only 直接用本地规则；llm-only 失败即报错；llm-fallback 失败回落规则
-    if (strategy !== 'rules-only') {
+    // 管道策略：raw 直接用全部字幕句；rules-only 用本地规则；llm-only 失败即报错；llm-fallback 失败回落规则
+    if (strategy === 'raw') {
+      picked = sentences.map((unit, i) => ({ i, text: unit.text }))
+      generatedBy = 'raw'
+    } else if (strategy !== 'rules-only') {
       const llmReady = s.llm.baseUrl && s.llm.apiKey && s.llm.model
       if (!llmReady) {
         llmError = 'LLM 未配置完整'
@@ -288,7 +302,7 @@ function registerIpc(): void {
       if (picked.length === 0 && strategy === 'llm-only')
         return { error: 'llm-failed', detail: llmError }
     }
-    if (picked.length === 0) {
+    if (picked.length === 0 && strategy !== 'raw') {
       picked = ruleBasedPick(sentences)
       generatedBy = 'rules'
       if (picked.length === 0) return { error: 'llm-failed', detail: llmError }
@@ -377,6 +391,9 @@ app.whenReady().then(() => {
   createWindow()
   // 自动更新（GitHub Releases）：静默检查，下载完成后提示重启安装；dev 环境静默跳过
   autoUpdater.checkForUpdatesAndNotify().catch(() => {})
+  // 更新状态推给渲染进程：侧栏版本号旁的下载图标据此显示
+  autoUpdater.on('update-available', () => mainWin?.webContents.send('update:available'))
+  autoUpdater.on('update-downloaded', () => mainWin?.webContents.send('update:downloaded'))
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

@@ -6,6 +6,7 @@ import { Cue, findActiveCueIndex, parseCaptionText, toBilingualSrt } from '../..
 import { EXTRACT_SCRIPT } from '../../../shared/extract'
 import { CaptionTexture, Folder, MASTERED_LEVEL, Theme, VocabItem } from '../../../shared/types'
 import { captionFontCss } from '../caption-fonts'
+import { registerGuestAudio } from '../guest-audio'
 import { useSidePanel } from '../hooks/useSidePanel'
 import { useGuestTheme } from '../hooks/useGuestTheme'
 import { useZhSubtitles } from '../hooks/useZhSubtitles'
@@ -67,6 +68,7 @@ export default function BrowsePage(): JSX.Element {
   const [folders, setFolders] = useState<Folder[]>([])
   const [selection, setSelection] = useState<WordSelection | null>(null)
   const [captionOpacity, setCaptionOpacity] = useState(0.72)
+  const [showCaptions, setShowCaptions] = useState(true)
   const [captionFontSize, setCaptionFontSize] = useState(20)
   const [captionZhSize, setCaptionZhSize] = useState(16)
   const [captionFont, setCaptionFont] = useState('default')
@@ -191,6 +193,7 @@ export default function BrowsePage(): JSX.Element {
     const load = (): void => {
       api.settingsGet().then((s) => {
         setCaptionOpacity(s.captionOpacity ?? 0.72)
+        setShowCaptions(s.showCaptions ?? true)
         setShowZh(s.showZhSubtitle ?? false)
         setTheme(s.theme ?? 'night')
         setCaptionFontSize(s.captionFontSize ?? 20)
@@ -274,6 +277,55 @@ export default function BrowsePage(): JSX.Element {
     loopRef.current = looping
   }, [looping])
 
+  // 原声片段播放（跟读页通过 guest-audio 桥调用）：seek 到句首播放，定时到句尾暂停
+  const segmentTimerRef = useRef<number | null>(null)
+  const pendingSegmentRef = useRef<{ videoId: string; start: number; dur: number } | null>(null)
+
+  const playSegmentNow = useCallback(
+    (start: number, dur: number): void => {
+      const wv = wvRef.current
+      if (!wv) return
+      seek(start)
+      if (segmentTimerRef.current) window.clearTimeout(segmentTimerRef.current)
+      segmentTimerRef.current = window.setTimeout(() => {
+        segmentTimerRef.current = null
+        wv
+          .executeJavaScript('(() => { const v = document.querySelector("video"); if (v) v.pause() })()')
+          .catch(() => {})
+      }, Math.max(0.3, dur) * 1000)
+    },
+    [seek]
+  )
+
+  const stopSegment = useCallback((): void => {
+    if (segmentTimerRef.current) {
+      window.clearTimeout(segmentTimerRef.current)
+      segmentTimerRef.current = null
+    }
+    wvRef.current
+      ?.executeJavaScript('(() => { const v = document.querySelector("video"); if (v) v.pause() })()')
+      .catch(() => {})
+  }, [])
+
+  // 注册原声桥：当前视频相符直接播，否则先加载目标视频（page 消息回来后播待发片段）
+  useEffect(
+    () =>
+      registerGuestAudio({
+        playSegment: (vid, start, dur) => {
+          if (video?.videoId === vid) {
+            playSegmentNow(start, dur)
+          } else {
+            pendingSegmentRef.current = { videoId: vid, start, dur }
+            wvRef.current
+              ?.loadURL(`https://www.youtube.com/watch?v=${encodeURIComponent(vid)}`)
+              .catch(() => {})
+          }
+        },
+        stop: stopSegment
+      }),
+    [video?.videoId, playSegmentNow, stopSegment]
+  )
+
   // webview 事件接线（ipc-message / dom-ready / 原生全屏拦截）
   useEffect(() => {
     const wv = wvRef.current
@@ -287,6 +339,12 @@ export default function BrowsePage(): JSX.Element {
         applyGuestTheme(themeRef.current) // SPA 导航后重新断言主题
         if (msg.videoId) {
           void extract(wv)
+          // 跟读页请求的原声片段：等的就是这个视频，加载完成后补播
+          const pending = pendingSegmentRef.current
+          if (pending && pending.videoId === msg.videoId) {
+            pendingSegmentRef.current = null
+            window.setTimeout(() => playSegmentNow(pending.start, pending.dur), 1200)
+          }
         } else {
           setVideo(null)
           setCues([])
@@ -372,7 +430,8 @@ export default function BrowsePage(): JSX.Element {
     applyGuestTheme,
     themeRef,
     fsIgnoreLeaveRef,
-    seek
+    seek,
+    playSegmentNow
   ])
 
   // Escape：先关翻译弹窗，其次退出应用级全屏
@@ -522,6 +581,7 @@ export default function BrowsePage(): JSX.Element {
           <CaptionOverlay
             cues={cues}
             time={time}
+            hidden={!showCaptions}
             opacity={captionOpacity}
             fontSize={captionFontSize}
             zhSize={captionZhSize}

@@ -2,23 +2,36 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { Favorite, Folder, ShadowingResult, ShadowingScript } from '../../../shared/types'
+import MoveFolderModal from '../components/MoveFolderModal'
 import GridIcon from '../components/icons/GridIcon'
 import ListIcon from '../components/icons/ListIcon'
 import TrashIcon from '../components/icons/TrashIcon'
 import UserSpeakIcon from '../components/icons/UserSpeakIcon'
+import SearchIcon from '../components/icons/SearchIcon'
+import FolderInputIcon from '../components/icons/FolderInputIcon'
+
+type ViewMode = 'grid' | 'list'
 
 const STRATEGY_LABEL: Record<string, string> = {
   'llm-only': '仅 LLM',
   'llm-fallback': 'LLM 优先，本地规则兜底',
-  'rules-only': '仅本地规则'
+  'rules-only': '仅本地规则',
+  raw: '直接使用字幕'
 }
 
 const GENERATED_BY_LABEL: Record<string, string> = {
   llm: 'LLM',
-  rules: '本地规则'
+  rules: '本地规则',
+  raw: '原始字幕'
 }
 
-type ViewMode = 'grid' | 'list'
+/** 各策略期望的生成方式（不一致时提示重新生成） */
+const STRATEGY_EXPECT: Record<string, string> = {
+  'llm-only': 'llm',
+  'llm-fallback': 'llm',
+  'rules-only': 'rules',
+  raw: 'raw'
+}
 
 export default function FavoritesPage(): JSX.Element {
   const navigate = useNavigate()
@@ -27,6 +40,10 @@ export default function FavoritesPage(): JSX.Element {
   const [selectedFolder, setSelectedFolder] = useState<string | null | undefined>(undefined)
   const [mode, setMode] = useState<ViewMode>('grid')
   const [newFolder, setNewFolder] = useState('')
+  // 收藏页内搜索（标题/作者）
+  const [search, setSearch] = useState('')
+  // 顶部快速添加：粘贴链接
+  const [urlInput, setUrlInput] = useState('')
   // 跟读脚本生成中：卡片按钮置灰；genMsg 为失败提示
   const [genId, setGenId] = useState<string | null>(null)
   const [genMsg, setGenMsg] = useState('')
@@ -36,6 +53,9 @@ export default function FavoritesPage(): JSX.Element {
     existing: ShadowingScript
     strategy: string
   } | null>(null)
+  // 移动分类 / 删除两段确认
+  const [moveTarget, setMoveTarget] = useState<Favorite | null>(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
   const reload = useCallback(async (): Promise<void> => {
     setFolders(await api.folderList())
@@ -62,11 +82,35 @@ export default function FavoritesPage(): JSX.Element {
 
   const removeFavorite = async (videoId: string): Promise<void> => {
     await api.favRemove(videoId)
+    setDeleteConfirmId(null)
     void reload()
   }
 
   const open = (fav: Favorite): void => {
     navigate(`/browse?v=${encodeURIComponent(fav.videoId)}`)
+  }
+
+  /** 粘贴链接快速收藏：主进程拉取标题/作者 */
+  const addByUrl = async (): Promise<void> => {
+    const url = urlInput.trim()
+    const m = /[?&]v=([\w-]{6,})/.exec(url) ?? /youtu\.be\/([\w-]{6,})/.exec(url)
+    if (!m) {
+      setGenMsg('链接无效，请粘贴 YouTube 视频链接')
+      setTimeout(() => setGenMsg(''), 3000)
+      return
+    }
+    const vid = m[1]
+    const info = (await api.videoFetchInfo(vid)) as { title: string; channel: string } | null
+    // 当前选中了具体分类则直接收进去
+    await api.favAdd({
+      videoId: vid,
+      title: info?.title ?? '',
+      channel: info?.channel ?? '',
+      thumbnail: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+      folderId: typeof selectedFolder === 'string' ? selectedFolder : null
+    })
+    setUrlInput('')
+    void reload()
   }
 
   /** 生成脚本并跳转跟读页；force 时覆盖已有脚本 */
@@ -103,11 +147,7 @@ export default function FavoritesPage(): JSX.Element {
     const strategy = s.shadowingStrategy ?? 'llm-fallback'
     const by = existing.generatedBy
     // 老数据无 generatedBy 也算不一致，提示用户
-    const mismatch =
-      by === undefined ||
-      (strategy === 'rules-only' && by !== 'rules') ||
-      (strategy === 'llm-only' && by !== 'llm') ||
-      (strategy === 'llm-fallback' && by === 'rules')
+    const mismatch = by === undefined || by !== STRATEGY_EXPECT[strategy]
     if (mismatch) {
       setRegenTarget({ fav, existing, strategy })
       return
@@ -115,104 +155,196 @@ export default function FavoritesPage(): JSX.Element {
     navigate(`/shadowing?v=${encodeURIComponent(vid)}`)
   }
 
+  const countOf = (folderId: string | null | undefined): number => {
+    if (folderId === undefined) return favorites.length
+    return favorites.filter((f) => f.folderId === (folderId ?? null)).length
+  }
+
+  const q = search.trim().toLowerCase()
+  const filtered = q
+    ? favorites.filter(
+        (f) => f.title.toLowerCase().includes(q) || f.channel.toLowerCase().includes(q)
+      )
+    : favorites
+
+  const currentFolderName =
+    selectedFolder === undefined
+      ? '全部'
+      : selectedFolder === null
+        ? '未分类'
+        : (folders.find((f) => f.id === selectedFolder)?.name ?? '')
+
   return (
     <div className="page favorites-page">
-      <aside className="folder-bar">
-        <button
-          className={selectedFolder === undefined ? 'selected' : ''}
-          onClick={() => setSelectedFolder(undefined)}
-        >
-          全部
-        </button>
-        <button
-          className={selectedFolder === null ? 'selected' : ''}
-          onClick={() => setSelectedFolder(null)}
-        >
-          未分类
-        </button>
-        {folders.map((f) => (
-          <div key={f.id} className="folder-row">
-            <button
-              className={selectedFolder === f.id ? 'selected' : ''}
-              onClick={() => setSelectedFolder(f.id)}
-            >
-              {f.name}
-            </button>
-            <span
-              className="folder-del"
-              title="删除分类"
-              onClick={() => void removeFolder(f.id)}
-            >
-              <TrashIcon />
-            </span>
+      <div className="page-head">
+        <div className="page-head-row">
+          <h2>
+            收藏的视频 <span className="fav-total">共 {favorites.length} 部</span>
+          </h2>
+          <div className="page-head-actions">
+            <div className="fav-url-add">
+              <input
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && void addByUrl()}
+                placeholder="粘贴 YouTube 视频链接加入收藏…"
+              />
+              <button disabled={!urlInput.trim()} onClick={() => void addByUrl()}>
+                  添加收藏
+              </button>
+            </div>
           </div>
-        ))}
-        <div className="folder-new">
-          <input
-            value={newFolder}
-            onChange={(e) => setNewFolder(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && void createFolder()}
-            placeholder="新文件夹名"
-          />
-          <button onClick={() => void createFolder()}>+</button>
         </div>
-      </aside>
-      <div className="fav-main">
-        <div className="page-head">
-          <div className="page-head-row">
-            <h2>收藏的视频</h2>
-            {genMsg && <span className="fav-gen-msg">{genMsg}</span>}
-            <div className="mode-toggle">
-            <button
-              className={mode === 'grid' ? 'icon-btn selected' : 'icon-btn'}
-              title="缩略图"
-              onClick={() => setMode('grid')}
-            >
-              <GridIcon />
-            </button>
-            <button
-              className={mode === 'list' ? 'icon-btn selected' : 'icon-btn'}
-              title="列表"
-              onClick={() => setMode('list')}
-            >
-              <ListIcon />
-            </button>
+        <div className="page-desc">按分类管理收藏的视频，点卡片上的跟读按钮可生成口语练习脚本</div>
+      </div>
+
+      <div className="fav-body">
+        <aside className="folder-bar">
+          <button
+            className={selectedFolder === undefined ? 'selected' : ''}
+            onClick={() => setSelectedFolder(undefined)}
+          >
+            全部
+            <span className="folder-count">{countOf(undefined)}</span>
+          </button>
+          <button
+            className={selectedFolder === null ? 'selected' : ''}
+            onClick={() => setSelectedFolder(null)}
+          >
+            未分类
+            <span className="folder-count">{countOf(null)}</span>
+          </button>
+          {folders.map((f) => (
+            <div key={f.id} className="folder-row">
+              <button
+                className={selectedFolder === f.id ? 'selected' : ''}
+                onClick={() => setSelectedFolder(f.id)}
+              >
+                {f.name}
+                <span className="folder-count">{countOf(f.id)}</span>
+              </button>
+              <span
+                className="folder-del"
+                title="删除分类"
+                onClick={() => void removeFolder(f.id)}
+              >
+                <TrashIcon />
+              </span>
+            </div>
+          ))}
+          <div className="folder-new">
+            <input
+              value={newFolder}
+              onChange={(e) => setNewFolder(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && void createFolder()}
+              placeholder="新文件夹名"
+            />
+            <button onClick={() => void createFolder()}>+</button>
           </div>
-          </div>
-          <div className="page-desc">按分类管理收藏的视频，点卡片上的跟读按钮可生成口语练习脚本</div>
-        </div>
-        {favorites.length === 0 && <div className="empty-hint">还没有收藏，去浏览页收藏视频吧</div>}
-        <div className={mode === 'grid' ? 'fav-grid' : 'fav-list'}>
-          {favorites.map((fav) => (
-            <div key={fav.videoId} className="fav-card">
-              <img src={fav.thumbnail} alt="" onClick={() => open(fav)} />
-              <div className="fav-info">
-                <div className="fav-title" onClick={() => open(fav)}>
-                  {fav.title || fav.videoId}
-                </div>
-                <div className="fav-channel">{fav.channel}</div>
+        </aside>
+
+        <div className="fav-main">
+          <div className="fav-controls">
+            <div className="fav-controls-title">
+              {currentFolderName} <span>（{filtered.length} 个视频）</span>
+            </div>
+            <div className="fav-controls-right">
+              {genMsg && <span className="fav-gen-msg">{genMsg}</span>}
+              <div className="fav-search">
+                <SearchIcon />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="搜索收藏视频或作者…"
+                />
               </div>
-              <div className="fav-card-actions">
+              <div className="mode-toggle">
                 <button
-                  className="fav-remove icon-btn"
-                  title="移除"
-                  onClick={() => void removeFavorite(fav.videoId)}
+                  className={mode === 'grid' ? 'icon-btn selected' : 'icon-btn'}
+                  title="缩略图"
+                  onClick={() => setMode('grid')}
                 >
-                  <TrashIcon />
+                  <GridIcon />
                 </button>
                 <button
-                  className="fav-shadow icon-btn"
-                  title={genId === fav.videoId ? '正在生成跟读脚本…' : '跟读练习'}
-                  disabled={genId === fav.videoId}
-                  onClick={() => void openShadowing(fav)}
+                  className={mode === 'list' ? 'icon-btn selected' : 'icon-btn'}
+                  title="列表"
+                  onClick={() => setMode('list')}
                 >
-                  <UserSpeakIcon />
+                  <ListIcon />
                 </button>
               </div>
             </div>
-          ))}
+          </div>
+
+          {filtered.length === 0 && (
+            <div className="empty-hint">
+              {favorites.length === 0 ? '还没有收藏，去浏览页收藏视频吧' : '没有匹配的收藏'}
+            </div>
+          )}
+          <div className={mode === 'grid' ? 'fav-grid' : 'fav-list'}>
+            {filtered.map((fav) => (
+              <div key={fav.videoId} className="fav-card">
+                <img src={fav.thumbnail} alt="" onClick={() => open(fav)} />
+                <div className="fav-info">
+                  <div className="fav-title" onClick={() => open(fav)}>
+                    {fav.title || fav.videoId}
+                  </div>
+                  <div className="fav-channel">{fav.channel}</div>
+                </div>
+                <div className="fav-card-actions">
+                  <button
+                    className="fav-shadow icon-btn"
+                    title={genId === fav.videoId ? '正在生成跟读脚本…' : '跟读练习'}
+                    disabled={genId === fav.videoId}
+                    onClick={() => void openShadowing(fav)}
+                  >
+                    <UserSpeakIcon />
+                  </button>
+                  <span className="fav-card-actions-right">
+                    <button
+                      className="icon-btn"
+                      title="移动到分类"
+                      onClick={() => setMoveTarget(fav)}
+                    >
+                      <FolderInputIcon />
+                    </button>
+                    {deleteConfirmId === fav.videoId ? (
+                      <span className="fav-del-confirm">
+                        <button
+                          className="fav-del-yes"
+                          onClick={() => void removeFavorite(fav.videoId)}
+                        >
+                          删除
+                        </button>
+                        <button onClick={() => setDeleteConfirmId(null)}>取消</button>
+                      </span>
+                    ) : (
+                      <button
+                        className="fav-remove icon-btn"
+                        title="移除"
+                        onClick={() => setDeleteConfirmId(fav.videoId)}
+                      >
+                        <TrashIcon />
+                      </button>
+                    )}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
+
+      {moveTarget && (
+        <MoveFolderModal
+          fav={moveTarget}
+          folders={folders}
+          onClose={() => setMoveTarget(null)}
+          onMoved={() => void reload()}
+        />
+      )}
+
       {regenTarget && (
         <div className="regen-overlay" onClick={() => setRegenTarget(null)}>
           <div className="regen-card" onClick={(e) => e.stopPropagation()}>

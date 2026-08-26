@@ -22,13 +22,21 @@ describe('Store', () => {
     expect(store.listFavorites()[0].folderId).toBeNull()
   })
 
-  it('收藏按 videoId 去重更新', () => {
+  it('收藏按 videoId 去重更新；可移动分类', () => {
     const { store } = makeStore()
     store.addFavorite({ videoId: 'v1', title: 'a', channel: 'c', thumbnail: '', folderId: null })
     store.addFavorite({ videoId: 'v1', title: 'b', channel: 'c', thumbnail: '', folderId: null })
     expect(store.listFavorites()).toHaveLength(1)
     expect(store.listFavorites()[0].title).toBe('b')
     expect(store.isFavorite('v1')).toBe(true)
+
+    const folder = store.addFolder('TED')
+    store.moveFavorite('v1', folder.id)
+    expect(store.listFavorites()[0].folderId).toBe(folder.id)
+    store.moveFavorite('v1', null)
+    expect(store.listFavorites()[0].folderId).toBeNull()
+    store.moveFavorite('nope', folder.id) // 不存在静默忽略
+
     store.removeFavorite('v1')
     expect(store.isFavorite('v1')).toBe(false)
   })

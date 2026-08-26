@@ -41,5 +41,10 @@ export const api: YTenSubApi = {
     const r = await raw.favRemove(videoId)
     window.dispatchEvent(new Event(FAVS_CHANGED_EVENT))
     return r
+  },
+  favMove: async (videoId, folderId) => {
+    const r = await raw.favMove(videoId, folderId)
+    window.dispatchEvent(new Event(FAVS_CHANGED_EVENT))
+    return r
   }
 }

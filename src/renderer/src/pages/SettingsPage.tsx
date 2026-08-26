@@ -390,6 +390,7 @@ export default function SettingsPage(): JSX.Element {
                 <option value="llm-fallback">LLM 优先，本地规则兜底（推荐）</option>
                 <option value="llm-only">仅 LLM（质量最佳，需配置 API）</option>
                 <option value="rules-only">仅本地规则（免费离线，质量较低）</option>
+                <option value="raw">直接使用字幕（不提炼，保留完整语境）</option>
               </select>
               </section>
             </div>

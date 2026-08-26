@@ -80,6 +80,30 @@ export function mergeCuesToSentences(cues: Cue[]): SentenceUnit[] {
   return out
 }
 
+/** 只取视频标题/作者（收藏页快速添加用），不拉字幕 */
+export async function fetchVideoInfo(
+  videoId: string,
+  fetchFn: FetchLike
+): Promise<{ title: string; channel: string } | null> {
+  try {
+    const res = await fetchFn(`https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        context: {
+          client: { clientName: 'ANDROID', clientVersion: '20.10.38', androidSdkVersion: 34, hl: 'en' }
+        },
+        videoId
+      })
+    })
+    const pr = (await res.json()) as { videoDetails?: { title?: string; author?: string } }
+    if (!pr.videoDetails?.title) return null
+    return { title: pr.videoDetails.title, channel: pr.videoDetails.author ?? '' }
+  } catch {
+    return null
+  }
+}
+
 /** 提炼 prompt：合并后的完整句子（带序号）交给 LLM 精选并清洗（去口头禅/填充词） */
 export function buildShadowingMessages(units: { text: string }[]): ChatMessage[] {
   const numbered = units.map((c, i) => `${i}. ${c.text}`).join('\n')

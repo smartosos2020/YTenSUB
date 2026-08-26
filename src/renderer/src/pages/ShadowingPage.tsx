@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { api } from '../api'
+import { api, VOCAB_CHANGED_EVENT } from '../api'
 import { speakText } from '../speech'
-import { ShadowingScript } from '../../../shared/types'
+import { playGuestSegment } from '../guest-audio'
+import { MASTERED_LEVEL, ShadowingScript, VocabItem } from '../../../shared/types'
+import WordSpans from '../components/WordSpans'
+import TranslatePopup from '../components/TranslatePopup'
+import { WordSelection } from '../components/SubtitlePanel'
 import BackIcon from '../components/icons/BackIcon'
 import bgmUrl from '../assets/bgm.mp3'
 
@@ -29,6 +33,13 @@ export default function ShadowingPage(): JSX.Element {
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [bgmOn, setBgmOn] = useState(true)
+  // 原声开关：按下常开，播放时每滚到一句自动读该句；与播放/暂停/停止互不干扰
+  const [voiceOn, setVoiceOn] = useState(false)
+  // 中文行开关：默认显示
+  const [showZh, setShowZh] = useState(true)
+  // 生词高亮与取词弹窗
+  const [vocabList, setVocabList] = useState<VocabItem[]>([])
+  const [selection, setSelection] = useState<WordSelection | null>(null)
   const bgmRef = useRef<HTMLAudioElement | null>(null)
   const speedRef = useRef(speed)
   speedRef.current = speed
@@ -102,6 +113,45 @@ export default function ShadowingPage(): JSX.Element {
     else bgm.pause()
   }, [playing, bgmOn])
 
+  /** 原声：raw 脚本（原始字幕）播放视频对应片段；其余策略的脚本是清洗过的文本，走 TTS 示范音 */
+  const speakCurrent = useCallback((): void => {
+    if (currentIdx < 0 || !script) return
+    const it = script.items[currentIdx]
+    if (script.generatedBy === 'raw' && playGuestSegment(script.videoId, it.start, it.dur)) {
+      return
+    }
+    speakText(it.text)
+  }, [currentIdx, script])
+
+  // 原声常开时：播放中每滚到一句自动读该句（切换句子/开关/播放状态变化都会触发）
+  useEffect(() => {
+    if (voiceOn && playing) speakCurrent()
+  }, [voiceOn, playing, speakCurrent])
+
+  // 生词本：脚本里的生词橙色高亮（已掌握的满级单词不再高亮），增删后事件刷新
+  useEffect(() => {
+    const load = (): void => {
+      void api
+        .vocabList()
+        .then((list: VocabItem[]) => setVocabList(list))
+        .catch(() => {})
+    }
+    load()
+    window.addEventListener(VOCAB_CHANGED_EVENT, load)
+    return () => window.removeEventListener(VOCAB_CHANGED_EVENT, load)
+  }, [])
+
+  // 高亮集合：未掌握的生词（小写）
+  const vocabWords = useMemo(
+    () =>
+      new Set(
+        vocabList
+          .filter((v) => (v.reviewLevel ?? 0) < MASTERED_LEVEL)
+          .map((v) => v.text.trim().toLowerCase())
+      ),
+    [vocabList]
+  )
+
   if (!loaded) return <div className="page">加载中…</div>
 
   if (!script) {
@@ -133,10 +183,6 @@ export default function ShadowingPage(): JSX.Element {
     setPosition(0)
   }
 
-  const speakCurrent = (): void => {
-    if (currentIdx >= 0) speakText(script.items[currentIdx].text)
-  }
-
   return (
     <div className="page shadow-page">
       <div className="page-head">
@@ -150,10 +196,12 @@ export default function ShadowingPage(): JSX.Element {
           跟随提词器朗读练习；共 {script.items.length} 句 ·{' '}
           {script.generatedBy === 'llm'
             ? '由 LLM 生成'
-            : script.llmError
-              ? `LLM 调用失败（${script.llmError}），已回退本地规则生成`
-              : '由本地规则生成（当前策略未使用 LLM）'}
-          ；"原声"为 TTS 示范音
+            : script.generatedBy === 'raw'
+              ? '直接使用原始字幕'
+              : script.llmError
+                ? `LLM 调用失败（${script.llmError}），已回退本地规则生成`
+                : '由本地规则生成（当前策略未使用 LLM）'}
+          ；{script.generatedBy === 'raw' ? '"原声"为视频对应片段' : '"原声"为 TTS 示范音'}
         </div>
       </div>
       <div className="shadow-script">
@@ -166,8 +214,18 @@ export default function ShadowingPage(): JSX.Element {
                 className={i === currentIdx ? 'shadow-line active' : 'shadow-line'}
                 onClick={() => setPosition(starts[i])}
               >
-                <div className="shadow-en">{it.text}</div>
-                {it.zh && <div className="shadow-zh">{it.zh}</div>}
+                <div className="shadow-en">
+                  <WordSpans
+                    text={it.text}
+                    sentence={it.text}
+                    knownWords={vocabWords}
+                    onWord={(word, rect, sentence) => {
+                      // 点词打开翻译弹窗；不触发行的跳转定位
+                      setSelection({ text: word, rect, sentence })
+                    }}
+                  />
+                </div>
+                {showZh && it.zh && <div className="shadow-zh">{it.zh}</div>}
               </div>
             </div>
           )
@@ -186,7 +244,15 @@ export default function ShadowingPage(): JSX.Element {
         <div className="shadow-controls">
           <button onClick={togglePlay}>{playing ? '暂停' : '播放'}</button>
           <button onClick={stop}>停止</button>
-          <button title="示范音（TTS 朗读当前句）" onClick={speakCurrent}>
+          <button
+            className={voiceOn ? 'selected' : ''}
+            title={
+              script.generatedBy === 'raw'
+                ? '原声开关：开启后播放时每句自动放视频对应片段'
+                : '原声开关：开启后播放时每句自动 TTS 朗读'
+            }
+            onClick={() => setVoiceOn(!voiceOn)}
+          >
             原声
           </button>
           <label className="shadow-speed">
@@ -202,9 +268,32 @@ export default function ShadowingPage(): JSX.Element {
             {speed.toFixed(2).replace(/0+$/, '').replace(/\.$/, '.0')}x
           </label>
           <button onClick={() => setBgmOn(!bgmOn)}>音乐：{bgmOn ? '开' : '关'}</button>
+          <button
+            className={showZh ? 'selected' : ''}
+            title="显示 / 隐藏脚本中文"
+            onClick={() => setShowZh(!showZh)}
+          >
+            中文
+          </button>
         </div>
       </div>
       <audio ref={bgmRef} src={bgmUrl} loop />
+      {selection && (
+        <TranslatePopup
+          key={selection.text}
+          text={selection.text}
+          rect={selection.rect}
+          sentence={selection.sentence}
+          video={{ videoId: script.videoId, title: script.title }}
+          time={script.items[Math.max(0, currentIdx)]?.start ?? 0}
+          savedItem={
+            vocabList.find(
+              (v) => v.text.trim().toLowerCase() === selection.text.trim().toLowerCase()
+            ) ?? null
+          }
+          onClose={() => setSelection(null)}
+        />
+      )}
     </div>
   )
 }

@@ -13,6 +13,9 @@ const api = {
   favList: (folderId?: string | null) => ipcRenderer.invoke('fav:list', folderId),
   favRemove: (videoId: string) => ipcRenderer.invoke('fav:remove', videoId),
   favIs: (videoId: string) => ipcRenderer.invoke('fav:is', videoId),
+  favMove: (videoId: string, folderId: string | null) =>
+    ipcRenderer.invoke('fav:move', videoId, folderId),
+  videoFetchInfo: (videoId: string) => ipcRenderer.invoke('video:fetch-info', videoId),
 
   folderAdd: (name: string) => ipcRenderer.invoke('folder:add', name),
   folderList: () => ipcRenderer.invoke('folder:list'),
@@ -31,6 +34,22 @@ const api = {
   shadowingGenerate: (videoId: string, force?: boolean) =>
     ipcRenderer.invoke('shadowing:generate', videoId, force),
   llmTest: () => ipcRenderer.invoke('llm:test'),
+  appVersion: () => ipcRenderer.invoke('app:version'),
+  updateInstall: () => ipcRenderer.send('update:install'),
+  onUpdateAvailable: (cb: () => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('update:available', listener)
+    return () => {
+      ipcRenderer.removeListener('update:available', listener)
+    }
+  },
+  onUpdateDownloaded: (cb: () => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('update:downloaded', listener)
+    return () => {
+      ipcRenderer.removeListener('update:downloaded', listener)
+    }
+  },
 
   // 自定义标题栏的窗口控制
   windowMinimize: () => ipcRenderer.send('window:minimize'),

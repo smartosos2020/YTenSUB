@@ -111,6 +111,14 @@ export class Store {
     this.scheduleSave()
   }
 
+  /** 移动收藏到指定分类 */
+  moveFavorite(videoId: string, folderId: string | null): void {
+    const fav = this.data.favorites.find((f) => f.videoId === videoId)
+    if (!fav) return
+    fav.folderId = folderId
+    this.scheduleSave()
+  }
+
   isFavorite(videoId: string): boolean {
     return this.data.favorites.some((f) => f.videoId === videoId)
   }

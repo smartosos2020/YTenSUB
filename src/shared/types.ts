@@ -69,7 +69,7 @@ export interface ShadowingScript {
   title: string
   generatedAt: number
   /** 生成方式（老数据可能缺失） */
-  generatedBy?: 'llm' | 'rules'
+  generatedBy?: 'llm' | 'rules' | 'raw'
   /** LLM 调用失败的原因（规则兜底产物上记录，便于诊断） */
   llmError?: string
   items: ShadowingItem[]
@@ -80,8 +80,8 @@ export type ShadowingResult =
   | { script: ShadowingScript }
   | { error: 'no-captions' | 'no-llm' | 'llm-failed'; detail?: string }
 
-/** 跟读脚本生成策略：仅 LLM / LLM 优先本地规则兜底 / 仅本地规则（免费，质量较低） */
-export type ShadowingStrategy = 'llm-only' | 'llm-fallback' | 'rules-only'
+/** 跟读脚本生成策略：仅 LLM / LLM 优先本地规则兜底 / 仅本地规则（免费，质量较低） / 直接使用字幕 */
+export type ShadowingStrategy = 'llm-only' | 'llm-fallback' | 'rules-only' | 'raw'
 
 export type Theme = 'night' | 'day' | 'system'
 
@@ -106,6 +106,8 @@ export interface Settings {
   accentColor: string
   /** 是否显示中文字幕（默认关闭，由字幕列表顶部的滑动开关控制） */
   showZhSubtitle: boolean
+  /** 是否显示视频区字幕浮层（侧栏底部开关，默认开） */
+  showCaptions: boolean
   /** 主窗字幕（视频浮层）英文行字号 px */
   captionFontSize: number
   /** 主窗字幕中文行字号 px */
@@ -142,6 +144,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'night',
   accentColor: 'green',
   showZhSubtitle: false,
+  showCaptions: true,
   captionFontSize: 20,
   captionZhSize: 16,
   captionFont: 'default',

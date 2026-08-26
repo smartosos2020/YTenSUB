@@ -8,6 +8,8 @@ import { WordSelection } from './SubtitlePanel'
 interface Props {
   cues: Cue[]
   time: number
+  /** 字幕浮层总开关（侧栏底部按钮，关闭时保持挂载、隐藏渲染，拖动位置不丢） */
+  hidden?: boolean
   opacity: number
   /** 英文字幕行字号 px */
   fontSize: number
@@ -44,6 +46,7 @@ interface Props {
 export default function CaptionOverlay({
   cues,
   time,
+  hidden = false,
   opacity,
   fontSize,
   zhSize,
@@ -95,7 +98,7 @@ export default function CaptionOverlay({
     e.preventDefault()
   }
 
-  if (idx === -1) return null
+  if (hidden || idx === -1) return null
   const cue = cues[idx]
   const zhText = showZh ? (zhLines?.[idx] ?? null) : null
   const lineStyle: React.CSSProperties = {

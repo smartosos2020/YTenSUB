@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { api, SETTINGS_CHANGED_EVENT } from './api'
 import { applyTheme } from './theme'
@@ -15,6 +15,7 @@ import StarOutlineIcon from './components/icons/StarOutlineIcon'
 import BookIcon from './components/icons/BookIcon'
 import RepeatIcon from './components/icons/RepeatIcon'
 import GearIcon from './components/icons/GearIcon'
+import UpdateIcon from './components/icons/UpdateIcon'
 
 const NAV_ITEMS: { to: string; label: string; icon: JSX.Element }[] = [
   { to: '/browse', label: '浏览', icon: <PlayIcon /> },
@@ -56,10 +57,18 @@ function MainArea(): JSX.Element {
 
 export default function App(): JSX.Element {
   const [collapsed, setCollapsed] = usePersistentState<boolean>('ytensub:nav-collapsed', false)
+  // 字幕浮层总开关（标题栏，默认开）
+  const [showCaptions, setShowCaptions] = useState(true)
+  // 版本号与更新状态（electron-updater 事件）
+  const [appVersion, setAppVersion] = useState('')
+  const [updateState, setUpdateState] = useState<'none' | 'available' | 'downloaded'>('none')
 
   useEffect(() => {
     const syncTheme = (): void =>
-      void api.settingsGet().then((s) => applyTheme(s.theme, s.accentColor))
+      void api.settingsGet().then((s) => {
+        applyTheme(s.theme, s.accentColor)
+        setShowCaptions(s.showCaptions ?? true)
+      })
     syncTheme()
     // 跟随系统模式下，系统明暗变化时重新解析
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
@@ -71,10 +80,25 @@ export default function App(): JSX.Element {
     }
   }, [])
 
+  useEffect(() => {
+    void api.appVersion().then((v) => setAppVersion(String(v)))
+    const offAvailable = api.onUpdateAvailable(() => setUpdateState('available'))
+    const offDownloaded = api.onUpdateDownloaded(() => setUpdateState('downloaded'))
+    return () => {
+      offAvailable()
+      offDownloaded()
+    }
+  }, [])
+
   return (
     <HashRouter>
       <div className="app">
-        <TitleBar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+        <TitleBar
+          collapsed={collapsed}
+          onToggle={() => setCollapsed(!collapsed)}
+          showCaptions={showCaptions}
+          onToggleCaptions={() => void api.settingsSet({ showCaptions: !showCaptions })}
+        />
         <div className="app-body">
           <nav className={collapsed ? 'sidebar collapsed' : 'sidebar'}>
             {NAV_ITEMS.map((item) => (
@@ -83,6 +107,24 @@ export default function App(): JSX.Element {
                 {!collapsed && <span className="nav-label">{item.label}</span>}
               </NavLink>
             ))}
+            <div className="sidebar-foot">
+              <span className="version">v{appVersion}</span>
+              {updateState !== 'none' && (
+                <button
+                  className={updateState === 'downloaded' ? 'update-btn ready' : 'update-btn'}
+                  title={
+                    updateState === 'downloaded'
+                      ? '更新已就绪，点击重启安装'
+                      : '发现新版本，正在后台下载…'
+                  }
+                  onClick={() => {
+                    if (updateState === 'downloaded') api.updateInstall()
+                  }}
+                >
+                  <UpdateIcon />
+                </button>
+              )}
+            </div>
           </nav>
           <MainArea />
         </div>
