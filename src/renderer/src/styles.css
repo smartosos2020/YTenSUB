@@ -102,11 +102,12 @@ body {
 }
 
 /* 所有按钮：平时无边框、底色融入容器；悬停仅叠加背景色，不高亮图标/边框。
-   Mantine 组件自带完整样式，排除在外 */
+   Mantine 组件自带完整样式，排除在外。
+   文字按钮带 1px 边框与背景区分；纯图标按钮（icon-btn/标题栏/地址栏）保持无边框 */
 button:not([class*='mantine']) {
   background: transparent;
   color: var(--text);
-  border: 1px solid transparent;
+  border: 1px solid var(--border-hi);
   border-radius: 8px;
   padding: 6px 12px;
   font-family: var(--mono);
@@ -122,6 +123,23 @@ button:not([class*='mantine']):hover:not(:disabled) {
 button:not([class*='mantine']):disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* 纯图标按钮：无边框 */
+.icon-btn,
+.titlebar-toggle,
+.titlebar-controls button,
+.navbar > button,
+.fav-wrap > button,
+.key-eye {
+  border-color: transparent;
+}
+
+/* 彩色底按钮：边框与底色同色 */
+.reset-yes,
+.fav-del-yes,
+.regen-yes {
+  border-color: transparent;
 }
 
 input:not([class*='mantine']) {
