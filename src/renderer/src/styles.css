@@ -272,6 +272,11 @@ select:focus {
   display: block;
 }
 
+/* 折叠/字幕两个开关是相邻一组，收紧间距 */
+.titlebar-toggle + .titlebar-toggle {
+  margin-left: -4px;
+}
+
 /* 窗口控制按钮：最小化 / 最大化-还原 / 关闭，贴右上角逐高撑满 */
 .titlebar-controls {
   margin-left: auto;
