@@ -22,6 +22,7 @@ import SunIcon from '../components/icons/SunIcon'
 import AutoIcon from '../components/icons/AutoIcon'
 import VolumeIcon from '../components/icons/VolumeIcon'
 import BookIcon from '../components/icons/BookIcon'
+import PageShell from '../components/PageShell'
 
 const TRANSLATORS: { key: TranslateSource; label: string; hint: string }[] = [
   { key: 'local', label: '本地离线词典', hint: '内置常用词库，毫秒级即时查词' },
@@ -202,14 +203,11 @@ export default function SettingsPage(): JSX.Element {
   }
 
   return (
-    <div className="page settings-page">
-      <div className="settings-center">
-        <header className="settings-head">
-        <div>
-          <h2>偏好设置</h2>
-          <div className="settings-sub">配置外观主题、字幕排版、翻译管道与本地 LLM 大模型推理服务</div>
-        </div>
-        <div className="settings-head-right">
+    <PageShell
+      title="偏好设置"
+      desc="配置外观主题、字幕排版、翻译管道与本地 LLM 大模型推理服务"
+      actions={
+        <>
           <span className={saveFlash ? 'save-badge flash' : 'save-badge'}>
             {saveFlash ? '✓ 已保存' : '实时保存生效'}
           </span>
@@ -218,9 +216,9 @@ export default function SettingsPage(): JSX.Element {
             onChange={(v) => setTab(v as SettingsTab)}
             data={TABS.map((t) => ({ value: t.key, label: t.label }))}
           />
-        </div>
-      </header>
-
+        </>
+      }
+    >
       <div className="settings-body">
           {show('appearance') && (
             <div className="settings-group">
@@ -700,7 +698,6 @@ export default function SettingsPage(): JSX.Element {
           onClose={() => setSelection(null)}
         />
       )}
-      </div>
-    </div>
+    </PageShell>
   )
 }

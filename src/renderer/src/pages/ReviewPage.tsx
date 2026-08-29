@@ -3,6 +3,7 @@ import { api } from '../api'
 import { speakWord } from '../speech'
 import { MASTERED_LEVEL, VocabItem } from '../../../shared/types'
 import VolumeIcon from '../components/icons/VolumeIcon'
+import PageShell from '../components/PageShell'
 
 /** 到期判断：从未复习（无 due）或到期时间已过 */
 function isDue(v: VocabItem, now: number): boolean {
@@ -46,17 +47,11 @@ export default function ReviewPage(): JSX.Element {
 
   if (queue.length === 0) {
     return (
-      <div className="page review-page">
-        <div className="page-head">
-          <div className="page-head-row">
-            <h2>复习</h2>
-          </div>
-          <div className="page-desc">间隔重复记忆卡片：按住卡片左滑不认识，右滑认识</div>
-        </div>
+      <PageShell title="复习" desc="间隔重复记忆卡片：按住卡片左滑不认识，右滑认识">
         <div className="empty-hint">
           {total === 0 ? '今天没有到期的生词，去看看新视频吧' : '全部复习完了'}
         </div>
-      </div>
+      </PageShell>
     )
   }
 
@@ -104,26 +99,23 @@ export default function ReviewPage(): JSX.Element {
   if (dragging && dragX <= -GRADE_THRESHOLD) cardCls.push('drag-forgot')
 
   return (
-    <div className="page review-page">
-      <div className="page-head">
-        <div className="page-head-row">
-          <h2>复习</h2>
-          <label className="review-toggle">
-            <span>释义</span>
-            <span className="switch" title="显示 / 隐藏释义">
-              <input
-                type="checkbox"
-                checked={revealed}
-                onChange={(e) => setRevealed(e.target.checked)}
-              />
-              <span className="switch-slider" />
-            </span>
-          </label>
-        </div>
-        <div className="page-desc">
-          间隔重复记忆卡片：按住卡片左滑不认识，右滑认识（第 {done + 1} / {total} 张）
-        </div>
-      </div>
+    <PageShell
+      title="复习"
+      desc={`间隔重复记忆卡片：按住卡片左滑不认识，右滑认识（第 ${done + 1} / ${total} 张）`}
+      actions={
+        <label className="review-toggle">
+          <span>释义</span>
+          <span className="switch" title="显示 / 隐藏释义">
+            <input
+              type="checkbox"
+              checked={revealed}
+              onChange={(e) => setRevealed(e.target.checked)}
+            />
+            <span className="switch-slider" />
+          </span>
+        </label>
+      }
+    >
       <div className="review-center">
         <div
           className={cardCls.join(' ')}
@@ -158,6 +150,6 @@ export default function ReviewPage(): JSX.Element {
         </div>
         <div className="review-hint">按住卡片：左滑不认识 · 右滑认识</div>
       </div>
-    </div>
+    </PageShell>
   )
 }

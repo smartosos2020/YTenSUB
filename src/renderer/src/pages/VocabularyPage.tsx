@@ -5,6 +5,7 @@ import { speakWord } from '../speech'
 import { MASTERED_LEVEL, VocabItem } from '../../../shared/types'
 import TrashIcon from '../components/icons/TrashIcon'
 import VolumeIcon from '../components/icons/VolumeIcon'
+import PageShell from '../components/PageShell'
 
 function isMastered(v: VocabItem): boolean {
   return v.reviewLevel !== undefined && v.reviewLevel >= MASTERED_LEVEL
@@ -52,11 +53,11 @@ export default function VocabularyPage(): JSX.Element {
     : { 全部: vocab }
 
   return (
-    <div className="page vocab-page">
-      <div className="page-head">
-        <div className="page-head-row">
-          <h2>生词本（{vocab.length}）</h2>
-          <div className="page-head-actions">
+    <PageShell
+      title={`生词本（${vocab.length}）`}
+      desc="收藏的生词与例句，支持 CSV 导出与间隔重复复习"
+      actions={
+        <>
           <label>
             <input
               type="checkbox"
@@ -80,10 +81,9 @@ export default function VocabularyPage(): JSX.Element {
             导出
           </button>
           <button onClick={() => navigate('/review')}>去复习</button>
-          </div>
-        </div>
-        <div className="page-desc">收藏的生词与例句，支持 CSV 导出与间隔重复复习</div>
-      </div>
+        </>
+      }
+    >
       {vocab.length === 0 && (
         <div className="empty-hint">在浏览页字幕里选中单词，就能加入生词本</div>
       )}
@@ -118,6 +118,6 @@ export default function VocabularyPage(): JSX.Element {
           </div>
         </div>
       ))}
-    </div>
+    </PageShell>
   )
 }

@@ -8,6 +8,7 @@ import WordSpans from '../components/WordSpans'
 import TranslatePopup from '../components/TranslatePopup'
 import { WordSelection } from '../components/SubtitlePanel'
 import BackIcon from '../components/icons/BackIcon'
+import PageShell from '../components/PageShell'
 import bgmUrl from '../assets/bgm.mp3'
 
 /** 每句预估朗读时长（秒）：按词数估算，下限 2.5s；播放调速在此基础上缩放 */
@@ -156,18 +157,17 @@ export default function ShadowingPage(): JSX.Element {
 
   if (!script) {
     return (
-      <div className="page shadow-page">
-        <div className="page-head">
-          <div className="page-head-row">
-            <h2>跟读练习</h2>
-            <button className="icon-btn" title="返回收藏" onClick={() => navigate('/favorites')}>
-              <BackIcon />
-            </button>
-          </div>
-          <div className="page-desc">跟随提词器朗读练习；"原声"为 TTS 示范音</div>
-        </div>
+      <PageShell
+        title="跟读练习"
+        desc='跟随提词器朗读练习；"原声"为 TTS 示范音'
+        actions={
+          <button className="icon-btn" title="返回收藏" onClick={() => navigate('/favorites')}>
+            <BackIcon />
+          </button>
+        }
+      >
         <div className="empty-hint">该视频还没有跟读脚本，请到收藏页点击卡片上的跟读按钮生成</div>
-      </div>
+      </PageShell>
     )
   }
 
@@ -184,26 +184,26 @@ export default function ShadowingPage(): JSX.Element {
   }
 
   return (
-    <div className="page shadow-page">
-      <div className="page-head">
-        <div className="page-head-row">
-          <h2>{script.title || '跟读练习'}</h2>
-          <button className="icon-btn" title="返回收藏" onClick={() => navigate('/favorites')}>
-            <BackIcon />
-          </button>
-        </div>
-        <div className="page-desc">
-          跟随提词器朗读练习；共 {script.items.length} 句 ·{' '}
-          {script.generatedBy === 'llm'
-            ? '由 LLM 生成'
-            : script.generatedBy === 'raw'
-              ? '直接使用原始字幕'
-              : script.llmError
-                ? `LLM 调用失败（${script.llmError}），已回退本地规则生成`
-                : '由本地规则生成（当前策略未使用 LLM）'}
-          ；{script.generatedBy === 'raw' ? '"原声"为视频对应片段' : '"原声"为 TTS 示范音'}
-        </div>
-      </div>
+    <PageShell
+      fill
+      title={script.title || '跟读练习'}
+      desc={
+        `跟随提词器朗读练习；共 ${script.items.length} 句 · ` +
+        (script.generatedBy === 'llm'
+          ? '由 LLM 生成'
+          : script.generatedBy === 'raw'
+            ? '直接使用原始字幕'
+            : script.llmError
+              ? `LLM 调用失败（${script.llmError}），已回退本地规则生成`
+              : '由本地规则生成（当前策略未使用 LLM）') +
+        (script.generatedBy === 'raw' ? '；"原声"为视频对应片段' : '；"原声"为 TTS 示范音')
+      }
+      actions={
+        <button className="icon-btn" title="返回收藏" onClick={() => navigate('/favorites')}>
+          <BackIcon />
+        </button>
+      }
+    >
       <div className="shadow-script">
         {script.items.map((it, i) => {
           const newScene = it.scene !== undefined && (i === 0 || it.scene !== script.items[i - 1].scene)
@@ -294,6 +294,6 @@ export default function ShadowingPage(): JSX.Element {
           onClose={() => setSelection(null)}
         />
       )}
-    </div>
+    </PageShell>
   )
 }

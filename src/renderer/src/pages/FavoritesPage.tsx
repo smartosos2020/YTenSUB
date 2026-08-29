@@ -9,6 +9,7 @@ import TrashIcon from '../components/icons/TrashIcon'
 import UserSpeakIcon from '../components/icons/UserSpeakIcon'
 import SearchIcon from '../components/icons/SearchIcon'
 import FolderInputIcon from '../components/icons/FolderInputIcon'
+import PageShell from '../components/PageShell'
 
 type ViewMode = 'grid' | 'list'
 
@@ -150,14 +151,10 @@ export default function FavoritesPage(): JSX.Element {
         : (folders.find((f) => f.id === selectedFolder)?.name ?? '')
 
   return (
-    <div className="page favorites-page">
-      <div className="page-head">
-        <div className="page-head-row">
-          <h2>收藏的视频（{favorites.length}）</h2>
-        </div>
-        <div className="page-desc">按分类管理收藏的视频，点卡片上的跟读按钮可生成口语练习脚本</div>
-      </div>
-
+    <PageShell
+      title={`收藏的视频（${favorites.length}）`}
+      desc="按分类管理收藏的视频，点卡片上的跟读按钮可生成口语练习脚本"
+    >
       <div className="fav-body">
         <aside className="folder-bar">
           <button
@@ -338,6 +335,6 @@ export default function FavoritesPage(): JSX.Element {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   )
 }

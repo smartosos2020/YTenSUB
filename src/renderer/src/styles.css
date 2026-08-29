@@ -461,23 +461,40 @@ select:focus {
   padding: 20px;
   overflow-y: auto;
   flex: 1;
+  /* 各页内容量不同导致滚动条时有时无，居中内容会横移抖动；固定留出滚动条槽 */
+  scrollbar-gutter: stable;
 }
 
-/* 内容居中收窄（浏览页除外，它要撑满留给视频）；
-   收藏/生词本/复习/跟读四个模块页统一 960px */
-.vocab-page,
-.review-page,
-.shadow-page,
-.favorites-page {
-  max-width: 960px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.settings-center {
+/* 模块页统一外壳（PageShell）：唯一宽度来源，浏览页不套 */
+.page-shell {
   max-width: 1180px;
   width: 100%;
   margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  /* 撑满 .page 可视高度：复习卡片等靠 margin:auto 垂直居中；内容超高时外壳随内容伸长，由 .page 滚动 */
+  min-height: 100%;
+}
+
+/* 定高外壳（跟读页）：自身不滚动，脚本区内部滚动，播放条固定在底部 */
+.page-shell-fill {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 模块页隐藏滚动条（浏览页保留）：滚动功能不变，外壳及其内部滚动区一律不显示滚动条 */
+.page-shell {
+  scrollbar-gutter: auto; /* 覆盖 .page 的 stable：滚动条隐藏后无需预留槽位 */
+  scrollbar-width: none; /* Firefox */
+}
+
+.page-shell::-webkit-scrollbar,
+.page-shell *::-webkit-scrollbar {
+  display: none;
+}
+
+.page-shell * {
+  scrollbar-width: none;
 }
 
 .page h2,
@@ -1293,12 +1310,6 @@ body.side-resizing .side-panel {
 }
 
 /* ---------- Favorites ---------- */
-.favorites-page {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 20px;
-}
 
 /* 顶部通栏下方：左分类栏 + 右内容 */
 .fav-body {
@@ -1760,32 +1771,6 @@ body.side-resizing .side-panel {
 }
 
 /* ---------- Settings（顶部分类胶囊 + 卡片列 + 右侧实时预览舞台） ---------- */
-.settings-page {
-  overflow-y: auto;
-}
-
-.settings-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 12px;
-}
-
-.settings-sub {
-  color: var(--text-dim);
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-.settings-head-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
 
 /* 实时保存状态徽标 */
 .save-badge {
@@ -2327,10 +2312,6 @@ body.side-resizing .side-panel {
 }
 
 /* ---------- 复习页 ---------- */
-.review-page {
-  display: flex;
-  flex-direction: column;
-}
 
 /* 释义显隐滑块开关（复用 .switch 样式） */
 .review-toggle {
@@ -2379,11 +2360,6 @@ body.side-resizing .side-panel {
 }
 
 /* ---------- 跟读练习页（提词器播放器） ---------- */
-.shadow-page {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
 
 .shadow-script {
   flex: 1;
