@@ -63,7 +63,8 @@ const api = {
       ipcRenderer.removeListener('update:error', listener)
     }
   },
-  updateCheck: () => ipcRenderer.send('update:check'),
+  updateCheck: (): Promise<'available' | 'latest' | 'error'> =>
+    ipcRenderer.invoke('update:check'),
   updateOpenReleases: () => ipcRenderer.send('update:open-releases'),
 
   // 自定义标题栏的窗口控制

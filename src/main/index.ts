@@ -144,8 +144,15 @@ function registerIpc(): void {
   // 版本与更新：侧栏版本号 + 更新可用提示
   ipcMain.handle('app:version', () => app.getVersion())
   ipcMain.on('update:install', () => autoUpdater.quitAndInstall())
-  ipcMain.on('update:check', () => {
-    autoUpdater.checkForUpdates().catch(() => {})
+  // 手动检查更新（点侧栏版本号触发）：返回结果供渲染进程给瞬时反馈
+  ipcMain.handle('update:check', async (): Promise<'available' | 'latest' | 'error'> => {
+    try {
+      const r = await autoUpdater.checkForUpdates()
+      const latest = r?.updateInfo?.version
+      return latest && latest !== app.getVersion() ? 'available' : 'latest'
+    } catch {
+      return 'error'
+    }
   })
   // 自动更新不可用时的临时方案：打开 GitHub 发布页手动下载
   ipcMain.on('update:open-releases', () => {
@@ -405,6 +412,12 @@ app.whenReady().then(() => {
   }
   logUpdater(`checkForUpdatesAndNotify (app v${app.getVersion()})`)
   autoUpdater.checkForUpdatesAndNotify().catch((e) => logUpdater(`check error: ${String(e)}`))
+  // 定时重查（4 小时）：启动时若撞上 GitHub CDN 缓存拿到"无更新"，运行中也能自愈
+  const timer = setInterval(() => {
+    logUpdater('periodic re-check')
+    autoUpdater.checkForUpdates().catch((e) => logUpdater(`periodic check error: ${String(e)}`))
+  }, 4 * 3600 * 1000)
+  timer.unref()
   // 更新状态推给渲染进程：侧栏版本号旁的下载图标据此显示进度
   autoUpdater.on('checking-for-update', () => logUpdater('checking-for-update'))
   autoUpdater.on('update-not-available', () => logUpdater('update-not-available'))

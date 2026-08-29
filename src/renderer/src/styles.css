@@ -380,6 +380,18 @@ select:focus {
   color: var(--text-dim);
   font-size: 12px;
   user-select: none;
+  cursor: pointer;
+}
+
+.sidebar-foot .version:hover {
+  color: var(--text-strong);
+}
+
+/* 手动检查更新的瞬时反馈（已是最新 / 发现新版本 / 检查失败） */
+.sidebar-foot .version-hint {
+  color: var(--text-dim);
+  font-size: 11px;
+  user-select: none;
 }
 
 .sidebar.collapsed .sidebar-foot {

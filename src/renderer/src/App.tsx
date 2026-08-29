@@ -65,6 +65,20 @@ export default function App(): JSX.Element {
     'none' | 'downloading' | 'downloaded' | 'error'
   >('none')
   const [updatePct, setUpdatePct] = useState(0)
+  // 手动检查更新（点版本号）的瞬时反馈文案
+  const [checkHint, setCheckHint] = useState('')
+  const checkTimerRef = useRef<number | null>(null)
+
+  /** 点版本号手动检查更新：瞬时反馈 3 秒后自动消隐 */
+  const manualCheck = async (): Promise<void> => {
+    if (checkHint === '检查中…') return
+    setCheckHint('检查中…')
+    const r = await api.updateCheck()
+    // available 时 update:available 事件会接管（出下载按钮），这里只反馈无更新/失败
+    setCheckHint(r === 'available' ? '发现新版本' : r === 'latest' ? '已是最新' : '检查失败')
+    if (checkTimerRef.current) window.clearTimeout(checkTimerRef.current)
+    checkTimerRef.current = window.setTimeout(() => setCheckHint(''), 3000)
+  }
 
   useEffect(() => {
     const syncTheme = (): void =>
@@ -118,7 +132,10 @@ export default function App(): JSX.Element {
               </NavLink>
             ))}
             <div className="sidebar-foot">
-              <span className="version">v{appVersion}</span>
+              <span className="version" title="点击检查更新" onClick={() => void manualCheck()}>
+                v{appVersion}
+              </span>
+              {checkHint && <span className="version-hint">{checkHint}</span>}
               {updateState !== 'none' && (
                 <button
                   className={`update-btn ${updateState}`}
