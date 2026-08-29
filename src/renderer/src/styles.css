@@ -392,12 +392,14 @@ select:focus {
   display: none;
 }
 
-/* 更新按钮：靠侧栏右边框的圆形小按钮 */
-.update-btn {
+/* 更新按钮：靠侧栏右边框的圆形小按钮。
+   选择器带 button 前缀，与全局 button:not([class*='mantine']) 同特异性并靠后覆盖。 */
+button.update-btn {
   margin-left: auto;
   width: 22px;
   height: 22px;
   border-radius: 50%;
+  border-color: transparent;
   padding: 0;
   color: var(--text-dim);
   display: inline-flex;
@@ -405,39 +407,27 @@ select:focus {
   justify-content: center;
 }
 
-.update-btn svg {
+button.update-btn svg {
   width: 12px;
   height: 12px;
   display: block;
+  flex-shrink: 0;
+}
+
+/* 下载中：圆形像灌水一样从下往上填充（--pct 0-100，由内联样式注入） */
+button.update-btn.downloading {
+  background: linear-gradient(to top, var(--accent-dim) calc(var(--pct, 0) * 1%), transparent 0);
 }
 
 /* 更新已下载完成：转主色 */
-.update-btn.downloaded {
+button.update-btn.downloaded {
   color: var(--accent);
-  border-color: var(--accent-dim);
+  background: var(--accent-dim);
 }
 
-/* 下载中：呼吸闪烁提示进行中 */
-@keyframes update-pulse {
-  50% {
-    opacity: 0.4;
-  }
-}
-
-.update-btn.downloading {
-  animation: update-pulse 1.2s ease-in-out infinite;
-}
-
-.update-btn.error {
+button.update-btn.error {
   color: var(--red);
   border-color: var(--red);
-}
-
-/* 下载百分比小字 */
-.update-pct {
-  font-size: 11px;
-  color: var(--text-dim);
-  user-select: none;
 }
 
 /* 标题栏字幕开关的开启态：只出背景，图标不变色 */

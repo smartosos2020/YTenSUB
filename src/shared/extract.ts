@@ -5,6 +5,11 @@
  * 页面 ytInitialPlayerResponse 里的 timedtext baseUrl 需要 PO token，
  * 直接 fetch 会返回空响应，因此不再使用页面内的字幕轨地址。
  * 页面 player response 仅作为视频信息的兜底。
+ *
+ * timedtext 抓取的两个坑（2026-08 实测）：
+ * 1. 必须 credentials:'omit'——带着 YouTube 登录态 cookie 请求会被拒（返回 HTML 错误页）；
+ * 2. baseUrl 已自带 fmt=srv3，再追加 fmt=json3 会出现两个 fmt 参数被拒。
+ *    直接按原样抓即可，parseCaptionText 会自动判别 json3 / srv XML。
  */
 export const EXTRACT_SCRIPT = `(async () => {
   const videoId = new URLSearchParams(location.search).get('v')
@@ -44,32 +49,34 @@ export const EXTRACT_SCRIPT = `(async () => {
   let captionError = null
   let zhCaptionText = null
   let zhSource = null
+  // timedtext 统一抓取：不带 cookie（credentials:'omit'），baseUrl 原样使用不追加 fmt
+  const fetchTrack = async (baseUrl, tlang) => {
+    let url = baseUrl
+    if (tlang) {
+      const u = new URL(baseUrl)
+      u.searchParams.set('tlang', tlang)
+      url = u.toString()
+    }
+    const r = await fetch(url, { credentials: 'omit' })
+    const txt = await r.text()
+    return txt || null
+  }
   if (en && en.baseUrl) {
     try {
-      const r = await fetch(en.baseUrl + (en.baseUrl.indexOf('?') >= 0 ? '&' : '?') + 'fmt=json3')
-      const txt = await r.text()
-      if (txt) {
-        captionText = txt
-      } else {
-        captionError = 'empty-body status=' + r.status
-      }
+      captionText = await fetchTrack(en.baseUrl)
+      if (!captionText) captionError = 'empty-body'
     } catch (e) {
       captionError = String(e)
     }
   }
   // 中文字幕失败不阻断英文字幕；没有自带中文轨时尝试 YouTube 机器翻译轨（tlang）
   try {
-    const fetchTrack = async (baseUrl, extra) => {
-      const r = await fetch(baseUrl + (baseUrl.indexOf('?') >= 0 ? '&' : '?') + 'fmt=json3' + (extra || ''))
-      const txt = await r.text()
-      return txt || null
-    }
     if (zh && zh.baseUrl) {
       zhCaptionText = await fetchTrack(zh.baseUrl)
       if (zhCaptionText) zhSource = 'track'
     }
     if (!zhCaptionText && en && en.baseUrl) {
-      zhCaptionText = await fetchTrack(en.baseUrl, '&tlang=zh-Hans')
+      zhCaptionText = await fetchTrack(en.baseUrl, 'zh-Hans')
       if (zhCaptionText) zhSource = 'tlang'
     }
   } catch (e) {

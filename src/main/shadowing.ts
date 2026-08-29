@@ -34,7 +34,9 @@ export async function fetchEnglishCues(
     const ens = tracks.filter((t) => (t.languageCode ?? '').toLowerCase().startsWith('en'))
     const en = ens.find((t) => t.kind !== 'asr') ?? ens[0]
     if (!en?.baseUrl) return null
-    const r = await fetchFn(en.baseUrl + (en.baseUrl.includes('?') ? '&' : '?') + 'fmt=json3')
+    // baseUrl 已自带 fmt 参数（srv3 XML），原样抓取即可，parseCaptionText 自动判别 json3/XML；
+    // 追加 fmt=json3 会产生重复 fmt 参数被 YouTube 拒掉
+    const r = await fetchFn(en.baseUrl)
     const cues = parseCaptionText(await r.text())
     if (cues.length === 0) return null
     return { title: pr.videoDetails?.title ?? '', cues }
