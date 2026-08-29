@@ -1,3 +1,5 @@
+import { lemmatize } from '../lemma'
+
 /** 去掉单词首尾标点，保留字母/数字/撇号，方便词典命中 */
 export function cleanWord(w: string): string {
   return w.replace(/^[^\p{L}\p{N}']+|[^\p{L}\p{N}']+$/gu, '')
@@ -6,7 +8,7 @@ export function cleanWord(w: string): string {
 interface Props {
   text: string
   sentence?: string
-  /** 已加入生词本的单词（小写），命中即橙色高亮 */
+  /** 已加入生词本的单词词元（小写），命中即橙色高亮（不同形态按词元关联） */
   knownWords?: Set<string>
   onWord: (word: string, rect: DOMRect, sentence: string) => void
 }
@@ -20,7 +22,7 @@ export default function WordSpans({ text, sentence, knownWords, onWord }: Props)
         if (/^\s*$/.test(part)) return <span key={i}>{part}</span>
         const word = cleanWord(part)
         if (!word) return <span key={i}>{part}</span>
-        const known = knownWords?.has(word.toLowerCase()) ?? false
+        const known = knownWords?.has(lemmatize(word)) ?? false
         return (
           <span
             key={i}

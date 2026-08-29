@@ -3,7 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, VOCAB_CHANGED_EVENT } from '../api'
 import { speakText } from '../speech'
 import { playGuestSegment } from '../guest-audio'
-import { MASTERED_LEVEL, ShadowingScript, VocabItem } from '../../../shared/types'
+import { ShadowingScript, VocabItem } from '../../../shared/types'
+import { toKnownLemmas, findSavedByLemma } from '../lemma'
 import WordSpans from '../components/WordSpans'
 import TranslatePopup from '../components/TranslatePopup'
 import { WordSelection } from '../components/SubtitlePanel'
@@ -143,15 +144,7 @@ export default function ShadowingPage(): JSX.Element {
   }, [])
 
   // 高亮集合：未掌握的生词（小写）
-  const vocabWords = useMemo(
-    () =>
-      new Set(
-        vocabList
-          .filter((v) => (v.reviewLevel ?? 0) < MASTERED_LEVEL)
-          .map((v) => v.text.trim().toLowerCase())
-      ),
-    [vocabList]
-  )
+  const vocabWords = useMemo(() => toKnownLemmas(vocabList), [vocabList])
 
   if (!loaded) return <div className="page">加载中…</div>
 
@@ -286,11 +279,7 @@ export default function ShadowingPage(): JSX.Element {
           sentence={selection.sentence}
           video={{ videoId: script.videoId, title: script.title }}
           time={script.items[Math.max(0, currentIdx)]?.start ?? 0}
-          savedItem={
-            vocabList.find(
-              (v) => v.text.trim().toLowerCase() === selection.text.trim().toLowerCase()
-            ) ?? null
-          }
+          savedItem={findSavedByLemma(vocabList, selection.text)}
           onClose={() => setSelection(null)}
         />
       )}

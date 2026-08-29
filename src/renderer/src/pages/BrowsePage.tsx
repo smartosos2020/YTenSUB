@@ -4,7 +4,8 @@ import type { WebviewTag } from 'electron'
 import { api, SETTINGS_CHANGED_EVENT, VOCAB_CHANGED_EVENT } from '../api'
 import { Cue, findActiveCueIndex, parseCaptionText, toBilingualSrt } from '../../../shared/captions'
 import { EXTRACT_SCRIPT } from '../../../shared/extract'
-import { CaptionTexture, Folder, MASTERED_LEVEL, Theme, VocabItem } from '../../../shared/types'
+import { CaptionTexture, Folder, Theme, VocabItem } from '../../../shared/types'
+import { toKnownLemmas, findSavedByLemma } from '../lemma'
 import { captionFontCss } from '../caption-fonts'
 import { registerGuestAudio } from '../guest-audio'
 import { useSidePanel } from '../hooks/useSidePanel'
@@ -78,15 +79,7 @@ export default function BrowsePage(): JSX.Element {
   // 生词本：vocabWords 供字幕橙色高亮（已掌握的满级单词不再高亮）；
   // 列表本身供翻译弹窗判断"已添加"→显示删除按钮
   const [vocabList, setVocabList] = useState<VocabItem[]>([])
-  const vocabWords = useMemo(
-    () =>
-      new Set(
-        vocabList
-          .filter((v) => (v.reviewLevel ?? 0) < MASTERED_LEVEL)
-          .map((v) => v.text.trim().toLowerCase())
-      ),
-    [vocabList]
-  )
+  const vocabWords = useMemo(() => toKnownLemmas(vocabList), [vocabList])
   // 应用主题：useGuestTheme 同步到 YouTube guest 页面
   const [theme, setTheme] = useState<Theme>('night')
 
@@ -650,11 +643,7 @@ export default function BrowsePage(): JSX.Element {
           sentence={selection.sentence}
           video={{ videoId: video.videoId, title: video.title }}
           time={time}
-          savedItem={
-            vocabList.find(
-              (v) => v.text.trim().toLowerCase() === selection.text.trim().toLowerCase()
-            ) ?? null
-          }
+          savedItem={findSavedByLemma(vocabList, selection.text)}
           onClose={closeSelection}
         />
       )}

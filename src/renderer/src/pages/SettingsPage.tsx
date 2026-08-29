@@ -13,7 +13,8 @@ import { api } from '../api'
 import { applyTheme, ACCENTS } from '../theme'
 import { CAPTION_FONTS, captionFontCss } from '../caption-fonts'
 import { Cue } from '../../../shared/captions'
-import { CaptionTexture, DEFAULT_SETTINGS, MASTERED_LEVEL, Settings, ShadowingStrategy, Theme, TranslateResult, TranslateSource, VocabItem } from '../../../shared/types'
+import { CaptionTexture, DEFAULT_SETTINGS, Settings, ShadowingStrategy, Theme, TranslateResult, TranslateSource, VocabItem } from '../../../shared/types'
+import { toKnownLemmas, findSavedByLemma } from '../lemma'
 import CaptionOverlay from '../components/CaptionOverlay'
 import TranslatePopup from '../components/TranslatePopup'
 import { WordSelection } from '../components/SubtitlePanel'
@@ -120,11 +121,7 @@ export default function SettingsPage(): JSX.Element {
 
   const vocabCount = vocabList?.length ?? null
   // 预览舞台的生词高亮与真实字幕一致：满级"已掌握"的词不再高亮
-  const knownWords = new Set(
-    (vocabList ?? [])
-      .filter((v) => (v.reviewLevel ?? 0) < MASTERED_LEVEL)
-      .map((v) => v.text.trim().toLowerCase())
-  )
+  const knownWords = toKnownLemmas(vocabList ?? [])
 
   /** 实时保存：任何修改立即写盘并广播（浏览页等即时生效） */
   const update = (next: Settings): void => {
@@ -690,11 +687,7 @@ export default function SettingsPage(): JSX.Element {
           sentence={selection.sentence}
           video={{ videoId: 'preview-stage', title: '字幕预览舞台' }}
           time={0}
-          savedItem={
-            (vocabList ?? []).find(
-              (v) => v.text.trim().toLowerCase() === selection.text.trim().toLowerCase()
-            ) ?? null
-          }
+          savedItem={findSavedByLemma(vocabList ?? [], selection.text)}
           onClose={() => setSelection(null)}
         />
       )}

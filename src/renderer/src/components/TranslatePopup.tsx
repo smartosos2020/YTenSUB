@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { speakWord } from '../speech'
+import { lemmatize } from '../lemma'
 import { TranslateResult, VocabItem } from '../../../shared/types'
 import TrashIcon from './icons/TrashIcon'
 import VolumeIcon from './icons/VolumeIcon'
@@ -77,8 +78,9 @@ export default function TranslatePopup({
 
   const add = useCallback(async (): Promise<void> => {
     if (!result || result === 'loading') return
+    // 统一存词元：running/ran 都归并到 run，高亮与复习按词元关联
     await api.vocabAdd({
-      text,
+      text: lemmatize(text),
       translation: result.translation,
       phonetic: result.phonetic,
       videoId: video.videoId,
