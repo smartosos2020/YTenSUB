@@ -392,22 +392,29 @@ select:focus {
   display: none;
 }
 
+/* 更新按钮：靠侧栏右边框的圆形小按钮 */
 .update-btn {
-  padding: 2px;
+  margin-left: auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  padding: 0;
   color: var(--text-dim);
   display: inline-flex;
   align-items: center;
+  justify-content: center;
 }
 
 .update-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   display: block;
 }
 
-/* 更新已下载完成：图标转主色 */
+/* 更新已下载完成：转主色 */
 .update-btn.ready {
   color: var(--accent);
+  border-color: var(--accent-dim);
 }
 
 /* 标题栏字幕开关的开启态：只出背景，图标不变色 */
