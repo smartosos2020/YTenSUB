@@ -412,9 +412,32 @@ select:focus {
 }
 
 /* 更新已下载完成：转主色 */
-.update-btn.ready {
+.update-btn.downloaded {
   color: var(--accent);
   border-color: var(--accent-dim);
+}
+
+/* 下载中：呼吸闪烁提示进行中 */
+@keyframes update-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.update-btn.downloading {
+  animation: update-pulse 1.2s ease-in-out infinite;
+}
+
+.update-btn.error {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+/* 下载百分比小字 */
+.update-pct {
+  font-size: 11px;
+  color: var(--text-dim);
+  user-select: none;
 }
 
 /* 标题栏字幕开关的开启态：只出背景，图标不变色 */

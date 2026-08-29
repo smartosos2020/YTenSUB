@@ -49,6 +49,21 @@ const api = {
       ipcRenderer.removeListener('update:downloaded', listener)
     }
   },
+  onUpdateProgress: (cb: (percent: number) => void) => {
+    const listener = (_e: IpcRendererEvent, v: number): void => cb(v)
+    ipcRenderer.on('update:progress', listener)
+    return () => {
+      ipcRenderer.removeListener('update:progress', listener)
+    }
+  },
+  onUpdateError: (cb: (msg: string) => void) => {
+    const listener = (_e: IpcRendererEvent, v: string): void => cb(v)
+    ipcRenderer.on('update:error', listener)
+    return () => {
+      ipcRenderer.removeListener('update:error', listener)
+    }
+  },
+  updateCheck: () => ipcRenderer.send('update:check'),
 
   // 自定义标题栏的窗口控制
   windowMinimize: () => ipcRenderer.send('window:minimize'),

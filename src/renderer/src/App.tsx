@@ -59,9 +59,12 @@ export default function App(): JSX.Element {
   const [collapsed, setCollapsed] = usePersistentState<boolean>('ytensub:nav-collapsed', false)
   // 字幕浮层总开关（标题栏，默认开）
   const [showCaptions, setShowCaptions] = useState(true)
-  // 版本号与更新状态（electron-updater 事件）
+  // 版本号与更新状态（electron-updater 事件）：下载中显示百分比，就绪/失败可点击
   const [appVersion, setAppVersion] = useState('')
-  const [updateState, setUpdateState] = useState<'none' | 'available' | 'downloaded'>('none')
+  const [updateState, setUpdateState] = useState<
+    'none' | 'downloading' | 'downloaded' | 'error'
+  >('none')
+  const [updatePct, setUpdatePct] = useState(0)
 
   useEffect(() => {
     const syncTheme = (): void =>
@@ -82,11 +85,18 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     void api.appVersion().then((v) => setAppVersion(String(v)))
-    const offAvailable = api.onUpdateAvailable(() => setUpdateState('available'))
+    const offAvailable = api.onUpdateAvailable(() => {
+      setUpdateState('downloading')
+      setUpdatePct(0)
+    })
+    const offProgress = api.onUpdateProgress((p) => setUpdatePct(p))
     const offDownloaded = api.onUpdateDownloaded(() => setUpdateState('downloaded'))
+    const offError = api.onUpdateError(() => setUpdateState('error'))
     return () => {
       offAvailable()
+      offProgress()
       offDownloaded()
+      offError()
     }
   }, [])
 
@@ -110,19 +120,27 @@ export default function App(): JSX.Element {
             <div className="sidebar-foot">
               <span className="version">v{appVersion}</span>
               {updateState !== 'none' && (
-                <button
-                  className={updateState === 'downloaded' ? 'update-btn ready' : 'update-btn'}
-                  title={
-                    updateState === 'downloaded'
-                      ? '更新已就绪，点击重启安装'
-                      : '发现新版本，正在后台下载…'
-                  }
-                  onClick={() => {
-                    if (updateState === 'downloaded') api.updateInstall()
-                  }}
-                >
-                  <UpdateIcon />
-                </button>
+                <>
+                  <button
+                    className={`update-btn ${updateState}`}
+                    title={
+                      updateState === 'downloaded'
+                        ? '更新已就绪，点击重启安装'
+                        : updateState === 'error'
+                          ? '更新失败，点击重试'
+                          : `正在下载更新… ${updatePct}%`
+                    }
+                    onClick={() => {
+                      if (updateState === 'downloaded') api.updateInstall()
+                      else if (updateState === 'error') api.updateCheck()
+                    }}
+                  >
+                    <UpdateIcon />
+                  </button>
+                  {updateState === 'downloading' && (
+                    <span className="update-pct">{updatePct}%</span>
+                  )}
+                </>
               )}
             </div>
           </nav>

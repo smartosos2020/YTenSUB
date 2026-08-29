@@ -144,6 +144,9 @@ function registerIpc(): void {
   // 版本与更新：侧栏版本号 + 更新可用提示
   ipcMain.handle('app:version', () => app.getVersion())
   ipcMain.on('update:install', () => autoUpdater.quitAndInstall())
+  ipcMain.on('update:check', () => {
+    autoUpdater.checkForUpdates().catch(() => {})
+  })
 
   // LLM 连通性测试：发一条最小请求并计时
   ipcMain.handle('llm:test', async () => {
@@ -387,9 +390,13 @@ app.whenReady().then(() => {
   createWindow()
   // 自动更新（GitHub Releases）：静默检查，下载完成后提示重启安装；dev 环境静默跳过
   autoUpdater.checkForUpdatesAndNotify().catch(() => {})
-  // 更新状态推给渲染进程：侧栏版本号旁的下载图标据此显示
+  // 更新状态推给渲染进程：侧栏版本号旁的下载图标据此显示进度
   autoUpdater.on('update-available', () => mainWin?.webContents.send('update:available'))
+  autoUpdater.on('download-progress', (p) =>
+    mainWin?.webContents.send('update:progress', Math.round(p.percent))
+  )
   autoUpdater.on('update-downloaded', () => mainWin?.webContents.send('update:downloaded'))
+  autoUpdater.on('error', (e) => mainWin?.webContents.send('update:error', String(e)))
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
