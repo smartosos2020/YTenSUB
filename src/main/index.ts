@@ -389,14 +389,39 @@ app.whenReady().then(() => {
   registerIpc()
   createWindow()
   // 自动更新（GitHub Releases）：静默检查，下载完成后提示重启安装；dev 环境静默跳过
-  autoUpdater.checkForUpdatesAndNotify().catch(() => {})
+  // updater 全事件写日志到 userData/updater.log（更新失败时排查用）
+  const updaterLogFile = path.join(app.getPath('userData'), 'updater.log')
+  const logUpdater = (msg: string): void => {
+    const line = `${new Date().toISOString()} ${msg}\n`
+    try {
+      fs.appendFileSync(updaterLogFile, line)
+    } catch {
+      /* 日志失败不影响主流程 */
+    }
+  }
+  logUpdater(`checkForUpdatesAndNotify (app v${app.getVersion()})`)
+  autoUpdater.checkForUpdatesAndNotify().catch((e) => logUpdater(`check error: ${String(e)}`))
   // 更新状态推给渲染进程：侧栏版本号旁的下载图标据此显示进度
-  autoUpdater.on('update-available', () => mainWin?.webContents.send('update:available'))
-  autoUpdater.on('download-progress', (p) =>
+  autoUpdater.on('checking-for-update', () => logUpdater('checking-for-update'))
+  autoUpdater.on('update-not-available', () => logUpdater('update-not-available'))
+  autoUpdater.on('update-available', (info) => {
+    logUpdater(`update-available: v${info.version}`)
+    mainWin?.webContents.send('update:available')
+  })
+  autoUpdater.on('download-progress', (p) => {
+    logUpdater(
+      `download-progress: ${Math.round(p.percent)}% (${Math.round(p.bytesPerSecond / 1024)}KB/s, ${Math.round(p.transferred / 1048576)}MB/${Math.round(p.total / 1048576)}MB)`
+    )
     mainWin?.webContents.send('update:progress', Math.round(p.percent))
-  )
-  autoUpdater.on('update-downloaded', () => mainWin?.webContents.send('update:downloaded'))
-  autoUpdater.on('error', (e) => mainWin?.webContents.send('update:error', String(e)))
+  })
+  autoUpdater.on('update-downloaded', (info) => {
+    logUpdater(`update-downloaded: v${info.version}`)
+    mainWin?.webContents.send('update:downloaded')
+  })
+  autoUpdater.on('error', (e) => {
+    logUpdater(`error: ${String(e)}`)
+    mainWin?.webContents.send('update:error', String(e))
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
