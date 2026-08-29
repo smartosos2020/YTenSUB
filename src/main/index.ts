@@ -159,6 +159,20 @@ function registerIpc(): void {
     void shell.openExternal('https://github.com/smartosos2020/YTenSUB/releases/latest')
   })
 
+  // 字幕正文抓取：webview 里不带 cookie 的 timedtext 请求会被 YouTube 拖进慢车道（实测 35s+），
+  // 主进程 net.fetch 无浏览器指纹，亚秒返回。仅放行 YouTube timedtext 地址，防 SSRF。
+  ipcMain.handle('captions:fetch-text', async (_e, url: string) => {
+    try {
+      const u = new URL(url)
+      if (u.hostname !== 'www.youtube.com' || !u.pathname.startsWith('/api/timedtext')) return null
+      const r = await net.fetch(url)
+      const text = await r.text()
+      return text || null
+    } catch {
+      return null
+    }
+  })
+
   // LLM 连通性测试：发一条最小请求并计时
   ipcMain.handle('llm:test', async () => {
     const s = store.getSettings()

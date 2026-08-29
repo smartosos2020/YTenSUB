@@ -1,6 +1,6 @@
 {
   "name": "ytensub",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Desktop YouTube player for English learning: bilingual (EN/ZH) subtitles, subtitle word translation, vocabulary book, favorites",
   "main": "out/main/index.js",

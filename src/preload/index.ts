@@ -33,6 +33,8 @@ const api = {
   shadowingGenerate: (videoId: string, force?: boolean) =>
     ipcRenderer.invoke('shadowing:generate', videoId, force),
   llmTest: () => ipcRenderer.invoke('llm:test'),
+  captionsFetchText: (url: string): Promise<string | null> =>
+    ipcRenderer.invoke('captions:fetch-text', url),
   appVersion: () => ipcRenderer.invoke('app:version'),
   updateInstall: () => ipcRenderer.send('update:install'),
   onUpdateAvailable: (cb: () => void) => {

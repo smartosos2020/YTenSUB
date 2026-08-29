@@ -40,7 +40,8 @@ app.whenReady().then(async () => {
       process.exitCode = 1
       return
     }
-    const text = last.captionText ?? ''
+    // 字幕正文改由主进程抓取（guest 里会被 YouTube 拖慢）：这里用 Node fetch 模拟同一链路
+    const text = last.enBaseUrl ? await (await fetch(last.enBaseUrl)).text() : ''
     let count = 0
     let first = ''
     if (text.startsWith('{')) {
@@ -60,7 +61,6 @@ app.whenReady().then(async () => {
         title: last.title,
         channel: last.channel,
         hasCaptions: last.hasCaptions,
-        captionError: last.captionError ?? null,
         captionBytes: text.length,
         cues: count
       })

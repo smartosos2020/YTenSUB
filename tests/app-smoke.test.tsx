@@ -23,6 +23,7 @@ const apiMock = {
   shadowingGet: vi.fn(async () => null),
   shadowingGenerate: vi.fn(async () => ({ error: 'no-captions' })),
   llmTest: vi.fn(async () => ({ ok: false, ms: 1 })),
+  captionsFetchText: vi.fn(async () => null),
   appVersion: vi.fn(async () => '0.0.0-test'),
   updateInstall: vi.fn(),
   updateCheck: vi.fn(async () => 'latest' as const),

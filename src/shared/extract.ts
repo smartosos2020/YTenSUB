@@ -1,15 +1,17 @@
 /**
  * 在 YouTube 页面主世界执行的提取脚本（通过 webview.executeJavaScript）。
  *
- * 视频信息和字幕统一走 innertube ANDROID 客户端接口：
+ * 视频信息和字幕轨地址统一走 innertube ANDROID 客户端接口：
  * 页面 ytInitialPlayerResponse 里的 timedtext baseUrl 需要 PO token，
  * 直接 fetch 会返回空响应，因此不再使用页面内的字幕轨地址。
  * 页面 player response 仅作为视频信息的兜底。
  *
- * timedtext 抓取的两个坑（2026-08 实测）：
- * 1. 必须 credentials:'omit'——带着 YouTube 登录态 cookie 请求会被拒（返回 HTML 错误页）；
- * 2. baseUrl 已自带 fmt=srv3，再追加 fmt=json3 会出现两个 fmt 参数被拒。
- *    直接按原样抓即可，parseCaptionText 会自动判别 json3 / srv XML。
+ * 字幕正文不在这里抓（2026-08 实测）：guest 浏览器上下文不带 cookie 请求 timedtext
+ * 会被 YouTube 拖进慢车道（35s+），主进程 net.fetch 无浏览器指纹只需亚秒。
+ * 所以这里只返回 baseUrl，正文由渲染进程经 IPC 交给主进程抓取。
+ *
+ * 注意：innertube 请求必须 credentials:'omit'——带登录 cookie 领到的 baseUrl
+ * 与会话绑定，主进程（无 cookie）再抓会 502。
  */
 export const EXTRACT_SCRIPT = `(async () => {
   const videoId = new URLSearchParams(location.search).get('v')
@@ -22,6 +24,7 @@ export const EXTRACT_SCRIPT = `(async () => {
     const res = await fetch('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'omit',
       body: JSON.stringify({
         context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38', androidSdkVersion: 34, hl: 'en' } },
         videoId
@@ -45,53 +48,13 @@ export const EXTRACT_SCRIPT = `(async () => {
   const zhs = tracks.filter(t => (t.languageCode || '').toLowerCase().replace(/_/g, '-').startsWith('zh'))
   const zhScore = t => (t.kind === 'asr' ? 0 : 10) + (/hans|cn|sg/i.test(t.languageCode || '') ? 2 : 0)
   const zh = zhs.slice().sort((a, b) => zhScore(b) - zhScore(a))[0] || null
-  let captionText = null
-  let captionError = null
-  let zhCaptionText = null
-  let zhSource = null
-  // timedtext 统一抓取：不带 cookie（credentials:'omit'），baseUrl 原样使用不追加 fmt
-  const fetchTrack = async (baseUrl, tlang) => {
-    let url = baseUrl
-    if (tlang) {
-      const u = new URL(baseUrl)
-      u.searchParams.set('tlang', tlang)
-      url = u.toString()
-    }
-    const r = await fetch(url, { credentials: 'omit' })
-    const txt = await r.text()
-    return txt || null
-  }
-  if (en && en.baseUrl) {
-    try {
-      captionText = await fetchTrack(en.baseUrl)
-      if (!captionText) captionError = 'empty-body'
-    } catch (e) {
-      captionError = String(e)
-    }
-  }
-  // 中文字幕失败不阻断英文字幕；没有自带中文轨时尝试 YouTube 机器翻译轨（tlang）
-  try {
-    if (zh && zh.baseUrl) {
-      zhCaptionText = await fetchTrack(zh.baseUrl)
-      if (zhCaptionText) zhSource = 'track'
-    }
-    if (!zhCaptionText && en && en.baseUrl) {
-      zhCaptionText = await fetchTrack(en.baseUrl, 'zh-Hans')
-      if (zhCaptionText) zhSource = 'tlang'
-    }
-  } catch (e) {
-    zhCaptionText = null
-    zhSource = null
-  }
   return {
     ok: true,
     videoId: vd.videoId || videoId,
     title: vd.title || '',
     channel: vd.author || '',
     hasCaptions: !!en,
-    captionError,
-    captionText,
-    zhCaptionText,
-    zhSource
+    enBaseUrl: (en && en.baseUrl) || null,
+    zhBaseUrl: (zh && zh.baseUrl) || null
   }
 })()`

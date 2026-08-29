@@ -220,12 +220,22 @@ export default function BrowsePage(): JSX.Element {
       try {
         const res = await wv.executeJavaScript(EXTRACT_SCRIPT)
         if (res?.ok && res.videoId) {
-          const parsed = parseCaptionText(res.captionText)
-          if (res.hasCaptions && parsed.length === 0) {
-            console.warn('[ytensub] 字幕解析为空:', res.captionError ?? 'unknown')
+          // 字幕正文走主进程抓取（guest 里会被 YouTube 拖慢 35s+），英中两路并行
+          let zhUrl: string | null = res.zhBaseUrl ?? null
+          if (!zhUrl && res.enBaseUrl) {
+            const u = new URL(res.enBaseUrl)
+            u.searchParams.set('tlang', 'zh-Hans') // 无自带中文轨时用 YouTube 机翻轨
+            zhUrl = u.toString()
           }
-          // 中文轨（视频自带或 YouTube 机翻 tlang）：有则按时间轴对齐到英文字幕
-          const zhParsed = parseCaptionText(res.zhCaptionText)
+          const [enText, zhText] = await Promise.all([
+            res.enBaseUrl ? api.captionsFetchText(res.enBaseUrl) : Promise.resolve(null),
+            zhUrl ? api.captionsFetchText(zhUrl) : Promise.resolve(null)
+          ])
+          const parsed = parseCaptionText(enText)
+          if (res.hasCaptions && parsed.length === 0) {
+            console.warn('[ytensub] 字幕解析为空')
+          }
+          const zhParsed = parseCaptionText(zhText)
           loadZhNative(parsed, zhParsed)
           setVideo({ videoId: res.videoId, title: res.title, channel: res.channel })
           setHasCaptions(res.hasCaptions)
