@@ -410,9 +410,8 @@ select:focus {
   color: var(--accent);
 }
 
-/* 标题栏字幕开关的开启态 */
+/* 标题栏字幕开关的开启态：只出背景，图标不变色 */
 .titlebar-toggle.on {
-  color: var(--accent);
   background: var(--active-bg);
 }
 
