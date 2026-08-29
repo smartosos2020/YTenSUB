@@ -15,7 +15,6 @@ const api = {
   favIs: (videoId: string) => ipcRenderer.invoke('fav:is', videoId),
   favMove: (videoId: string, folderId: string | null) =>
     ipcRenderer.invoke('fav:move', videoId, folderId),
-  videoFetchInfo: (videoId: string) => ipcRenderer.invoke('video:fetch-info', videoId),
 
   folderAdd: (name: string) => ipcRenderer.invoke('folder:add', name),
   folderList: () => ipcRenderer.invoke('folder:list'),

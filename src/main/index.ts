@@ -5,7 +5,7 @@ import path from 'node:path'
 import { Store } from './store'
 import { Dict } from './dict'
 import { googleTranslateFree, llmChatDetailed, llmTranslate, translateBatch, translateText } from './translate'
-import { buildShadowingMessages, fetchEnglishCues, fetchVideoInfo, mergeCuesToSentences, parseShadowingResponse, ruleBasedPick, withSceneNumbers } from './shadowing'
+import { buildShadowingMessages, fetchEnglishCues, mergeCuesToSentences, parseShadowingResponse, ruleBasedPick, withSceneNumbers } from './shadowing'
 import { Favorite, Settings, ShadowingScript, TranslateSource, VocabItem, defaultData } from '../shared/types'
 
 const dataFile = path.join(app.getPath('userData'), 'ytensub-data.json')
@@ -115,10 +115,6 @@ function registerIpc(): void {
   ipcMain.handle('fav:is', (_e, videoId: string) => store.isFavorite(videoId))
   ipcMain.handle('fav:move', (_e, videoId: string, folderId: string | null) =>
     store.moveFavorite(videoId, folderId)
-  )
-  // 粘贴链接快速收藏：主进程拉视频标题/作者
-  ipcMain.handle('video:fetch-info', (_e, videoId: string) =>
-    fetchVideoInfo(String(videoId ?? ''), (u, i) => net.fetch(u, i))
   )
 
   ipcMain.handle('folder:add', (_e, name: string) => store.addFolder(name))

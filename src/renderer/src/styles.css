@@ -1278,27 +1278,6 @@ body.side-resizing .side-panel {
   display: flex;
 }
 
-/* 顶部数量徽标 */
-.fav-total {
-  font-size: 12px;
-  color: var(--accent);
-  border: 1px solid var(--accent-dim);
-  border-radius: 999px;
-  padding: 2px 10px;
-  margin-left: 8px;
-  vertical-align: middle;
-}
-
-/* 快速添加：粘贴链接 */
-.fav-url-add {
-  display: flex;
-  gap: 6px;
-}
-
-.fav-url-add input {
-  width: 260px;
-}
-
 /* 右栏控制行：当前分类名 + 搜索 + 视图切换 */
 .fav-controls {
   display: flex;
@@ -1756,11 +1735,6 @@ body.side-resizing .side-panel {
   overflow-y: auto;
 }
 
-.settings-page h2::before {
-  content: '$ ';
-  color: var(--accent-dim);
-}
-
 .settings-head {
   display: flex;
   justify-content: space-between;
@@ -2115,7 +2089,7 @@ body.side-resizing .side-panel {
 
 .preset-hint {
   font-size: 12px;
-  color: var(--accent-dim);
+  color: var(--accent);
   margin-bottom: 10px;
 }
 
@@ -2274,6 +2248,7 @@ body.side-resizing .side-panel {
 /* 预览内容不撑大卡片：超出部分裁剪，字号调整不会改变块的高度 */
 /* 预览内容不撑大卡片：超出部分裁剪，字号调整不会改变块的高度 */
 .stage-screen {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -2288,33 +2263,9 @@ body.side-resizing .side-panel {
   gap: 12px;
 }
 
-/* 舞台里被"悬停取词"的示例单词 */
-.stage-word {
-  color: var(--accent);
-  background: var(--accent-strong);
-  border-radius: 2px;
-  padding: 0 2px;
-}
-
-.stage-popup {
-  align-self: flex-start;
-  margin-left: 10%;
-  background: var(--bg-elev);
-  border: 1px solid var(--border-hi);
-  border-radius: 8px;
-  padding: 6px 12px;
-  font-size: 12px;
-  display: flex;
-  gap: 8px;
-}
-
-.stage-popup-word {
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.stage-popup-zh {
-  color: var(--text-dim);
+/* 舞台里的真实字幕浮层：取消绝对定位，随舞台 flex 居中 */
+.settings-stage .caption-overlay {
+  position: static;
 }
 
 .stage-meta {
@@ -2543,19 +2494,4 @@ body.side-resizing .side-panel {
   color: var(--accent);
 }
 
-/* ---------- 设置页预览舞台内的字幕条（模拟视频浮层，始终深色） ---------- */
-.caption-preview-line {
-  max-width: 100%;
-  background: rgba(3, 8, 5, 0.85);
-  border: 1px solid rgba(0, 255, 159, 0.3);
-  color: #eafff5;
-  line-height: 1.6;
-  padding: 4px 14px;
-  border-radius: 8px;
-  text-align: center;
-}
-
-.caption-preview-zh {
-  margin-top: 2px;
-  color: #b9e8cf;
-}
+/* ---------- 设置页预览舞台内的字幕条（真实 CaptionOverlay 渲染，此处已无样式） ---------- */

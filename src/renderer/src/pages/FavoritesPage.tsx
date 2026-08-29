@@ -42,8 +42,6 @@ export default function FavoritesPage(): JSX.Element {
   const [newFolder, setNewFolder] = useState('')
   // 收藏页内搜索（标题/作者）
   const [search, setSearch] = useState('')
-  // 顶部快速添加：粘贴链接
-  const [urlInput, setUrlInput] = useState('')
   // 跟读脚本生成中：卡片按钮置灰；genMsg 为失败提示
   const [genId, setGenId] = useState<string | null>(null)
   const [genMsg, setGenMsg] = useState('')
@@ -88,29 +86,6 @@ export default function FavoritesPage(): JSX.Element {
 
   const open = (fav: Favorite): void => {
     navigate(`/browse?v=${encodeURIComponent(fav.videoId)}`)
-  }
-
-  /** 粘贴链接快速收藏：主进程拉取标题/作者 */
-  const addByUrl = async (): Promise<void> => {
-    const url = urlInput.trim()
-    const m = /[?&]v=([\w-]{6,})/.exec(url) ?? /youtu\.be\/([\w-]{6,})/.exec(url)
-    if (!m) {
-      setGenMsg('链接无效，请粘贴 YouTube 视频链接')
-      setTimeout(() => setGenMsg(''), 3000)
-      return
-    }
-    const vid = m[1]
-    const info = (await api.videoFetchInfo(vid)) as { title: string; channel: string } | null
-    // 当前选中了具体分类则直接收进去
-    await api.favAdd({
-      videoId: vid,
-      title: info?.title ?? '',
-      channel: info?.channel ?? '',
-      thumbnail: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
-      folderId: typeof selectedFolder === 'string' ? selectedFolder : null
-    })
-    setUrlInput('')
-    void reload()
   }
 
   /** 生成脚本并跳转跟读页；force 时覆盖已有脚本 */
@@ -178,22 +153,7 @@ export default function FavoritesPage(): JSX.Element {
     <div className="page favorites-page">
       <div className="page-head">
         <div className="page-head-row">
-          <h2>
-            收藏的视频 <span className="fav-total">共 {favorites.length} 部</span>
-          </h2>
-          <div className="page-head-actions">
-            <div className="fav-url-add">
-              <input
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && void addByUrl()}
-                placeholder="粘贴 YouTube 视频链接加入收藏…"
-              />
-              <button disabled={!urlInput.trim()} onClick={() => void addByUrl()}>
-                  添加收藏
-              </button>
-            </div>
-          </div>
+          <h2>收藏的视频（{favorites.length}）</h2>
         </div>
         <div className="page-desc">按分类管理收藏的视频，点卡片上的跟读按钮可生成口语练习脚本</div>
       </div>

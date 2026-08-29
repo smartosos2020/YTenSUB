@@ -12,8 +12,11 @@ import {
 import { api } from '../api'
 import { applyTheme, ACCENTS } from '../theme'
 import { CAPTION_FONTS, captionFontCss } from '../caption-fonts'
-import { captionTextureStyle } from '../caption-style'
-import { CaptionTexture, DEFAULT_SETTINGS, Settings, ShadowingStrategy, Theme, TranslateResult, TranslateSource } from '../../../shared/types'
+import { Cue } from '../../../shared/captions'
+import { CaptionTexture, DEFAULT_SETTINGS, MASTERED_LEVEL, Settings, ShadowingStrategy, Theme, TranslateResult, TranslateSource, VocabItem } from '../../../shared/types'
+import CaptionOverlay from '../components/CaptionOverlay'
+import TranslatePopup from '../components/TranslatePopup'
+import { WordSelection } from '../components/SubtitlePanel'
 import MoonIcon from '../components/icons/MoonIcon'
 import SunIcon from '../components/icons/SunIcon'
 import AutoIcon from '../components/icons/AutoIcon'
@@ -75,13 +78,22 @@ const WEIGHTS = [
   { value: '800', label: '特粗' }
 ]
 
+/** 预览舞台的样本字幕：文本固定，组件与事件全是真实字幕浮层 */
+const SAMPLE_CUES: Cue[] = [
+  { start: 0, dur: 600, text: 'The quick brown fox jumps over the lazy dog.' }
+]
+const SAMPLE_ZH = ['敏捷的棕色狐狸跳过了那只懒狗。']
+const noop = (): void => {}
+
 export default function SettingsPage(): JSX.Element {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [tab, setTab] = useState<SettingsTab>('all')
   const [saveFlash, setSaveFlash] = useState(false)
   const [dataMsg, setDataMsg] = useState('')
-  const [vocabCount, setVocabCount] = useState<number | null>(null)
+  const [vocabList, setVocabList] = useState<VocabItem[] | null>(null)
   const [favCount, setFavCount] = useState<number | null>(null)
+  // 预览舞台取词弹窗
+  const [selection, setSelection] = useState<WordSelection | null>(null)
   // 管道测试器
   const [pipeText, setPipeText] = useState('')
   const [pipeTesting, setPipeTesting] = useState(false)
@@ -94,14 +106,24 @@ export default function SettingsPage(): JSX.Element {
   const [llmTestState, setLlmTestState] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
   const [llmMs, setLlmMs] = useState(0)
   const [confirmReset, setConfirmReset] = useState(false)
+  // 自定义预设可被点选：override 优先于由 baseUrl 推导的结果
+  const [presetOverride, setPresetOverride] = useState<string | null>(null)
 
   useEffect(() => {
     api.settingsGet().then(setSettings)
-    api.vocabList().then((l: unknown[]) => setVocabCount(l.length)).catch(() => {})
+    api.vocabList().then((l: VocabItem[]) => setVocabList(l)).catch(() => {})
     api.favList().then((l: unknown[]) => setFavCount(l.length)).catch(() => {})
   }, [])
 
   if (!settings) return <div className="page">加载中…</div>
+
+  const vocabCount = vocabList?.length ?? null
+  // 预览舞台的生词高亮与真实字幕一致：满级"已掌握"的词不再高亮
+  const knownWords = new Set(
+    (vocabList ?? [])
+      .filter((v) => (v.reviewLevel ?? 0) < MASTERED_LEVEL)
+      .map((v) => v.text.trim().toLowerCase())
+  )
 
   /** 实时保存：任何修改立即写盘并广播（浏览页等即时生效） */
   const update = (next: Settings): void => {
@@ -122,6 +144,7 @@ export default function SettingsPage(): JSX.Element {
   const applyPreset = (key: string): void => {
     const p = LLM_PRESETS.find((x) => x.key === key)
     if (!p) return
+    setPresetOverride(null) // 选了真实预设：交还给 baseUrl 推导
     // 用户手动改过的模型名不被预设覆盖：仅当模型为空、或仍是某预设默认值时才替换
     const isPresetModel = LLM_PRESETS.some((x) => x.model === settings.llm.model)
     const model = settings.llm.model && !isPresetModel ? settings.llm.model : p.model
@@ -152,8 +175,9 @@ export default function SettingsPage(): JSX.Element {
     else if (r === 'invalid') flashDataMsg('文件无效')
   }
 
-  const activePreset =
+  const activePresetDerived =
     LLM_PRESETS.find((p) => p.baseUrl === settings.llm.baseUrl)?.key ?? 'custom'
+  const activePreset = presetOverride ?? activePresetDerived
   const show = (key: Exclude<SettingsTab, 'all'>): boolean => tab === 'all' || tab === key
 
   /** 管道测试器：走完整翻译链，显示命中引擎与耗时 */
@@ -507,7 +531,7 @@ export default function SettingsPage(): JSX.Element {
                 ))}
                 <button
                   className={activePreset === 'custom' ? 'preset-card active' : 'preset-card'}
-                  onClick={() => {}}
+                  onClick={() => setPresetOverride('custom')}
                   title="手动填写下方字段"
                 >
                   <span className="preset-name">自定义</span>
@@ -634,41 +658,48 @@ export default function SettingsPage(): JSX.Element {
           </div>
           <div className="stage-card">
             <div className="stage-screen">
-              <div
-                className="caption-preview-line"
-                style={{
-                  fontFamily: captionFontCss(settings.captionFont) || undefined,
-                  ...captionTextureStyle(settings.captionTexture, settings.captionOpacity),
-                  ...(settings.captionShadow ? {} : { textShadow: 'none' })
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: settings.captionFontSize,
-                    fontWeight:
-                      settings.captionWeight === 400 ? undefined : settings.captionWeight
-                  }}
-                >
-                  The quick brown fox <span className="stage-word">jumps</span> over the lazy dog.
-                </div>
-                <div
-                  className="caption-preview-zh"
-                  style={{ fontSize: settings.captionZhSize }}
-                >
-                  敏捷的棕色狐狸跳过了那只懒狗。
-                </div>
-              </div>
-              <div className="stage-popup">
-                <span className="stage-popup-word">jumps</span>
-                <span className="stage-popup-zh">跳跃（三单）</span>
-              </div>
+              {/* 真实字幕浮层组件：文本固定，悬停/点词/翻译弹窗与浏览页行为一致 */}
+              <CaptionOverlay
+                cues={SAMPLE_CUES}
+                time={1}
+                opacity={settings.captionOpacity}
+                fontSize={settings.captionFontSize}
+                zhSize={settings.captionZhSize}
+                fontFamily={captionFontCss(settings.captionFont)}
+                weight={settings.captionWeight}
+                shadow={settings.captionShadow}
+                texture={settings.captionTexture}
+                showZh
+                zhLines={SAMPLE_ZH}
+                knownWords={knownWords}
+                onWordSelect={setSelection}
+                onCaptionEnter={noop}
+                onCaptionLeave={noop}
+              />
             </div>
             <div className="stage-meta">
               字号 {settings.captionFontSize}px · 透明度 {Math.round(settings.captionOpacity * 100)}%
+              · 悬停/点击单词试试
             </div>
           </div>
         </aside>
       </div>
+      {selection && (
+        <TranslatePopup
+          key={selection.text}
+          text={selection.text}
+          rect={selection.rect}
+          sentence={selection.sentence}
+          video={{ videoId: 'preview-stage', title: '字幕预览舞台' }}
+          time={0}
+          savedItem={
+            (vocabList ?? []).find(
+              (v) => v.text.trim().toLowerCase() === selection.text.trim().toLowerCase()
+            ) ?? null
+          }
+          onClose={() => setSelection(null)}
+        />
+      )}
       </div>
     </div>
   )
