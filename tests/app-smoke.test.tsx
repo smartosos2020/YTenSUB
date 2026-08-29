@@ -26,6 +26,7 @@ const apiMock = {
   appVersion: vi.fn(async () => '0.0.0-test'),
   updateInstall: vi.fn(),
   updateCheck: vi.fn(),
+  updateOpenReleases: vi.fn(),
   onUpdateAvailable: vi.fn(() => () => {}),
   onUpdateDownloaded: vi.fn(() => () => {}),
   onUpdateProgress: vi.fn(() => () => {}),

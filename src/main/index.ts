@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, shell } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -146,6 +146,10 @@ function registerIpc(): void {
   ipcMain.on('update:install', () => autoUpdater.quitAndInstall())
   ipcMain.on('update:check', () => {
     autoUpdater.checkForUpdates().catch(() => {})
+  })
+  // 自动更新不可用时的临时方案：打开 GitHub 发布页手动下载
+  ipcMain.on('update:open-releases', () => {
+    void shell.openExternal('https://github.com/smartosos2020/YTenSUB/releases/latest')
   })
 
   // LLM 连通性测试：发一条最小请求并计时

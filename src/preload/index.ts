@@ -64,6 +64,7 @@ const api = {
     }
   },
   updateCheck: () => ipcRenderer.send('update:check'),
+  updateOpenReleases: () => ipcRenderer.send('update:open-releases'),
 
   // 自定义标题栏的窗口控制
   windowMinimize: () => ipcRenderer.send('window:minimize'),

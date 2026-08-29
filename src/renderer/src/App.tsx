@@ -127,12 +127,13 @@ export default function App(): JSX.Element {
                       updateState === 'downloaded'
                         ? '更新已就绪，点击重启安装'
                         : updateState === 'error'
-                          ? '更新失败，点击重试'
-                          : `正在下载更新… ${updatePct}%`
+                          ? '更新失败，点击打开发布页手动下载'
+                          : `正在下载更新… ${updatePct}%（点击打开发布页手动下载）`
                     }
                     onClick={() => {
+                      // 已下载 → 重启安装；其余状态（含失败）→ 打开发布页手动下载（网络临时方案）
                       if (updateState === 'downloaded') api.updateInstall()
-                      else if (updateState === 'error') api.updateCheck()
+                      else api.updateOpenReleases()
                     }}
                   >
                     <UpdateIcon />
