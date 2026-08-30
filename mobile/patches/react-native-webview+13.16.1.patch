@@ -1,0 +1,23 @@
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
+index 80c6803..f75acf0 100644
+--- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
+@@ -122,6 +122,18 @@ public class RNCWebView extends WebView implements LifecycleEventListener {
+         cleanupCallbacksAndDestroy();
+     }
+ 
++    // ytensub patch: 息屏/切后台时对 Chromium 始终报告可见，
++    // 否则 WebView 后台会冻结媒体管线（元素 paused=false 但无声、时间不走）
++    @Override
++    public void onWindowVisibilityChanged(int visibility) {
++        super.onWindowVisibilityChanged(VISIBLE);
++    }
++
++    @Override
++    protected void onVisibilityChanged(View changedView, int visibility) {
++        super.onVisibilityChanged(changedView, VISIBLE);
++    }
++
+     @Override
+     public boolean onTouchEvent(MotionEvent event) {
+         if (this.nestedScrollEnabled) {
