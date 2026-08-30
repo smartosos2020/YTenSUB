@@ -216,7 +216,17 @@ export default function BrowsePage(): JSX.Element {
   }, [])
 
   const extract = useCallback(
-    async (wv: WebviewTag): Promise<void> => {
+    async (wv: WebviewTag, videoId: string): Promise<void> => {
+      // 先查本地字幕缓存：命中即秒出（锚点在主进程侧已刷新），未命中才走在线抓取
+      const cached = await api.captionsGetCache(videoId).catch(() => null)
+      if (cached) {
+        loadZhNative(cached.en, cached.zh ?? [])
+        setVideo({ videoId, title: cached.title, channel: cached.channel })
+        setHasCaptions(cached.en.length > 0)
+        setCues(cached.en)
+        setIsFav(await api.favIs(videoId))
+        return
+      }
       try {
         const res = await wv.executeJavaScript(EXTRACT_SCRIPT)
         if (res?.ok && res.videoId) {
@@ -241,6 +251,15 @@ export default function BrowsePage(): JSX.Element {
           setHasCaptions(res.hasCaptions)
           setCues(parsed)
           setIsFav(await api.favIs(res.videoId))
+          // 写入本地缓存：下次打开同视频秒出（空字幕不写，留给下次重试）
+          void api
+            .captionsPutCache(res.videoId, {
+              title: res.title,
+              channel: res.channel,
+              en: parsed,
+              zh: zhParsed.length > 0 ? zhParsed : null
+            })
+            .catch(() => {})
         } else {
           setVideo(null)
           setCues([])
@@ -341,7 +360,7 @@ export default function BrowsePage(): JSX.Element {
         if (msg.url) setAddressInput(msg.url)
         applyGuestTheme(themeRef.current) // SPA 导航后重新断言主题
         if (msg.videoId) {
-          void extract(wv)
+          void extract(wv, msg.videoId)
           // 跟读页请求的原声片段：等的就是这个视频，加载完成后补播
           const pending = pendingSegmentRef.current
           if (pending && pending.videoId === msg.videoId) {

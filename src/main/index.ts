@@ -3,6 +3,7 @@ import { autoUpdater } from 'electron-updater'
 import fs from 'node:fs'
 import path from 'node:path'
 import { Store } from './store'
+import { CaptionsCache, CaptionCacheEntry } from './captions-cache'
 import { Dict } from './dict'
 import { googleTranslateFree, llmChatDetailed, llmTranslate, translateBatch, translateText } from './translate'
 import { buildShadowingMessages, fetchEnglishCues, mergeCuesToSentences, parseShadowingResponse, ruleBasedPick, withSceneNumbers } from './shadowing'
@@ -33,6 +34,10 @@ function migrateLegacyData(): void {
 migrateLegacyData()
 
 const store = new Store(dataFile)
+// 字幕缓存：独立文件，命中/写入都刷新"最近观看锚点"，LRU 淘汰
+const captionsCache = new CaptionsCache(
+  path.join(app.getPath('userData'), 'captions-cache.json')
+)
 
 let mainWin: BrowserWindow | null = null
 
@@ -173,6 +178,16 @@ function registerIpc(): void {
     }
   })
 
+  // 字幕本地缓存：命中即刷新最近观看锚点；get 未命中返回 null 由渲染进程走在线抓取
+  ipcMain.handle('captions:get-cache', (_e, videoId: string) => captionsCache.get(videoId))
+  ipcMain.handle(
+    'captions:put-cache',
+    (_e, videoId: string, entry: Omit<CaptionCacheEntry, 'touchedAt'>) =>
+      captionsCache.put(videoId, entry)
+  )
+  ipcMain.handle('captions:cache-size', () => captionsCache.size)
+  ipcMain.handle('captions:clear-cache', () => captionsCache.clear())
+
   // LLM 连通性测试：发一条最小请求并计时
   ipcMain.handle('llm:test', async () => {
     const s = store.getSettings()
@@ -285,7 +300,11 @@ function registerIpc(): void {
     const existing = store.getShadowing(vid)
     if (existing && !force) return { script: existing }
 
-    const caps = await fetchEnglishCues(vid, (u, init) => net.fetch(u, init))
+    // 优先用字幕缓存（浏览页打开过的视频直接命中，省掉在线抓取）
+    const cachedCaps = captionsCache.get(vid)
+    const caps = cachedCaps
+      ? { title: cachedCaps.title, cues: cachedCaps.en }
+      : await fetchEnglishCues(vid, (u, init) => net.fetch(u, init))
     if (!caps) return { error: 'no-captions' }
 
     // 碎片 cue 先合并成完整句子：LLM 精选和规则兜底都在句子上工作，效果好得多
@@ -461,7 +480,11 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   store.flush()
+  captionsCache.flush()
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', () => store.flush())
+app.on('before-quit', () => {
+  store.flush()
+  captionsCache.flush()
+})

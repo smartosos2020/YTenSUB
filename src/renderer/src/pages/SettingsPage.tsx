@@ -94,6 +94,7 @@ export default function SettingsPage(): JSX.Element {
   const [dataMsg, setDataMsg] = useState('')
   const [vocabList, setVocabList] = useState<VocabItem[] | null>(null)
   const [favCount, setFavCount] = useState<number | null>(null)
+  const [captionCacheCount, setCaptionCacheCount] = useState<number | null>(null)
   // 预览舞台取词弹窗
   const [selection, setSelection] = useState<WordSelection | null>(null)
   // 管道测试器
@@ -115,6 +116,7 @@ export default function SettingsPage(): JSX.Element {
     api.settingsGet().then(setSettings)
     api.vocabList().then((l: VocabItem[]) => setVocabList(l)).catch(() => {})
     api.favList().then((l: unknown[]) => setFavCount(l.length)).catch(() => {})
+    api.captionsCacheSize().then(setCaptionCacheCount).catch(() => {})
   }, [])
 
   if (!settings) return <div className="page">加载中…</div>
@@ -603,6 +605,10 @@ export default function SettingsPage(): JSX.Element {
                   <div className="stat-num">{favCount ?? '-'}</div>
                   <div className="stat-label">精读收藏（部）</div>
                 </div>
+                <div className="stat-tile">
+                  <div className="stat-num">{captionCacheCount ?? '-'}</div>
+                  <div className="stat-label">字幕缓存（部）</div>
+                </div>
               </div>
               <div className="card-divider" />
               <div className="data-row">
@@ -615,6 +621,18 @@ export default function SettingsPage(): JSX.Element {
                   onClick={() => void importData()}
                 >
                   导入数据
+                </Button>
+                <Button
+                  variant="default"
+                  title="清空本地字幕缓存（不影响生词/收藏），下次打开视频会重新抓取"
+                  onClick={() =>
+                    void api.captionsClearCache().then(() => {
+                      setCaptionCacheCount(0)
+                      setDataMsg('字幕缓存已清除')
+                    })
+                  }
+                >
+                  清除字幕缓存
                 </Button>
                 {dataMsg && <span className="saved-hint">{dataMsg}</span>}
               </div>

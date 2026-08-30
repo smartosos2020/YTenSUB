@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import { Favorite, Settings, VocabItem } from '../shared/types'
+import type { CaptionCacheEntry } from '../main/captions-cache'
 
 const api = {
   translate: (text: string) => ipcRenderer.invoke('translate:text', text),
@@ -35,6 +36,12 @@ const api = {
   llmTest: () => ipcRenderer.invoke('llm:test'),
   captionsFetchText: (url: string): Promise<string | null> =>
     ipcRenderer.invoke('captions:fetch-text', url),
+  captionsGetCache: (videoId: string): Promise<CaptionCacheEntry | null> =>
+    ipcRenderer.invoke('captions:get-cache', videoId),
+  captionsPutCache: (videoId: string, entry: Omit<CaptionCacheEntry, 'touchedAt'>) =>
+    ipcRenderer.invoke('captions:put-cache', videoId, entry),
+  captionsCacheSize: (): Promise<number> => ipcRenderer.invoke('captions:cache-size'),
+  captionsClearCache: () => ipcRenderer.invoke('captions:clear-cache'),
   appVersion: () => ipcRenderer.invoke('app:version'),
   updateInstall: () => ipcRenderer.send('update:install'),
   onUpdateAvailable: (cb: () => void) => {
