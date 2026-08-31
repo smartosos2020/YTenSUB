@@ -111,9 +111,9 @@ export const EXTRACT_SCRIPT = `(async function() {
 })()
 `
 
-/** 暂停 / 恢复播放（点词翻译时暂停，关闭弹窗恢复） */
-export const PAUSE_SCRIPT = `(function(){ var v = document.querySelector('video'); if (v) v.pause() })()`
-export const PLAY_SCRIPT = `(function(){ var v = document.querySelector('video'); if (v) v.play() })()`
+/** 暂停 / 恢复播放（点词翻译时暂停，关闭弹窗恢复；带回执便于排查后台注入是否执行） */
+export const PAUSE_SCRIPT = `(function(){ var v = document.querySelector('video'); if (v) v.pause(); window.ReactNativeWebView.postMessage(JSON.stringify({ kind: 'dbg', msg: 'ack pause' })) })()`
+export const PLAY_SCRIPT = `(function(){ var v = document.querySelector('video'); if (v) v.play(); window.ReactNativeWebView.postMessage(JSON.stringify({ kind: 'dbg', msg: 'ack play' })) })()`
 
 /** 可见性伪装：App 进后台后 YouTube 仍认为页面可见（息屏播放的关键之一） */
 export const VISIBILITY_SPOOF = `

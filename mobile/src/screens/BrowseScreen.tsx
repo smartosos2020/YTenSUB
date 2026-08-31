@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react'
-import { AppState, PermissionsAndroid, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { AppState, PermissionsAndroid, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { WebView, WebViewMessageEvent } from 'react-native-webview'
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake'
 import CaptionList, { alignZh } from '../components/CaptionList'
@@ -8,7 +8,7 @@ import { Cue, parseCaptionText } from '../lib/captions'
 import { EXTRACT_SCRIPT, PAUSE_SCRIPT, PLAY_DIAG_SCRIPT, PLAY_SCRIPT, PROBE_SCRIPT, seekScript, VISIBILITY_SPOOF } from '../lib/extract'
 import { lemmatize } from '../lib/lemma'
 import { VocabItem } from '../lib/storage'
-import { BgPlayer } from '../../modules/bg-player'
+import { BgPlayer, onMediaAction } from '../../modules/bg-player'
 
 const HOME = 'https://www.youtube.com'
 // 桌面 UA：拿桌面版 watch 页面，行为与桌面端提取链路一致
@@ -27,7 +27,6 @@ interface Props {
 /** 竖屏浏览页：上部 WebView 播放视频，下部滚动字幕（点词翻译、点行 seek） */
 export default function BrowseScreen({ vocab, onVocabChanged }: Props): React.JSX.Element {
   const wvRef = useRef<WebView>(null)
-  const [address, setAddress] = useState('')
   const [url, setUrl] = useState(HOME)
   const [videoId, setVideoId] = useState('')
   const [videoTitle, setVideoTitle] = useState('')
@@ -52,25 +51,49 @@ export default function BrowseScreen({ vocab, onVocabChanged }: Props): React.JS
     }
   }, [paused, videoId])
 
-  // 后台播放：播放中拉起前台服务 + 唤醒锁（自研 bg-player 原生模块），
-  // 配合页面加载前注入的可见性伪装，息屏/切后台后 YouTube 继续出声
+  // 后台播放：有视频即拉起前台服务（媒体卡片）；暂停不杀服务（通知可恢复播放），
+  // 唤醒锁随播放状态在服务内收放。通知/锁屏的播放键经 onMediaAction 驱动 WebView
   const notifPermAsked = useRef(false)
   React.useEffect(() => {
-    if (!paused && videoId) {
-      // Android 13+ 前台服务通知需要运行时权限，只在首次播放时请求
-      if (!notifPermAsked.current && Platform.OS === 'android' && Platform.Version >= 33) {
-        notifPermAsked.current = true
-        void PermissionsAndroid.request('android.permission.POST_NOTIFICATIONS' as never).finally(() => {
-          BgPlayer.start()
-        })
-      } else {
-        BgPlayer.start()
-      }
+    if (!videoId) {
+      BgPlayer.stop()
+      return
+    }
+    const start = (): void => {
+      BgPlayer.start()
+      BgPlayer.update(!pausedRef.current, titleRef.current)
+    }
+    // Android 13+ 前台服务通知需要运行时权限，只在首次播放时请求
+    if (!notifPermAsked.current && Platform.OS === 'android' && Platform.Version >= 33) {
+      notifPermAsked.current = true
+      void PermissionsAndroid.request('android.permission.POST_NOTIFICATIONS' as never).finally(start)
     } else {
+      start()
+    }
+    return () => {
       BgPlayer.stop()
     }
-    return () => BgPlayer.stop()
-  }, [paused, videoId])
+  }, [videoId])
+
+  // 播放状态/标题同步到媒体卡片（依赖 ref 镜像避免 effect 连锁）
+  const pausedRef = useRef(true)
+  const titleRef = useRef('')
+  pausedRef.current = paused
+  titleRef.current = videoTitle
+  React.useEffect(() => {
+    if (videoId) BgPlayer.update(!paused, videoTitle)
+  }, [paused, videoTitle, videoId])
+
+  // 媒体卡片/锁屏按钮：原生侧走音频焦点通道直接控制 WebView（后台页面 JS 冻结，注入无效）。
+  // 这里只同步"用户主动暂停"标记，让息屏自动续播不顶回
+  React.useEffect(
+    () =>
+      onMediaAction((action) => {
+        BgPlayer.log('js-received ' + action + ' appState=' + AppState.currentState)
+        userPausedRef.current = action === 'pause'
+      }),
+    []
+  )
 
   /** 生词词元集合：字幕高亮 + 弹窗"已收藏"判断 */
   const knownLemmas = useMemo(() => new Set(vocab.map((v) => lemmatize(v.text))), [vocab])
@@ -155,18 +178,13 @@ export default function BrowseScreen({ vocab, onVocabChanged }: Props): React.JS
       } else if (msg.kind === 'extract' && msg.payload) {
         void handleExtract(msg.payload)
       } else if ((msg as { kind?: string }).kind === 'dbg') {
-        console.log('[dbg]', (msg as unknown as { msg?: string }).msg, (msg as unknown as { stack?: string }).stack ?? '')
+        const m = (msg as unknown as { msg?: string }).msg ?? ''
+        console.log('[dbg]', m)
+        BgPlayer.log('page ' + m) // 页面回执透传 logcat（release 排查用）
       }
     },
     [handleExtract]
   )
-
-  const open = (): void => {
-    const t = address.trim()
-    if (!t) return
-    const target = /^https?:\/\//.test(t) ? t : `https://www.youtube.com/results?search_query=${encodeURIComponent(t)}`
-    setUrl(target)
-  }
 
   /** 登录 UA 切换：进入 Google 登录域用安卓 Chrome UA，回到 YouTube 恢复桌面 UA */
   const [ua, setUa] = useState(DESKTOP_UA)
@@ -192,22 +210,7 @@ export default function BrowseScreen({ vocab, onVocabChanged }: Props): React.JS
 
   return (
     <View style={styles.container}>
-      <View style={styles.addressBar}>
-        <TextInput
-          style={styles.addressInput}
-          value={address}
-          onChangeText={setAddress}
-          placeholder="粘贴 YouTube 链接或搜索"
-          placeholderTextColor="#666"
-          autoCapitalize="none"
-          autoCorrect={false}
-          onSubmitEditing={open}
-          returnKeyType="go"
-        />
-        <TouchableOpacity style={styles.goBtn} onPress={open}>
-          <Text style={styles.goText}>打开</Text>
-        </TouchableOpacity>
-      </View>
+      {/* 顶部区域即 WebView（YouTube 页面内部导航），无地址栏 */}
       <View style={subsCollapsed ? styles.playerExpanded : styles.player}>
         <WebView
           ref={wvRef}
@@ -222,18 +225,13 @@ export default function BrowseScreen({ vocab, onVocabChanged }: Props): React.JS
           javaScriptEnabled
         />
       </View>
-      {videoTitle ? (
-        <Text style={styles.title} numberOfLines={1}>
-          {videoTitle}
-        </Text>
-      ) : null}
-      {/* 字幕区收缩/展开开关：收缩后网页区占满 */}
+      {/* 字幕区收缩/展开开关（纯图标）：收缩后网页区占满 */}
       <TouchableOpacity
         style={styles.subsToggle}
         onPress={() => setSubsCollapsed(!subsCollapsed)}
         activeOpacity={0.7}
       >
-        <Text style={styles.subsToggleText}>字幕 {subsCollapsed ? '▲ 展开' : '▼ 收起'}</Text>
+        <Text style={styles.subsToggleText}>{subsCollapsed ? '▲' : '▼'}</Text>
       </TouchableOpacity>
       {!subsCollapsed && (
         <CaptionList
@@ -267,28 +265,6 @@ export default function BrowseScreen({ vocab, onVocabChanged }: Props): React.JS
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f0f0f' },
-  addressBar: {
-    flexDirection: 'row',
-    padding: 8,
-    gap: 8,
-    backgroundColor: '#171717'
-  },
-  addressInput: {
-    flex: 1,
-    backgroundColor: '#262626',
-    color: '#e8e8e8',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    fontSize: 14
-  },
-  goBtn: {
-    backgroundColor: '#2c2c2e',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    justifyContent: 'center'
-  },
-  goText: { color: '#3ecf8e', fontSize: 14 },
   player: { height: 240, backgroundColor: '#000' },
   playerExpanded: { flex: 1, backgroundColor: '#000' },
   subsToggle: {

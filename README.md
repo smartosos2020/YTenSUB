@@ -1,44 +1,43 @@
 # YTenSUB
 
-桌面端 YouTube 英语学习器：内嵌 youtube.com，自动提取英文字幕，中文字幕对照，划词翻译，生词本，视频收藏。
+用 YouTube 学英语：双语字幕、点词翻译、生词本、复习、跟读练习。支持 Windows 桌面端和 Android 手机端。
 
 ## 功能
 
-- **浏览**：内嵌打开 YouTube，打开视频页自动加载英文字幕面板，字幕随播放进度高亮，点击字幕跳转
-- **中文字幕**：视频字幕下方与字幕列表每条英文下方紧贴显示中文；优先使用视频自带中文字幕，其次 YouTube 机器翻译轨，都没有时用 Google 整句翻译代替；字幕列表顶部滑动开关控制显隐（默认关闭），支持 ±0.5s 时间微调
-- **划词翻译**：字幕、网页评论区等任意文本选中即弹出翻译；翻译链按 本地词典 → Google 免费接口 → LLM API 顺序回退（设置页可开关各级、配置 LLM）；悬停字幕自动暂停播放方便取词
-- **生词本**：一键收藏单词，记录翻译、所在句子、来源视频和时间点，可点击跳回视频对应位置；支持导出 CSV（Anki 可导入）
-- **复习**：卡片翻转式复习，按 10分钟/1/3/7/15/30天 间隔重复；满级单词标记"已掌握"并从字幕高亮中移除
-- **跟读练习**：收藏页一键为视频生成跟读脚本（LLM 从字幕精选清洗，剔除口头禅/填充词），提词器式播放（调速/进度/暂停停止），TTS 示范音，柔和背景钢琴音乐
-- **收藏**：视频收藏到本地，支持文件夹分类，缩略图网格 / 列表两种展示
-- **播放控制**：空格播放/暂停，←/→ 快退快进 5s，↑/↓ 跳上/下一句字幕，单句循环复读，单词真人发音（dictionaryapi.dev，系统 TTS 兜底）
-- **数据**：设置页可导出/导入全部数据（生词、收藏、设置）；写入自动留 .bak 防损坏
+- **看视频学英文**：打开 YouTube 视频自动加载英文字幕 + 中文对照，字幕随播放高亮
+- **点词翻译**：字幕或网页里点/选任意单词即出释义和发音，可一键加入生词本
+- **生词本**：收藏自动关联词形变化（runs/ran/running 算同一个词），可导出 CSV 导入 Anki
+- **复习**：卡片式间隔重复，满级标记"已掌握"
+- **跟读练习**：把收藏视频的字幕提炼成跟读脚本，提词器播放 + 示范音 + 背景音乐
+- **收藏夹**：喜欢的视频本地收藏、分类管理
+- **手机端**：竖屏播放 + 滚动字幕，支持息屏/后台播放，通知栏和锁屏可直接控制播放暂停
+
+## 安装
+
+- **Windows**：从 [GitHub Releases](https://github.com/smartosos2020/YTenSUB/releases) 下载安装包，安装后自动检查更新
+- **Android**：本地构建安装（见下文开发）
 
 ## 开发
 
+桌面端（Electron + React）：
+
 ```bash
 npm install        # 安装依赖
-npm run build:dict # 生成本地词典 resources/dict.json（从 ECDICT 拉取，失败则写入最小词表）
-npm run dev        # 开发模式启动
-npm test           # 单元测试
-npm run lint       # ESLint
-npm run build      # 构建到 out/
-npm run dist       # 打包 Windows 安装包（electron-builder）
+npm run build:dict # 生成本地词典（可选，仓库已带）
+npm run dev        # 开发模式
+npm test           # 测试
+npm run dist       # 打包 Windows 安装包
 ```
 
-## 技术栈
+手机端（Expo / React Native，代码在 `mobile/`）：
 
-Electron + electron-vite + React + TypeScript。数据存于用户目录 `ytensub-data.json`（收藏、文件夹、生词、设置；首次启动自动迁移旧 EngLearn 数据），写入前自动备份 `.bak`。自动更新走 GitHub Releases（electron-updater）。
-
-## 结构
-
-- `src/main/` — 主进程：`store.ts`（JSON 存储）、`dict.ts`（本地词典）、`translate.ts`（翻译回退链与整句批量翻译）、`index.ts`（窗口、IPC、自动更新）
-- `src/preload/` — 宿主 preload（contextBridge API）与注入 YouTube 页面的 `webview-preload.ts`（导航检测、进度上报、页面划词上报；仅 youtube.com 生效）
-- `src/renderer/` — React 界面：浏览 / 收藏 / 生词本 / 复习 / 设置五个页面；`hooks/` 为浏览页拆分的自定义 hooks，`components/icons/` 为内联 SVG 图标
-- `src/shared/` — 主进程与渲染进程共享的类型与纯函数（字幕解析、中英字幕对齐、双语 SRT 导出等）
-- `scripts/build-dict.mjs` — 词典构建脚本
-- `tests/` — vitest 单元测试（含 jsdom 渲染层测试）
+```bash
+cd mobile
+npm install
+npx expo start                  # Expo Go 扫码调试
+npx expo run:android            # 或本地编译安装（需 Android SDK + 手机开 USB 调试）
+```
 
 ## 音乐署名
 
-跟读页背景音乐：Gymnopedie No 1 — Kevin MacLeod（incompetech.com），Licensed under Creative Commons: By Attribution 4.0 (CC-BY 4.0)。
+跟读页背景音乐：Gymnopedie No 1 — Kevin MacLeod（incompetech.com），CC-BY 4.0。
