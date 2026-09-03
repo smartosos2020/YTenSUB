@@ -444,6 +444,9 @@ app.whenReady().then(() => {
     }
   }
   logUpdater(`checkForUpdatesAndNotify (app v${app.getVersion()})`)
+  // 发现新版本即自动下载（侧栏按钮出灌水进度）；安装只由用户点按钮触发，退出时不自动装
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = false
   autoUpdater.checkForUpdatesAndNotify().catch((e) => logUpdater(`check error: ${String(e)}`))
   // 定时重查（4 小时）：启动时若撞上 GitHub CDN 缓存拿到"无更新"，运行中也能自愈
   const timer = setInterval(() => {
