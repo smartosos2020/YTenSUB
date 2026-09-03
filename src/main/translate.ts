@@ -128,6 +128,27 @@ export async function llmTranslate(
   )
 }
 
+/** 语境释义：把单词所在的整句一起给 LLM，返回该词在此语境下的中文意思（熟词僻义场景） */
+export async function llmContextualTranslate(
+  word: string,
+  sentence: string,
+  cfg: LlmSettings,
+  fetchFn: FetchLike
+): Promise<string | null> {
+  return llmChat(
+    cfg,
+    [
+      {
+        role: 'system',
+        content:
+          '你是英译中翻译助手。用户会给出一个英语句子和其中的一个单词。请只返回该单词在这个句子语境下的简洁中文释义，不要解释、不要加引号。'
+      },
+      { role: 'user', content: `句子：${sentence}\n单词：${word}` }
+    ],
+    fetchFn
+  )
+}
+
 /**
  * 以固定并发把一组文本逐条翻译，结果与输入等长对齐；单条失败或空白输入为 null。
  * 用于字幕整句中译：调用方（IPC handler）在 translateOne 里做缓存与翻译链。

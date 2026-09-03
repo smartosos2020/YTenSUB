@@ -163,6 +163,10 @@ export class Store {
     return this.data.shadowing[videoId] ?? null
   }
 
+  listShadowing(): ShadowingScript[] {
+    return Object.values(this.data.shadowing)
+  }
+
   setShadowing(script: ShadowingScript): void {
     this.data.shadowing[script.videoId] = script
     this.scheduleSave()
@@ -172,6 +176,11 @@ export class Store {
   replaceAll(data: AppData): void {
     this.data = data
     this.scheduleSave()
+  }
+
+  /** 导出当前数据的深拷贝（同步服务/备份用） */
+  exportAll(): AppData {
+    return JSON.parse(JSON.stringify(this.data)) as AppData
   }
 
   // ---------- settings ----------

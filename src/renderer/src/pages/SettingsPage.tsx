@@ -95,6 +95,15 @@ export default function SettingsPage(): JSX.Element {
   const [vocabList, setVocabList] = useState<VocabItem[] | null>(null)
   const [favCount, setFavCount] = useState<number | null>(null)
   const [captionCacheCount, setCaptionCacheCount] = useState<number | null>(null)
+  // 手机同步服务地址（开启后显示，如 http://192.168.0.10:47832）
+  const [syncAddr, setSyncAddr] = useState('')
+
+  /** 开启局域网同步服务，失败提示 */
+  const startSync = async (): Promise<void> => {
+    const r = await api.syncStart()
+    if (r) setSyncAddr(`http://${r.ip}:${r.port}`)
+    else setDataMsg('同步服务启动失败（端口被占用或无局域网）')
+  }
   // 预览舞台取词弹窗
   const [selection, setSelection] = useState<WordSelection | null>(null)
   // 管道测试器
@@ -635,6 +644,27 @@ export default function SettingsPage(): JSX.Element {
                   清除字幕缓存
                 </Button>
                 {dataMsg && <span className="saved-hint">{dataMsg}</span>}
+              </div>
+              {/* 手机同步：局域网 HTTP 服务，手机端输入地址拉取/推送生词本与跟读脚本 */}
+              <div className="data-row">
+                {!syncAddr ? (
+                  <Button variant="default" onClick={() => void startSync()}>
+                    开启手机同步
+                  </Button>
+                ) : (
+                  <>
+                    <span className="saved-hint">手机端输入：{syncAddr}</span>
+                    <Button
+                      variant="subtle"
+                      onClick={() => {
+                        void api.syncStop()
+                        setSyncAddr('')
+                      }}
+                    >
+                      关闭
+                    </Button>
+                  </>
+                )}
               </div>
               {/* 危险操作：原地两段确认，不弹系统对话框 */}
               <div className="data-row danger-zone">

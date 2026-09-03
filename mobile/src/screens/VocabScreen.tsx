@@ -2,14 +2,16 @@ import React from 'react'
 import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import * as Speech from 'expo-speech'
 import { VocabItem, vocabRemove } from '../lib/storage'
+import SyncSheet from '../components/SyncSheet'
 
 interface Props {
   vocab: VocabItem[]
   onVocabChanged: () => void
 }
 
-/** 生词本：收藏的词元列表（新→旧），点喇叭发音，长按删除 */
+/** 生词本：收藏的词元列表（新→旧），点喇叭发音，长按删除；右上与电脑同步 */
 export default function VocabScreen({ vocab, onVocabChanged }: Props): React.JSX.Element {
+  const [syncOpen, setSyncOpen] = React.useState(false)
   const confirmRemove = (item: VocabItem): void => {
     Alert.alert('删除生词', `确定删除「${item.text}」？`, [
       { text: '取消', style: 'cancel' },
@@ -25,7 +27,12 @@ export default function VocabScreen({ vocab, onVocabChanged }: Props): React.JSX
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>生词本（{vocab.length}）</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.header}>生词本（{vocab.length}）</Text>
+        <TouchableOpacity onPress={() => setSyncOpen(true)}>
+          <Text style={styles.syncBtn}>⇄ 同步</Text>
+        </TouchableOpacity>
+      </View>
       <FlatList
         data={vocab}
         keyExtractor={(v) => v.id}
@@ -51,18 +58,26 @@ export default function VocabScreen({ vocab, onVocabChanged }: Props): React.JSX
           </View>
         }
       />
+      <SyncSheet visible={syncOpen} onClose={() => setSyncOpen(false)} onSynced={onVocabChanged} />
     </View>
   )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f0f0f' },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingRight: 14
+  },
   header: {
     color: '#e8e8e8',
     fontSize: 18,
     fontWeight: '600',
     padding: 14
   },
+  syncBtn: { color: '#3ecf8e', fontSize: 14 },
   card: {
     backgroundColor: '#1c1c1e',
     marginHorizontal: 12,

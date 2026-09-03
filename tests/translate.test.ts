@@ -132,3 +132,26 @@ describe('translateBatch 整句批量翻译', () => {
     expect(r).toEqual(input)
   })
 })
+
+describe('llmContextualTranslate 语境释义', () => {
+  it('prompt 同时包含句子与单词', async () => {
+    let captured = ''
+    const fetchFn = (async (_u: string, init?: RequestInit) => {
+      captured = String(JSON.parse(String(init?.body)).messages[1].content)
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: '（金融机构的）债券' } }] }),
+        { status: 200 }
+      )
+    }) as (url: string, init?: RequestInit) => Promise<Response>
+    const { llmContextualTranslate } = await import('../src/main/translate')
+    const r = await llmContextualTranslate(
+      'bond',
+      'The Treasury bond yields rose sharply.',
+      { baseUrl: 'http://x/v1', apiKey: 'k', model: 'm' },
+      fetchFn
+    )
+    expect(r).toBe('（金融机构的）债券')
+    expect(captured).toContain('The Treasury bond yields rose sharply.')
+    expect(captured).toContain('bond')
+  })
+})

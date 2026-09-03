@@ -34,6 +34,8 @@ const api = {
   shadowingGenerate: (videoId: string, force?: boolean) =>
     ipcRenderer.invoke('shadowing:generate', videoId, force),
   llmTest: () => ipcRenderer.invoke('llm:test'),
+  translateContext: (text: string, sentence: string): Promise<string | null> =>
+    ipcRenderer.invoke('translate:context', text, sentence),
   captionsFetchText: (url: string): Promise<string | null> =>
     ipcRenderer.invoke('captions:fetch-text', url),
   captionsGetCache: (videoId: string): Promise<CaptionCacheEntry | null> =>
@@ -42,6 +44,8 @@ const api = {
     ipcRenderer.invoke('captions:put-cache', videoId, entry),
   captionsCacheSize: (): Promise<number> => ipcRenderer.invoke('captions:cache-size'),
   captionsClearCache: () => ipcRenderer.invoke('captions:clear-cache'),
+  syncStart: (): Promise<{ ip: string; port: number } | null> => ipcRenderer.invoke('sync:start'),
+  syncStop: () => ipcRenderer.invoke('sync:stop'),
   appVersion: () => ipcRenderer.invoke('app:version'),
   updateInstall: () => ipcRenderer.send('update:install'),
   onUpdateAvailable: (cb: () => void) => {

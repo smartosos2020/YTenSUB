@@ -42,7 +42,26 @@ export default function TranslatePopup({
   const [saved, setSaved] = useState(false)
   const [removed, setRemoved] = useState(false)
   const [copied, setCopied] = useState(false)
+  // 语境释义（按需触发，省 token）：LLM 启用且有所在句子时显示入口
+  const [ctxTrans, setCtxTrans] = useState<string | 'loading' | null>(null)
+  const [llmOn, setLlmOn] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    api
+      .settingsGet()
+      .then((s) => setLlmOn((s.enabledTranslators ?? []).includes('llm')))
+      .catch(() => {})
+  }, [])
+
+  const askContext = (): void => {
+    if (ctxTrans) return
+    setCtxTrans('loading')
+    void api
+      .translateContext(text, sentence)
+      .then((r) => setCtxTrans(r ?? null))
+      .catch(() => setCtxTrans(null))
+  }
 
   useEffect(() => {
     let alive = true
@@ -138,8 +157,19 @@ export default function TranslatePopup({
         <>
           {result.phonetic && <div className="popup-phonetic">[{result.phonetic}]</div>}
           <div className="popup-translation">{result.translation}</div>
+          {ctxTrans === 'loading' && <div className="popup-context">语境释义查询中…</div>}
+          {ctxTrans && ctxTrans !== 'loading' && (
+            <div className="popup-context">语境：{ctxTrans}</div>
+          )}
           <div className="popup-footer">
-            <span className="popup-source">{SOURCE_LABEL[result.source]}</span>
+            <span className="popup-source">
+              {SOURCE_LABEL[result.source]}
+              {llmOn && sentence && !ctxTrans && (
+                <button className="popup-ctx-btn" title="结合整句语境，由 LLM 给出该词在此处的释义" onClick={askContext}>
+                  语境释义
+                </button>
+              )}
+            </span>
             <span className="popup-footer-actions">
               <button className="popup-copy" title="复制释义" onClick={copyTranslation}>
                 {copied ? '✓' : <CopyIcon />}

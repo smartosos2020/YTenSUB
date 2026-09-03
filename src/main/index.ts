@@ -4,8 +4,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Store } from './store'
 import { CaptionsCache, CaptionCacheEntry } from './captions-cache'
+import { startSyncServer, SyncServer } from './sync'
 import { Dict } from './dict'
-import { googleTranslateFree, llmChatDetailed, llmTranslate, translateBatch, translateText } from './translate'
+import { googleTranslateFree, llmChatDetailed, llmContextualTranslate, llmTranslate, translateBatch, translateText } from './translate'
 import { buildShadowingMessages, fetchEnglishCues, mergeCuesToSentences, parseShadowingResponse, ruleBasedPick, withSceneNumbers } from './shadowing'
 import { Favorite, Settings, ShadowingScript, TranslateSource, VocabItem, defaultData } from '../shared/types'
 
@@ -40,6 +41,8 @@ const captionsCache = new CaptionsCache(
 )
 
 let mainWin: BrowserWindow | null = null
+// 局域网同步服务实例（设置页开关控制）
+let syncServer: SyncServer | null = null
 
 // 应用主题映射为全局模拟的 prefers-color-scheme：
 // YouTube（设备主题模式）跟随系统媒体查询，借此让 guest 页面跟随我们的夜晚/白天
@@ -67,6 +70,13 @@ function registerIpc(): void {
       llmTranslate: (t) => llmTranslate(t, s.llm, (u, init) => net.fetch(u, init)),
       enabled
     })
+  })
+
+  // 语境释义（弹窗里"语境"按钮按需触发）：单词 + 所在整句一起给 LLM
+  ipcMain.handle('translate:context', (_e, text: string, sentence: string) => {
+    const s = store.getSettings()
+    if (!s.llm.baseUrl || !s.llm.apiKey || !s.llm.model) return null
+    return llmContextualTranslate(text, sentence, s.llm, (u, init) => net.fetch(u, init))
   })
 
   // 字幕整句中译：独立于划词翻译设置，Google 优先，LLM（已配置时）兜底；
@@ -187,6 +197,17 @@ function registerIpc(): void {
   )
   ipcMain.handle('captions:cache-size', () => captionsCache.size)
   ipcMain.handle('captions:clear-cache', () => captionsCache.clear())
+
+  // 局域网同步：手机端拉取/推送（生词本 + 跟读脚本）
+  ipcMain.handle('sync:start', async () => {
+    if (syncServer) return { ip: syncServer.ip, port: syncServer.port }
+    syncServer = await startSyncServer(store)
+    return syncServer ? { ip: syncServer.ip, port: syncServer.port } : null
+  })
+  ipcMain.handle('sync:stop', () => {
+    syncServer?.close()
+    syncServer = null
+  })
 
   // LLM 连通性测试：发一条最小请求并计时
   ipcMain.handle('llm:test', async () => {
