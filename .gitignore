@@ -3,3 +3,9 @@ out/
 dist/
 resources/dict.json
 *.log
+
+# 内部计划文档（商业策略）与本地密钥
+docs-internal/
+.env
+.env.*
+!.env.example
