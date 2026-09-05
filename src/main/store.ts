@@ -119,6 +119,17 @@ export class Store {
     this.scheduleSave()
   }
 
+  /** 更新收藏的元数据：难度（level/levelAuto）与内容标签 */
+  updateFavoriteMeta(
+    videoId: string,
+    patch: Partial<Pick<Favorite, 'level' | 'levelAuto' | 'tags'>>
+  ): void {
+    const fav = this.data.favorites.find((f) => f.videoId === videoId)
+    if (!fav) return
+    Object.assign(fav, patch)
+    this.scheduleSave()
+  }
+
   isFavorite(videoId: string): boolean {
     return this.data.favorites.some((f) => f.videoId === videoId)
   }

@@ -16,6 +16,8 @@ interface Props {
   hasCaptions: boolean
   onSeek: (t: number) => void
   onWordSelect: (sel: WordSelection) => void
+  /** 悬停取词（悬停 300ms 弹出翻译，设置页开关控制） */
+  onWordHover?: (sel: WordSelection) => void
   /** 是否显示中文字幕（开关状态，默认关） */
   showZh: boolean
   /** 与 cues 等长对齐的中文字幕；null 表示尚未就绪 */
@@ -45,6 +47,7 @@ interface RowProps {
   knownWords: Set<string>
   onSeek: (t: number) => void
   onWord: (text: string, rect: DOMRect, sentence: string) => void
+  onWordHover?: (text: string, rect: DOMRect, sentence: string) => void
 }
 
 /** 单行字幕：memo 化，播放进度刷新时只有高亮变化的行重渲染 */
@@ -56,7 +59,8 @@ const CueRow = memo(function CueRow({
   zh,
   knownWords,
   onSeek,
-  onWord
+  onWord,
+  onWordHover
 }: RowProps): JSX.Element {
   const handleClick = (): void => {
     const sel = window.getSelection()
@@ -67,7 +71,7 @@ const CueRow = memo(function CueRow({
   return (
     <div data-cue-idx={idx} className={'cue' + (active ? ' active' : '')} onClick={handleClick}>
       <div className="cue-en">
-        <WordSpans text={cue.text} knownWords={knownWords} onWord={onWord} />
+        <WordSpans text={cue.text} knownWords={knownWords} onWord={onWord} onWordHover={onWordHover} />
       </div>
       {showZh && zh && <div className="cue-zh">{zh}</div>}
     </div>
@@ -146,6 +150,7 @@ export default function SubtitlePanel({
   hasCaptions,
   onSeek,
   onWordSelect,
+  onWordHover,
   showZh,
   zhLines,
   zhLoading,
@@ -170,6 +175,10 @@ export default function SubtitlePanel({
   const handleWord = useCallback(
     (text: string, rect: DOMRect, sentence: string) => onWordSelect({ text, rect, sentence }),
     [onWordSelect]
+  )
+  const handleWordHover = useCallback(
+    (text: string, rect: DOMRect, sentence: string) => onWordHover?.({ text, rect, sentence }),
+    [onWordHover]
   )
 
   // 拖选短语（可跨单词）：mouseup 时取选区文本
@@ -222,6 +231,7 @@ export default function SubtitlePanel({
                 knownWords={knownWords}
                 onSeek={onSeek}
                 onWord={handleWord}
+                onWordHover={onWordHover ? handleWordHover : undefined}
               />
             </div>
           ))}

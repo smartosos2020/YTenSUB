@@ -111,7 +111,8 @@ async function main() {
       .replace(/\s+/g, ' ')
       .trim()
     if (!t) continue
-    dict[word] = { p: (f[idx.phonetic] || '').trim() || undefined, t }
+    // f = COCA 词频排名（难度估算用；缺省不写字段）
+    dict[word] = { p: (f[idx.phonetic] || '').trim() || undefined, t, f: frq }
   }
 
   fs.mkdirSync(path.dirname(OUT), { recursive: true })

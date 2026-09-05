@@ -23,6 +23,7 @@ import SunIcon from '../components/icons/SunIcon'
 import AutoIcon from '../components/icons/AutoIcon'
 import VolumeIcon from '../components/icons/VolumeIcon'
 import BookIcon from '../components/icons/BookIcon'
+import SearchIcon from '../components/icons/SearchIcon'
 import PageShell from '../components/PageShell'
 
 const TRANSLATORS: { key: TranslateSource; label: string; hint: string }[] = [
@@ -318,6 +319,19 @@ export default function SettingsPage(): JSX.Element {
                   onChange={(e) => update({ ...settings, autoCollectWord: e.currentTarget.checked })}
                 />
               </div>
+              <div className="behavior-row">
+                <span className="behavior-icon">
+                  <SearchIcon />
+                </span>
+                <span className="engine-info">
+                  <span className="engine-name">悬停取词</span>
+                  <span className="engine-hint">鼠标悬停字幕单词 300ms 自动弹出翻译，扫过不触发</span>
+                </span>
+                <Switch
+                  checked={settings.hoverTranslate}
+                  onChange={(e) => update({ ...settings, hoverTranslate: e.currentTarget.checked })}
+                />
+              </div>
               </section>
             </div>
           )}
@@ -432,6 +446,33 @@ export default function SettingsPage(): JSX.Element {
                 ]}
                 allowDeselect={false}
               />
+              <div className="card-divider" />
+              <div className="behavior-row">
+                <span className="engine-info">
+                  <span className="engine-name">收藏难度用 LLM 精估</span>
+                  <span className="engine-hint">
+                    关闭时用离线词频估算（免费即时）；开启后收藏视频时自动调用 LLM 定级（花 token 更准）
+                  </span>
+                </span>
+                <Switch
+                  checked={settings.levelEstimator === 'llm'}
+                  onChange={(e) =>
+                    update({ ...settings, levelEstimator: e.currentTarget.checked ? 'llm' : 'freq' })
+                  }
+                />
+              </div>
+              <div className="behavior-row">
+                <span className="engine-info">
+                  <span className="engine-name">收藏时自动打内容标签</span>
+                  <span className="engine-hint">
+                    先按 YouTube 官方分类自动映射（免费）；映射不上且 LLM 已配置时由 LLM 判断，手动改过的标签不覆盖
+                  </span>
+                </span>
+                <Switch
+                  checked={settings.autoTag}
+                  onChange={(e) => update({ ...settings, autoTag: e.currentTarget.checked })}
+                />
+              </div>
               </section>
             </div>
           )}

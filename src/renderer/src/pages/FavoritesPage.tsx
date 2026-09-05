@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
-import { Favorite, Folder, ShadowingResult, ShadowingScript } from '../../../shared/types'
-import MoveFolderModal from '../components/MoveFolderModal'
+import { CefrLevel, CEFR_LEVELS, FAV_TAG_PRESETS, Favorite, Folder, ShadowingResult, ShadowingScript } from '../../../shared/types'
+import EditFavModal from '../components/EditFavModal'
 import GridIcon from '../components/icons/GridIcon'
 import ListIcon from '../components/icons/ListIcon'
 import TrashIcon from '../components/icons/TrashIcon'
 import UserSpeakIcon from '../components/icons/UserSpeakIcon'
 import SearchIcon from '../components/icons/SearchIcon'
-import FolderInputIcon from '../components/icons/FolderInputIcon'
+import EditIcon from '../components/icons/EditIcon'
 import PageShell from '../components/PageShell'
 
 type ViewMode = 'grid' | 'list'
+/** 分组轴：分类（手动语义）/ 创作者（客观属性，虚拟分组不落库） */
+type GroupAxis = 'folder' | 'creator'
+/** 难度筛选：all 全部 / none 未评估 / 具体 CEFR 档 */
+type LevelFilter = 'all' | 'none' | CefrLevel
 
 const STRATEGY_LABEL: Record<string, string> = {
   'llm-only': '仅 LLM',
@@ -34,6 +38,17 @@ const STRATEGY_EXPECT: Record<string, string> = {
   raw: 'raw'
 }
 
+/** 秒 → mm:ss / h:mm:ss */
+function fmtDuration(s?: number): string | null {
+  if (!s) return null
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = Math.floor(s % 60)
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+    : `${m}:${String(sec).padStart(2, '0')}`
+}
+
 export default function FavoritesPage(): JSX.Element {
   const navigate = useNavigate()
   const [folders, setFolders] = useState<Folder[]>([])
@@ -52,18 +67,33 @@ export default function FavoritesPage(): JSX.Element {
     existing: ShadowingScript
     strategy: string
   } | null>(null)
-  // 移动分类 / 删除两段确认
-  const [moveTarget, setMoveTarget] = useState<Favorite | null>(null)
+  // 移动分类改为编辑弹窗（分类+难度+标签） / 删除两段确认
+  const [editTarget, setEditTarget] = useState<Favorite | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  // 分组轴与筛选
+  const [groupAxis, setGroupAxis] = useState<GroupAxis>('folder')
+  const [selectedCreator, setSelectedCreator] = useState<string | null | undefined>(undefined)
+  const [levelFilter, setLevelFilter] = useState<LevelFilter>('all')
+  const [tagFilter, setTagFilter] = useState<string[]>([])
 
   const reload = useCallback(async (): Promise<void> => {
     setFolders(await api.folderList())
-    setFavorites(await api.favList(selectedFolder))
-  }, [selectedFolder])
+    setFavorites(await api.favList()) // 全量加载，分类/创作者/筛选都在前端做
+  }, [])
 
   useEffect(() => {
     void reload()
   }, [reload])
+
+  // 后台补估难度：只对有字幕缓存的收藏（freq 离线估，零网络开销）
+  useEffect(() => {
+    for (const f of favorites) {
+      if (f.level) continue
+      void api.favEstimateLevel(f.videoId, 'freq', true).then((lv) => {
+        if (lv) void reload()
+      })
+    }
+  }, [favorites, reload])
 
   const createFolder = async (): Promise<void> => {
     const name = newFolder.trim()
@@ -136,75 +166,167 @@ export default function FavoritesPage(): JSX.Element {
     return favorites.filter((f) => f.folderId === (folderId ?? null)).length
   }
 
-  const q = search.trim().toLowerCase()
-  const filtered = q
-    ? favorites.filter(
-        (f) => f.title.toLowerCase().includes(q) || f.channel.toLowerCase().includes(q)
-      )
-    : favorites
+  // 创作者分组（虚拟，不落库）：频道去重 + 计数；头像取该频道任一收藏的头像
+  const creators = [...new Set(favorites.map((f) => f.channel).filter(Boolean))].sort()
+  const countOfCreator = (c: string | undefined): number =>
+    c === undefined ? favorites.length : favorites.filter((f) => f.channel === c).length
+  const creatorAvatar = (c: string): string | null =>
+    favorites.find((f) => f.channel === c && f.avatar)?.avatar ?? null
+  /** 无头像兜底：名字首字母 + 按名字哈希的稳定色相 */
+  const hueOf = (s: string): number => {
+    let h = 0
+    for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) % 360
+    return h
+  }
 
-  const currentFolderName =
-    selectedFolder === undefined
-      ? '全部'
-      : selectedFolder === null
-        ? '未分类'
-        : (folders.find((f) => f.id === selectedFolder)?.name ?? '')
+  // 组合筛选：分组轴（分类/创作者）+ 搜索 + 难度 + 标签（多选"或"）
+  const q = search.trim().toLowerCase()
+  const filtered = favorites.filter((f) => {
+    if (groupAxis === 'folder') {
+      if (selectedFolder !== undefined && f.folderId !== (selectedFolder ?? null)) return false
+    } else if (selectedCreator !== undefined && f.channel !== selectedCreator) return false
+    if (q && !f.title.toLowerCase().includes(q) && !f.channel.toLowerCase().includes(q)) return false
+    if (levelFilter === 'none' && f.level) return false
+    if (levelFilter !== 'all' && levelFilter !== 'none' && f.level !== levelFilter) return false
+    if (tagFilter.length > 0 && !tagFilter.some((t) => (f.tags ?? []).includes(t))) return false
+    return true
+  })
+
+  // 筛选条上的可选标签：预设 + 收藏里已出现的自定义标签
+  const customTagsInUse = [
+    ...new Set(favorites.flatMap((f) => f.tags ?? []).filter((t) => !FAV_TAG_PRESETS.includes(t)))
+  ]
 
   return (
     <PageShell
       title={`收藏的视频（${favorites.length}）`}
-      desc="按分类管理收藏的视频，点卡片上的跟读按钮可生成口语练习脚本"
+      desc="按分类或创作者管理，支持难度（CEFR）与内容标签筛选；卡片编辑按钮可改分类、难度、标签"
     >
       <div className="fav-body">
         <aside className="folder-bar">
-          <button
-            className={selectedFolder === undefined ? 'selected' : ''}
-            onClick={() => setSelectedFolder(undefined)}
-          >
-            全部
-            <span className="folder-count">{countOf(undefined)}</span>
-          </button>
-          <button
-            className={selectedFolder === null ? 'selected' : ''}
-            onClick={() => setSelectedFolder(null)}
-          >
-            未分类
-            <span className="folder-count">{countOf(null)}</span>
-          </button>
-          {folders.map((f) => (
-            <div key={f.id} className="folder-row">
-              <button
-                className={selectedFolder === f.id ? 'selected' : ''}
-                onClick={() => setSelectedFolder(f.id)}
-              >
-                {f.name}
-                <span className="folder-count">{countOf(f.id)}</span>
-              </button>
-              <span
-                className="folder-del"
-                title="删除分类"
-                onClick={() => void removeFolder(f.id)}
-              >
-                <TrashIcon />
-              </span>
-            </div>
-          ))}
-          <div className="folder-new">
-            <input
-              value={newFolder}
-              onChange={(e) => setNewFolder(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && void createFolder()}
-              placeholder="新文件夹名"
-            />
-            <button onClick={() => void createFolder()}>+</button>
+          <div className="axis-toggle">
+            <button
+              className={groupAxis === 'folder' ? 'selected' : ''}
+              onClick={() => setGroupAxis('folder')}
+            >
+              分类
+            </button>
+            <button
+              className={groupAxis === 'creator' ? 'selected' : ''}
+              onClick={() => setGroupAxis('creator')}
+            >
+              创作者
+            </button>
           </div>
+          {groupAxis === 'folder' ? (
+            <>
+              <button
+                className={selectedFolder === undefined ? 'selected' : ''}
+                onClick={() => setSelectedFolder(undefined)}
+              >
+                全部
+                <span className="folder-count">{countOf(undefined)}</span>
+              </button>
+              <button
+                className={selectedFolder === null ? 'selected' : ''}
+                onClick={() => setSelectedFolder(null)}
+              >
+                未分类
+                <span className="folder-count">{countOf(null)}</span>
+              </button>
+              {folders.map((f) => (
+                <div key={f.id} className="folder-row">
+                  <button
+                    className={selectedFolder === f.id ? 'selected' : ''}
+                    onClick={() => setSelectedFolder(f.id)}
+                  >
+                    {f.name}
+                    <span className="folder-count">{countOf(f.id)}</span>
+                  </button>
+                  <span
+                    className="folder-del"
+                    title="删除分类"
+                    onClick={() => void removeFolder(f.id)}
+                  >
+                    <TrashIcon />
+                  </span>
+                </div>
+              ))}
+              <div className="folder-new">
+                <input
+                  value={newFolder}
+                  onChange={(e) => setNewFolder(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && void createFolder()}
+                  placeholder="新文件夹名"
+                />
+                <button onClick={() => void createFolder()}>+</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <button
+                className={selectedCreator === undefined ? 'selected' : ''}
+                onClick={() => setSelectedCreator(undefined)}
+              >
+                全部
+                <span className="folder-count">{countOfCreator(undefined)}</span>
+              </button>
+              {creators.map((c) => (
+                <button
+                  key={c}
+                  className={selectedCreator === c ? 'selected creator-item' : 'creator-item'}
+                  title={c}
+                  onClick={() => setSelectedCreator(c)}
+                >
+                  {creatorAvatar(c) ? (
+                    <img className="creator-avatar" src={creatorAvatar(c)!} alt="" />
+                  ) : (
+                    <span
+                      className="creator-avatar creator-initial"
+                      style={{ background: `hsl(${hueOf(c)} 45% 40%)` }}
+                    >
+                      {c.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                  <span className="folder-count">{countOfCreator(c)}</span>
+                </button>
+              ))}
+            </>
+          )}
         </aside>
 
         <div className="fav-main">
+          {/* 单行控制条：难度筛选 + 标签 chips + 搜索 + 视图切换 */}
           <div className="fav-controls">
-            <div className="fav-controls-title">
-              {currentFolderName} <span>（{filtered.length} 个视频）</span>
-            </div>
+            <select
+              className="level-filter"
+              value={levelFilter}
+              onChange={(e) => setLevelFilter(e.target.value as LevelFilter)}
+              title="按难度筛选"
+            >
+              <option value="all">全部难度</option>
+              <option value="none">未评估</option>
+              {CEFR_LEVELS.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+            <span className="fav-filter-tags">
+              {[...FAV_TAG_PRESETS, ...customTagsInUse].map((t) => (
+                <button
+                  key={t}
+                  className={tagFilter.includes(t) ? 'tag-chip selected' : 'tag-chip'}
+                  onClick={() =>
+                    setTagFilter((cur) =>
+                      cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]
+                    )
+                  }
+                >
+                  {t}
+                </button>
+              ))}
+            </span>
             <div className="fav-controls-right">
               {genMsg && <span className="fav-gen-msg">{genMsg}</span>}
               <div className="fav-search">
@@ -242,12 +364,34 @@ export default function FavoritesPage(): JSX.Element {
           <div className={mode === 'grid' ? 'fav-grid' : 'fav-list'}>
             {filtered.map((fav) => (
               <div key={fav.videoId} className="fav-card">
-                <img src={fav.thumbnail} alt="" onClick={() => open(fav)} />
+                <div className="fav-thumb">
+                  <img src={fav.thumbnail} alt="" onClick={() => open(fav)} />
+                  {fav.level && (
+                    <span
+                      className="thumb-badge thumb-badge-left"
+                      title={fav.levelAuto ? '难度（自动估值）' : '难度（手动定级）'}
+                    >
+                      {fav.levelAuto ? `≈${fav.level}` : fav.level}
+                    </span>
+                  )}
+                  {fmtDuration(fav.duration) && (
+                    <span className="thumb-badge thumb-badge-right">{fmtDuration(fav.duration)}</span>
+                  )}
+                </div>
                 <div className="fav-info">
                   <div className="fav-title" onClick={() => open(fav)}>
                     {fav.title || fav.videoId}
                   </div>
                   <div className="fav-channel">{fav.channel}</div>
+                  {(fav.tags ?? []).length > 0 && (
+                    <div className="fav-badges">
+                      {(fav.tags ?? []).map((t) => (
+                        <span key={t} className="tag-badge">
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="fav-card-actions">
                   <button
@@ -261,10 +405,10 @@ export default function FavoritesPage(): JSX.Element {
                   <span className="fav-card-actions-right">
                     <button
                       className="icon-btn"
-                      title="移动到分类"
-                      onClick={() => setMoveTarget(fav)}
+                      title="编辑（分类 / 难度 / 标签）"
+                      onClick={() => setEditTarget(fav)}
                     >
-                      <FolderInputIcon />
+                      <EditIcon />
                     </button>
                     {deleteConfirmId === fav.videoId ? (
                       <span className="fav-del-confirm">
@@ -293,12 +437,12 @@ export default function FavoritesPage(): JSX.Element {
         </div>
       </div>
 
-      {moveTarget && (
-        <MoveFolderModal
-          fav={moveTarget}
+      {editTarget && (
+        <EditFavModal
+          fav={editTarget}
           folders={folders}
-          onClose={() => setMoveTarget(null)}
-          onMoved={() => void reload()}
+          onClose={() => setEditTarget(null)}
+          onSaved={() => void reload()}
         />
       )}
 

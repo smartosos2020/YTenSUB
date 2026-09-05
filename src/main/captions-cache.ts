@@ -6,6 +6,12 @@ import { Cue } from '../shared/captions'
 export interface CaptionCacheEntry {
   title: string
   channel: string
+  /** 时长（秒）；老缓存没有则为 0 */
+  duration?: number
+  /** 创作者头像 URL */
+  avatar?: string
+  /** YouTube 官方分类（自动打标签的免费基线） */
+  ytCategory?: string
   en: Cue[]
   /** 中文字幕（视频自带或 YouTube 机翻轨），无则 null */
   zh: Cue[] | null

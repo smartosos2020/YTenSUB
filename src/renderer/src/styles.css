@@ -1370,6 +1370,161 @@ button.popup-ctx-btn:hover {
   gap: 10px;
 }
 
+/* 分组轴切换（分类/创作者） */
+.axis-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.axis-toggle button {
+  flex: 1;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.axis-toggle button.selected {
+  background: var(--active-bg);
+  color: var(--text-strong);
+}
+
+/* 筛选条：难度下拉 + 标签 chips（与搜索同一行，chips 占中间弹性区） */
+.level-filter {
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.fav-filter-tags {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.tag-chip {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--bg-elev);
+  color: var(--text-dim);
+}
+
+.tag-chip.selected {
+  background: var(--accent-dim);
+  color: var(--text-strong);
+}
+
+/* 创作者分组：头像圆标（无头像用首字母彩色圆兜底） */
+.creator-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.creator-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.creator-initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 12px;
+}
+
+/* 卡片徽章：标签（信息区） */
+.fav-badges {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+/* 缩略图角标：左上难度、右上时长，白字 + 主题色底 */
+.fav-thumb {
+  position: relative;
+}
+
+.thumb-badge {
+  position: absolute;
+  top: 6px;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  pointer-events: none;
+}
+
+.thumb-badge-left {
+  left: 6px;
+}
+
+.thumb-badge-right {
+  right: 6px;
+}
+
+.tag-badge {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg-elev);
+  color: var(--text-dim);
+}
+
+/* 编辑弹窗：难度行与标签输入 */
+.level-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+
+.level-row select {
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
+.level-auto-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.tag-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 6px 0 10px;
+  align-items: center;
+}
+
+.tag-new {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.tag-new input {
+  width: 90px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
 .fav-search {
   position: relative;
   display: inline-flex;

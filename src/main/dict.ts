@@ -5,6 +5,8 @@ export interface DictEntry {
   p?: string
   /** 中文释义 */
   t: string
+  /** COCA 词频排名（构建时筛选 ≤80000；难度估算用） */
+  f?: number
 }
 
 type DictMap = Record<string, DictEntry>
@@ -38,6 +40,12 @@ export class Dict {
     const w = word.trim().toLowerCase()
     if (!/^[a-z][a-z'-]*$/.test(w)) return null
     return map[w] ?? this.lookupLemma(map, w)
+  }
+
+  /** 词频排名（原样小写查询，不做词形还原——调用方先归一）；未收录返回 null */
+  freqRank(word: string): number | null {
+    const e = this.ensure()[word.trim().toLowerCase()]
+    return e?.f ?? null
   }
 
   /** 朴素的词形还原：复数 / 过去式 / 进行时，查不到交给 Google */

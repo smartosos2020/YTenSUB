@@ -149,6 +149,41 @@ export async function llmContextualTranslate(
   )
 }
 
+/** 收藏自动打标签：标题+频道+台词样本 → 从预设里选（最多 2 个），可补一个自定义。防御解析 JSON 数组 */
+export async function llmTagFavorite(
+  title: string,
+  channel: string,
+  sample: string,
+  presets: string[],
+  cfg: LlmSettings,
+  fetchFn: FetchLike
+): Promise<string[]> {
+  const raw = await llmChat(
+    cfg,
+    [
+      {
+        role: 'system',
+        content:
+          `你是视频内容分类助手。根据视频标题、频道和台词样本，从预设标签中选最多 2 个最贴切的：${presets.join('、')}。` +
+          '都不贴切时可给一个自定义短标签（2-4 字）。只返回 JSON 数组字符串，如 ["科技","访谈"]，不要任何解释。'
+      },
+      { role: 'user', content: `标题：${title}\n频道：${channel}\n台词样本：\n${sample}` }
+    ],
+    fetchFn
+  )
+  if (!raw) return []
+  const s = raw.indexOf('[')
+  const e = raw.lastIndexOf(']')
+  if (s === -1 || e <= s) return []
+  try {
+    const arr = JSON.parse(raw.slice(s, e + 1)) as unknown
+    if (!Array.isArray(arr)) return []
+    return [...new Set(arr.map((x) => String(x).trim()).filter(Boolean))].slice(0, 3)
+  } catch {
+    return []
+  }
+}
+
 /**
  * 以固定并发把一组文本逐条翻译，结果与输入等长对齐；单条失败或空白输入为 null。
  * 用于字幕整句中译：调用方（IPC handler）在 translateOne 里做缓存与翻译链。

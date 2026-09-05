@@ -20,6 +20,7 @@ export const EXTRACT_SCRIPT = `(async () => {
   let vd = null
   let tracks = []
   let apiError = null
+  let ytCategory = ''
   try {
     const res = await fetch('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', {
       method: 'POST',
@@ -33,14 +34,24 @@ export const EXTRACT_SCRIPT = `(async () => {
     const pr = await res.json()
     vd = pr.videoDetails || null
     tracks = ((pr.captions || {}).playerCaptionsTracklistRenderer || {}).captionTracks || []
+    // YouTube 官方内容分类（自动打标签的免费基线）
+    ytCategory = ((pr.microformat || {}).playerMicroformatRenderer || {}).category || ''
   } catch (e) {
     apiError = String(e)
   }
   if (!vd) {
     const pr2 = window.ytInitialPlayerResponse
     if (pr2 && pr2.videoDetails) vd = pr2.videoDetails
+    if (pr2 && pr2.microformat && !ytCategory) {
+      ytCategory = (pr2.microformat.playerMicroformatRenderer || {}).category || ''
+    }
   }
   if (!vd) return { ok: false, reason: apiError || 'no-video-details', title: document.title }
+  // 频道头像：player response 里没有，从页面 DOM 抓（所有者栏的头像 img）
+  var avatarEl = document.querySelector('ytd-video-owner-renderer #avatar img')
+    || document.querySelector('#owner img#img')
+    || document.querySelector('#avatar img')
+  var channelAvatar = avatarEl && avatarEl.src ? avatarEl.src : ''
   // 优先人工英文字幕，其次自动生成的英文字幕（kind === 'asr'）
   const ens = tracks.filter(t => (t.languageCode || '').toLowerCase().startsWith('en'))
   const en = ens.find(t => t.kind !== 'asr') || ens[0] || null
@@ -53,6 +64,9 @@ export const EXTRACT_SCRIPT = `(async () => {
     videoId: vd.videoId || videoId,
     title: vd.title || '',
     channel: vd.author || '',
+    duration: Number(vd.lengthSeconds) || 0,
+    channelAvatar: channelAvatar,
+    ytCategory: ytCategory,
     hasCaptions: !!en,
     enBaseUrl: (en && en.baseUrl) || null,
     zhBaseUrl: (zh && zh.baseUrl) || null

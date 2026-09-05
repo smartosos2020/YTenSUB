@@ -21,6 +21,9 @@ interface Props {
   /** 文本已在生词本中时传入对应条目，底部按钮变为"删除生词" */
   savedItem: VocabItem | null
   onClose: () => void
+  /** 悬停取词模式：鼠标进出弹窗（离开字幕后移入弹窗不关窗） */
+  onEnter?: () => void
+  onLeave?: () => void
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -36,7 +39,9 @@ export default function TranslatePopup({
   video,
   time,
   savedItem,
-  onClose
+  onClose,
+  onEnter,
+  onLeave
 }: Props): JSX.Element {
   const [result, setResult] = useState<TranslateResult | null | 'loading'>('loading')
   const [saved, setSaved] = useState(false)
@@ -141,7 +146,7 @@ export default function TranslatePopup({
   const left = Math.min(Math.max(8, rect.left), window.innerWidth - 360)
 
   return (
-    <div ref={ref} className="translate-popup" style={{ top, left }}>
+    <div ref={ref} className="translate-popup" style={{ top, left }} onMouseEnter={onEnter} onMouseLeave={onLeave}>
       <button className="popup-close" onClick={onClose} aria-label="关闭">
         ×
       </button>

@@ -16,6 +16,12 @@ const api = {
   favIs: (videoId: string) => ipcRenderer.invoke('fav:is', videoId),
   favMove: (videoId: string, folderId: string | null) =>
     ipcRenderer.invoke('fav:move', videoId, folderId),
+  favUpdateMeta: (
+    videoId: string,
+    patch: Partial<Pick<Favorite, 'level' | 'levelAuto' | 'tags'>>
+  ) => ipcRenderer.invoke('fav:update-meta', videoId, patch),
+  favEstimateLevel: (videoId: string, method?: 'freq' | 'llm', noFetch?: boolean): Promise<string | null> =>
+    ipcRenderer.invoke('fav:estimate-level', videoId, method, noFetch),
 
   folderAdd: (name: string) => ipcRenderer.invoke('folder:add', name),
   folderList: () => ipcRenderer.invoke('folder:list'),

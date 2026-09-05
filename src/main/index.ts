@@ -6,9 +6,10 @@ import { Store } from './store'
 import { CaptionsCache, CaptionCacheEntry } from './captions-cache'
 import { startSyncServer, SyncServer } from './sync'
 import { Dict } from './dict'
-import { googleTranslateFree, llmChatDetailed, llmContextualTranslate, llmTranslate, translateBatch, translateText } from './translate'
+import { googleTranslateFree, llmChat, llmChatDetailed, llmContextualTranslate, llmTagFavorite, llmTranslate, translateBatch, translateText } from './translate'
 import { buildShadowingMessages, fetchEnglishCues, mergeCuesToSentences, parseShadowingResponse, ruleBasedPick, withSceneNumbers } from './shadowing'
-import { Favorite, Settings, ShadowingScript, TranslateSource, VocabItem, defaultData } from '../shared/types'
+import { Favorite, Settings, ShadowingScript, TranslateSource, VocabItem, CefrLevel, CEFR_LEVELS, FAV_TAG_PRESETS, mapYtCategoryToTag, defaultData } from '../shared/types'
+import { estimateLevelByFreq } from './cefr'
 
 const dataFile = path.join(app.getPath('userData'), 'ytensub-data.json')
 
@@ -43,6 +44,88 @@ const captionsCache = new CaptionsCache(
 let mainWin: BrowserWindow | null = null
 // 局域网同步服务实例（设置页开关控制）
 let syncServer: SyncServer | null = null
+
+/**
+ * 收藏自动打标签（LLM）：标题+频道+台词样本 → 预设里选/自定义，写回收藏。
+ * 手动改过标签的不覆盖；LLM 未配置或设置关闭时不动。
+ */
+async function autoTagFav(videoId: string): Promise<void> {
+  const fav = store.listFavorites().find((f) => f.videoId === videoId)
+  if (!fav || (fav.tags ?? []).length > 0) return // 手动打过标签的不覆盖
+  // 免费基线：YouTube 官方分类直接映射为预设标签，不需要 LLM
+  const cat = fav.ytCategory ?? captionsCache.get(videoId)?.ytCategory
+  const mapped = mapYtCategoryToTag(cat)
+  if (mapped) {
+    store.updateFavoriteMeta(videoId, { tags: [mapped] })
+    return
+  }
+  // 映射不上 → LLM（需配置且设置开启）
+  const s = store.getSettings()
+  if (s.autoTag === false) return
+  if (!s.llm.baseUrl || !s.llm.apiKey || !s.llm.model) return
+  let cues = captionsCache.get(videoId)?.en ?? null
+  if (!cues || cues.length === 0) {
+    const caps = await fetchEnglishCues(videoId, (u, i) => net.fetch(u, i))
+    if (!caps) return
+    cues = caps.cues
+    captionsCache.put(videoId, { title: caps.title, channel: '', ytCategory: caps.category, en: cues, zh: null })
+  }
+  const sample = cues.slice(0, 20).map((c) => c.text).join('\n')
+  const tags = await llmTagFavorite(fav.title, fav.channel, sample, FAV_TAG_PRESETS, s.llm, (u, i) =>
+    net.fetch(u, i)
+  )
+  if (tags.length > 0) store.updateFavoriteMeta(videoId, { tags })
+}
+
+/**
+ * 收藏难度估算：freq = 离线词频（免费即时）；llm = 标题+台词样本精估（花 token）。
+ * 字幕优先用本地缓存，未命中在线拉取并回写缓存。估值写入 level + levelAuto=true，
+ * 手动改过的（levelAuto=false）不会被覆盖。noFetch=true 时缓存未命中直接跳过（收藏页后台批量估值用）。
+ */
+async function estimateFavLevel(
+  videoId: string,
+  method?: 'freq' | 'llm',
+  noFetch?: boolean
+): Promise<CefrLevel | null> {
+  const fav = store.listFavorites().find((f) => f.videoId === videoId)
+  if (!fav) return null
+  if (fav.level && fav.levelAuto === false) return fav.level // 手动定级不覆盖
+  const m = method ?? store.getSettings().levelEstimator ?? 'freq'
+  let cues = captionsCache.get(videoId)?.en ?? null
+  if (!cues || cues.length === 0) {
+    if (noFetch) return null // 缓存未命中且禁止抓取：跳过（收藏页后台批量估值用）
+    const caps = await fetchEnglishCues(videoId, (u, i) => net.fetch(u, i))
+    if (!caps) return null
+    cues = caps.cues
+    captionsCache.put(videoId, { title: caps.title, channel: '', ytCategory: caps.category, en: cues, zh: null })
+  }
+  if (m === 'llm') {
+    const s = store.getSettings()
+    if (!s.llm.baseUrl || !s.llm.apiKey || !s.llm.model) return null
+    const sample = cues.slice(0, 30).map((c) => c.text).join('\n')
+    const r = await llmChat(
+      s.llm,
+      [
+        {
+          role: 'system',
+          content:
+            '你是英语分级专家。根据视频标题和台词样本判断该视频的 CEFR 难度等级，只返回 A1/A2/B1/B2/C1/C2 之一，不要任何其他内容。'
+        },
+        { role: 'user', content: `标题：${fav.title}\n台词样本：\n${sample}` }
+      ],
+      (u, i) => net.fetch(u, i)
+    )
+    const lv = r?.trim().toUpperCase()
+    if (lv && CEFR_LEVELS.includes(lv as CefrLevel)) {
+      store.updateFavoriteMeta(videoId, { level: lv as CefrLevel, levelAuto: true })
+      return lv as CefrLevel
+    }
+    return null
+  }
+  const lv = estimateLevelByFreq(cues, dict)
+  if (lv) store.updateFavoriteMeta(videoId, { level: lv, levelAuto: true })
+  return lv
+}
 
 // 应用主题映射为全局模拟的 prefers-color-scheme：
 // YouTube（设备主题模式）跟随系统媒体查询，借此让 guest 页面跟随我们的夜晚/白天
@@ -125,12 +208,32 @@ function registerIpc(): void {
   )
   ipcMain.handle('stats:get', () => store.getStats())
 
-  ipcMain.handle('fav:add', (_e, fav: Omit<Favorite, 'addedAt'>) => store.addFavorite(fav))
+  ipcMain.handle('fav:add', (_e, fav: Omit<Favorite, 'addedAt'>) => {
+    const added = store.addFavorite(fav)
+    // 收藏后自动估难度（有字幕缓存才估，不阻塞收藏动作；手动改过的不会被覆盖）
+    if (added.level === undefined || added.level === null) {
+      void estimateFavLevel(added.videoId).catch(() => {})
+    }
+    // 自动打内容标签（LLM 已配置且设置开启时；手动改过的标签不覆盖）
+    void autoTagFav(added.videoId).catch(() => {})
+    return added
+  })
   ipcMain.handle('fav:list', (_e, folderId?: string | null) => store.listFavorites(folderId))
   ipcMain.handle('fav:remove', (_e, videoId: string) => store.removeFavorite(videoId))
   ipcMain.handle('fav:is', (_e, videoId: string) => store.isFavorite(videoId))
   ipcMain.handle('fav:move', (_e, videoId: string, folderId: string | null) =>
     store.moveFavorite(videoId, folderId)
+  )
+  // 收藏元数据：难度/标签编辑（手动改 level 后 levelAuto 置 false，不再被自动估值覆盖）
+  ipcMain.handle(
+    'fav:update-meta',
+    (_e, videoId: string, patch: Partial<Pick<Favorite, 'level' | 'levelAuto' | 'tags'>>) =>
+      store.updateFavoriteMeta(videoId, patch)
+  )
+  // 手动触发难度估算（编辑弹窗"重新估算"按钮）；method 指定则覆盖设置默认值；
+  // noFetch=true 时只用本地字幕缓存（不发起网络抓取，收藏页后台批量估值用）
+  ipcMain.handle('fav:estimate-level', (_e, videoId: string, method?: 'freq' | 'llm', noFetch?: boolean) =>
+    estimateFavLevel(videoId, method, noFetch)
   )
 
   ipcMain.handle('folder:add', (_e, name: string) => store.addFolder(name))

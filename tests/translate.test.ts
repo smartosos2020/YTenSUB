@@ -155,3 +155,26 @@ describe('llmContextualTranslate 语境释义', () => {
     expect(captured).toContain('bond')
   })
 })
+
+describe('llmTagFavorite 自动打标签', () => {
+  const cfg = { baseUrl: 'http://x/v1', apiKey: 'k', model: 'm' }
+  const presets = ['生活', '科技', '商业']
+  type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
+  const fetchWith = (content: string): FetchLike => {
+    return async () =>
+      new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 })
+  }
+
+  it('正常 JSON 数组 → 标签去重截断', async () => {
+    const { llmTagFavorite } = await import('../src/main/translate')
+    const r = await llmTagFavorite('t', 'c', 's', presets, cfg, fetchWith('["科技","科技","生活","商业","教育"]'))
+    expect(r).toEqual(['科技', '生活', '商业']) // 去重 + 最多 3 个
+  })
+
+  it('带解释文字的输出 → 只取数组部分；坏输出 → 空', async () => {
+    const { llmTagFavorite } = await import('../src/main/translate')
+    const r = await llmTagFavorite('t', 'c', 's', presets, cfg, fetchWith('我认为是 ["生活"] 这样'))
+    expect(r).toEqual(['生活'])
+    expect(await llmTagFavorite('t', 'c', 's', presets, cfg, fetchWith('没有数组'))).toEqual([])
+  })
+})

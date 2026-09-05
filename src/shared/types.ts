@@ -3,6 +3,39 @@ export interface Folder {
   name: string
 }
 
+/** CEFR 难度等级 */
+export type CefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2'
+
+export const CEFR_LEVELS: CefrLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+
+/** 收藏视频内容类型预设标签（用户可自定义，自定义的不进此列表） */
+export const FAV_TAG_PRESETS = ['生活', '科技', '商业', '教育', '娱乐', '新闻', '访谈', '教程']
+
+/** YouTube 官方分类 → 预设标签（免费基线：不需要 LLM 也能自动打标签） */
+const YT_CATEGORY_TAG: Record<string, string> = {
+  Education: '教育',
+  'Howto & Style': '教程',
+  'Science & Technology': '科技',
+  'News & Politics': '新闻',
+  Entertainment: '娱乐',
+  Comedy: '娱乐',
+  'Film & Animation': '娱乐',
+  Gaming: '娱乐',
+  Music: '娱乐',
+  Sports: '生活',
+  'People & Blogs': '生活',
+  'Travel & Events': '生活',
+  'Pets & Animals': '生活',
+  'Autos & Vehicles': '生活',
+  'Nonprofits & Activism': '商业'
+}
+
+/** YouTube 分类映射到预设标签；映射不上返回 null（留给 LLM） */
+export function mapYtCategoryToTag(category?: string): string | null {
+  if (!category) return null
+  return YT_CATEGORY_TAG[category] ?? null
+}
+
 export interface Favorite {
   videoId: string
   title: string
@@ -10,6 +43,18 @@ export interface Favorite {
   thumbnail: string
   folderId: string | null
   addedAt: number
+  /** CEFR 难度；null/undefined = 未评估 */
+  level?: CefrLevel | null
+  /** level 是否为自动估值（true=词频/LLM 估的，手动改后变 false 不再被自动覆盖） */
+  levelAuto?: boolean
+  /** 内容类型标签（多选，"或"筛选） */
+  tags?: string[]
+  /** 时长（秒）；老数据没有则不显示 */
+  duration?: number
+  /** 创作者头像 URL；老数据没有则显示首字母圆 */
+  avatar?: string
+  /** YouTube 官方分类（如 Education）；用于自动打标签的免费基线 */
+  ytCategory?: string
 }
 
 export interface VocabItem {
@@ -124,8 +169,14 @@ export interface Settings {
   autoSpeakOnLookup: boolean
   /** 查词成功后自动加入生词本 */
   autoCollectWord: boolean
+  /** 悬停字幕单词自动弹出翻译（悬停 300ms 触发） */
+  hoverTranslate: boolean
   /** 跟读脚本生成策略 */
   shadowingStrategy: ShadowingStrategy
+/** 收藏难度估算方式：freq = 离线词频估（免费即时），llm = LLM 精估（花 token 更准） */
+  levelEstimator: 'freq' | 'llm'
+  /** 收藏时自动打内容标签（LLM，需配置；手动改过的标签不被覆盖） */
+  autoTag: boolean
 }
 
 export interface AppData {
@@ -155,7 +206,10 @@ export const DEFAULT_SETTINGS: Settings = {
   captionTexture: 'solid',
   autoSpeakOnLookup: false,
   autoCollectWord: false,
-  shadowingStrategy: 'llm-fallback'
+  hoverTranslate: false,
+  shadowingStrategy: 'llm-fallback',
+  levelEstimator: 'freq',
+  autoTag: true
 }
 
 export function defaultData(): AppData {

@@ -13,7 +13,7 @@ const INNERTUBE_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8'
 export async function fetchEnglishCues(
   videoId: string,
   fetchFn: FetchLike
-): Promise<{ title: string; cues: Cue[] } | null> {
+): Promise<{ title: string; cues: Cue[]; category: string } | null> {
   try {
     const res = await fetchFn(`https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_KEY}`, {
       method: 'POST',
@@ -28,6 +28,7 @@ export async function fetchEnglishCues(
     const pr = (await res.json()) as {
       videoDetails?: { title?: string }
       captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: { baseUrl?: string; languageCode?: string; kind?: string }[] } }
+      microformat?: { playerMicroformatRenderer?: { category?: string } }
     }
     const tracks = pr.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? []
     // 优先人工英文字幕，其次自动生成（kind === 'asr'）
@@ -39,7 +40,11 @@ export async function fetchEnglishCues(
     const r = await fetchFn(en.baseUrl)
     const cues = parseCaptionText(await r.text())
     if (cues.length === 0) return null
-    return { title: pr.videoDetails?.title ?? '', cues }
+    return {
+      title: pr.videoDetails?.title ?? '',
+      cues,
+      category: pr.microformat?.playerMicroformatRenderer?.category ?? ''
+    }
   } catch {
     return null
   }

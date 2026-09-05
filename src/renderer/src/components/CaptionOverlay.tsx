@@ -30,6 +30,8 @@ interface Props {
   /** 已加入生词本的单词（小写），字幕中橙色高亮 */
   knownWords: Set<string>
   onWordSelect: (sel: WordSelection) => void
+  /** 悬停取词（悬停 300ms 弹出翻译，设置页开关控制） */
+  onWordHover?: (word: string, rect: DOMRect, sentence: string) => void
   /** 悬停/离开字幕（取词时暂停播放防字幕跑走） */
   onCaptionEnter: () => void
   onCaptionLeave: () => void
@@ -58,6 +60,7 @@ export default function CaptionOverlay({
   zhLines,
   knownWords,
   onWordSelect,
+  onWordHover,
   onCaptionEnter,
   onCaptionLeave
 }: Props): JSX.Element | null {
@@ -128,6 +131,7 @@ export default function CaptionOverlay({
             sentence={cue.text}
             knownWords={knownWords}
             onWord={(word, rect, sentence) => onWordSelect({ text: word, rect, sentence })}
+            onWordHover={onWordHover}
           />
         </div>
         {zhText && (

@@ -28,6 +28,12 @@ interface VideoInfo {
   videoId: string
   title: string
   channel: string
+  /** 时长（秒），0/undefined 表示未知 */
+  duration?: number
+  /** 创作者头像 URL */
+  avatar?: string
+  /** YouTube 官方分类（自动打标签用） */
+  category?: string
 }
 
 interface HostMessage {
@@ -68,6 +74,10 @@ export default function BrowsePage(): JSX.Element {
   const [favMenuOpen, setFavMenuOpen] = useState(false)
   const [folders, setFolders] = useState<Folder[]>([])
   const [selection, setSelection] = useState<WordSelection | null>(null)
+  // 悬停取词状态：弹窗是否由悬停触发（离开字幕自动关）、鼠标是否在弹窗上、关闭倒计时
+  const popupFromHoverRef = useRef(false)
+  const popupHoverRef = useRef(false)
+  const hoverCloseTimerRef = useRef<number | null>(null)
   const [captionOpacity, setCaptionOpacity] = useState(0.72)
   const [showCaptions, setShowCaptions] = useState(true)
   const [captionFontSize, setCaptionFontSize] = useState(20)
@@ -75,6 +85,8 @@ export default function BrowsePage(): JSX.Element {
   const [captionFont, setCaptionFont] = useState('default')
   const [captionWeight, setCaptionWeight] = useState(400)
   const [captionShadow, setCaptionShadow] = useState(true)
+  // 悬停取词开关（设置页"取词行为"控制）
+  const [hoverTranslate, setHoverTranslate] = useState(false)
   const [captionTexture, setCaptionTexture] = useState<CaptionTexture>('solid')
   // 生词本：vocabWords 供字幕橙色高亮（已掌握的满级单词不再高亮）；
   // 列表本身供翻译弹窗判断"已添加"→显示删除按钮
@@ -124,6 +136,7 @@ export default function BrowsePage(): JSX.Element {
    */
   const openSelection = useCallback(
     (sel: WordSelection): void => {
+      popupFromHoverRef.current = false // 点击/划选路径：弹窗为常驻，不随鼠标离开关闭
       const firstOpen = !popupOpenRef.current
       popupOpenRef.current = true
       setSelection(sel)
@@ -137,6 +150,20 @@ export default function BrowsePage(): JSX.Element {
       })
     },
     [pauseGuestVideo]
+  )
+
+  /** 悬停取词：悬停 300ms 弹翻译（与点击同一弹窗、同一暂停逻辑）；标记为悬停弹出，离开字幕自动关 */
+  const hoverWord = useCallback(
+    (word: string, rect: DOMRect, sentence: string): void => {
+      openSelection({ text: word, rect, sentence })
+      popupFromHoverRef.current = true
+      // 词间移动重开弹窗时取消可能存在的关闭倒计时
+      if (hoverCloseTimerRef.current) {
+        window.clearTimeout(hoverCloseTimerRef.current)
+        hoverCloseTimerRef.current = null
+      }
+    },
+    [openSelection]
   )
 
   /**
@@ -160,6 +187,11 @@ export default function BrowsePage(): JSX.Element {
 
   /** 悬停到字幕：暂停播放，方便取词（弹窗已打开时不重复处理） */
   const onCaptionEnter = useCallback((): void => {
+    // 移回字幕：取消悬停弹窗的关闭倒计时
+    if (hoverCloseTimerRef.current) {
+      window.clearTimeout(hoverCloseTimerRef.current)
+      hoverCloseTimerRef.current = null
+    }
     if (popupOpenRef.current || hoverPauseRef.current) return
     hoverPauseRef.current = true
     void pauseGuestVideo().then((wasPlaying) => {
@@ -167,15 +199,26 @@ export default function BrowsePage(): JSX.Element {
     })
   }, [pauseGuestVideo])
 
-  /** 离开字幕：恢复播放；弹窗打开时保持暂停，等弹窗关闭统一结算 */
+  /** 离开字幕：恢复播放；弹窗打开时保持暂停，等弹窗关闭统一结算。
+   *  悬停触发的弹窗：离开字幕 400ms 后自动关闭并恢复播放（移入弹窗则取消） */
   const onCaptionLeave = useCallback((): void => {
-    if (!hoverPauseRef.current || popupOpenRef.current) return
+    if (popupOpenRef.current) {
+      if (popupFromHoverRef.current) {
+        if (hoverCloseTimerRef.current) window.clearTimeout(hoverCloseTimerRef.current)
+        hoverCloseTimerRef.current = window.setTimeout(() => {
+          hoverCloseTimerRef.current = null
+          if (!popupHoverRef.current) closeSelection()
+        }, 400)
+      }
+      return
+    }
+    if (!hoverPauseRef.current) return
     hoverPauseRef.current = false
     if (wasPlayingRef.current) {
       wasPlayingRef.current = false
       playGuestVideo()
     }
-  }, [playGuestVideo])
+  }, [playGuestVideo, closeSelection])
 
   useEffect(() => {
     api.getWebviewPreloadPath().then(setPreloadPath)
@@ -195,6 +238,7 @@ export default function BrowsePage(): JSX.Element {
         setCaptionWeight(s.captionWeight ?? 400)
         setCaptionShadow(s.captionShadow ?? true)
         setCaptionTexture(s.captionTexture ?? 'solid')
+        setHoverTranslate(s.hoverTranslate ?? false)
       })
     }
     load()
@@ -221,7 +265,7 @@ export default function BrowsePage(): JSX.Element {
       const cached = await api.captionsGetCache(videoId).catch(() => null)
       if (cached) {
         loadZhNative(cached.en, cached.zh ?? [])
-        setVideo({ videoId, title: cached.title, channel: cached.channel })
+        setVideo({ videoId, title: cached.title, channel: cached.channel, duration: cached.duration, avatar: cached.avatar, category: cached.ytCategory })
         setHasCaptions(cached.en.length > 0)
         setCues(cached.en)
         setIsFav(await api.favIs(videoId))
@@ -247,7 +291,7 @@ export default function BrowsePage(): JSX.Element {
           }
           const zhParsed = parseCaptionText(zhText)
           loadZhNative(parsed, zhParsed)
-          setVideo({ videoId: res.videoId, title: res.title, channel: res.channel })
+          setVideo({ videoId: res.videoId, title: res.title, channel: res.channel, duration: res.duration, avatar: res.channelAvatar, category: res.ytCategory })
           setHasCaptions(res.hasCaptions)
           setCues(parsed)
           setIsFav(await api.favIs(res.videoId))
@@ -256,6 +300,9 @@ export default function BrowsePage(): JSX.Element {
             .captionsPutCache(res.videoId, {
               title: res.title,
               channel: res.channel,
+              duration: res.duration,
+              avatar: res.channelAvatar,
+              ytCategory: res.ytCategory,
               en: parsed,
               zh: zhParsed.length > 0 ? zhParsed : null
             })
@@ -536,7 +583,10 @@ export default function BrowsePage(): JSX.Element {
       title: video.title,
       channel: video.channel,
       thumbnail: `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`,
-      folderId
+      folderId,
+      duration: video.duration,
+      avatar: video.avatar,
+      ytCategory: video.category
     })
     setIsFav(true)
     setFavMenuOpen(false)
@@ -615,6 +665,7 @@ export default function BrowsePage(): JSX.Element {
             zhLines={zhLines}
             knownWords={vocabWords}
             onWordSelect={openSelection}
+            onWordHover={hoverTranslate ? hoverWord : undefined}
             onCaptionEnter={onCaptionEnter}
             onCaptionLeave={onCaptionLeave}
           />
@@ -646,6 +697,7 @@ export default function BrowsePage(): JSX.Element {
                 hasCaptions={hasCaptions}
                 onSeek={seek}
                 onWordSelect={openSelection}
+                onWordHover={hoverTranslate ? openSelection : undefined}
                 showZh={showZh}
                 zhLines={zhLines}
                 zhLoading={zhLoading}
@@ -674,6 +726,21 @@ export default function BrowsePage(): JSX.Element {
           time={time}
           savedItem={findSavedByLemma(vocabList, selection.text)}
           onClose={closeSelection}
+          onEnter={() => {
+            // 移入弹窗：取消悬停弹窗的关闭倒计时
+            popupHoverRef.current = true
+            if (hoverCloseTimerRef.current) {
+              window.clearTimeout(hoverCloseTimerRef.current)
+              hoverCloseTimerRef.current = null
+            }
+          }}
+          onLeave={() => {
+            popupHoverRef.current = false
+            // 悬停弹窗且鼠标既不在字幕也不在弹窗上：关闭
+            if (popupFromHoverRef.current && !document.querySelector('.caption-line:hover')) {
+              closeSelection()
+            }
+          }}
         />
       )}
       {fsMode && (
