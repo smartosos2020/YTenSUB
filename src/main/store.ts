@@ -148,14 +148,24 @@ export class Store {
     this.scheduleSave()
   }
 
-  /** 复习结算：写入新等级并按间隔表算出下次到期时间 */
+  /** 复习结算：写入新等级并按间隔表算出下次到期时间；同时记一条当日统计 */
   updateVocabReview(id: string, level: number): void {
     const item = this.data.vocab.find((v) => v.id === id)
     if (!item) return
     const lv = Math.max(0, Math.min(REVIEW_INTERVALS_MS.length - 1, level))
     item.reviewLevel = lv
     item.reviewDue = Date.now() + REVIEW_INTERVALS_MS[lv]
+    const d = new Date()
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const s = (this.data.stats[day] ??= { reviewed: 0, known: 0 })
+    s.reviewed++
+    if (lv > 0) s.known++
     this.scheduleSave()
+  }
+
+  /** 学习统计（按日） */
+  getStats(): AppData['stats'] {
+    return { ...this.data.stats }
   }
 
   // ---------- shadowing ----------

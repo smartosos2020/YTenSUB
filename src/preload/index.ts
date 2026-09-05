@@ -46,6 +46,8 @@ const api = {
   captionsClearCache: () => ipcRenderer.invoke('captions:clear-cache'),
   syncStart: (): Promise<{ ip: string; port: number } | null> => ipcRenderer.invoke('sync:start'),
   syncStop: () => ipcRenderer.invoke('sync:stop'),
+  statsGet: (): Promise<Record<string, { reviewed: number; known: number }>> =>
+    ipcRenderer.invoke('stats:get'),
   appVersion: () => ipcRenderer.invoke('app:version'),
   updateInstall: () => ipcRenderer.send('update:install'),
   onUpdateAvailable: (cb: () => void) => {

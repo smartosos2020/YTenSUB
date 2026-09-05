@@ -160,6 +160,26 @@ class BgPlayerService : Service() {
     updateState(true, title)
   }
 
+  /** 状态栏小图标：系统强制单色渲染，用 logo 的剪影版（mipmap/ic_launcher_monochrome） */
+  private fun smallIconRes(): Int {
+    val id = resources.getIdentifier("ic_launcher_monochrome", "mipmap", packageName)
+    return if (id != 0) id else android.R.drawable.ic_media_play
+  }
+
+  /** 媒体卡片大图标：彩色 App logo */
+  private fun appIconBitmap(): android.graphics.Bitmap? = try {
+    val d = packageManager.getApplicationIcon(packageName)
+    val w = d.intrinsicWidth.coerceAtLeast(1)
+    val h = d.intrinsicHeight.coerceAtLeast(1)
+    val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bmp)
+    d.setBounds(0, 0, w, h)
+    d.draw(canvas)
+    bmp
+  } catch (_: Exception) {
+    null
+  }
+
   /** 媒体样式通知：播放中显示"暂停"键，暂停时显示"播放"键 */
   private fun buildNotification(): Notification {
     val actionName = if (playing) ACTION_PAUSE else ACTION_PLAY
@@ -177,7 +197,8 @@ class BgPlayerService : Service() {
       Notification.Builder(this)
     return builder
       .setContentTitle(title.ifEmpty { "YTenSUB 后台播放中" })
-      .setSmallIcon(android.R.drawable.ic_media_play)
+      .setSmallIcon(smallIconRes())
+      .setLargeIcon(appIconBitmap())
       .setOngoing(true)
       .addAction(action)
       .setStyle(Notification.MediaStyle().setMediaSession(mediaSession?.sessionToken).setShowActionsInCompactView(0))

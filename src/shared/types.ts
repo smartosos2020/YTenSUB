@@ -135,6 +135,8 @@ export interface AppData {
   settings: Settings
   /** 跟读脚本，按 videoId 索引 */
   shadowing: Record<string, ShadowingScript>
+  /** 学习统计：按日（YYYY-MM-DD）记录复习次数与认识次数 */
+  stats: Record<string, { reviewed: number; known: number }>
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -162,6 +164,7 @@ export function defaultData(): AppData {
     favorites: [],
     vocab: [],
     settings: DEFAULT_SETTINGS,
-    shadowing: {}
+    shadowing: {},
+    stats: {}
   }
 }

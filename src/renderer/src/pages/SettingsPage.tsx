@@ -13,7 +13,7 @@ import { api } from '../api'
 import { applyTheme, ACCENTS } from '../theme'
 import { CAPTION_FONTS, captionFontCss } from '../caption-fonts'
 import { Cue } from '../../../shared/captions'
-import { CaptionTexture, DEFAULT_SETTINGS, Settings, ShadowingStrategy, Theme, TranslateResult, TranslateSource, VocabItem } from '../../../shared/types'
+import { CaptionTexture, DEFAULT_SETTINGS, MASTERED_LEVEL, Settings, ShadowingStrategy, Theme, TranslateResult, TranslateSource, VocabItem } from '../../../shared/types'
 import { toKnownLemmas, findSavedByLemma } from '../lemma'
 import CaptionOverlay from '../components/CaptionOverlay'
 import TranslatePopup from '../components/TranslatePopup'
@@ -95,6 +95,8 @@ export default function SettingsPage(): JSX.Element {
   const [vocabList, setVocabList] = useState<VocabItem[] | null>(null)
   const [favCount, setFavCount] = useState<number | null>(null)
   const [captionCacheCount, setCaptionCacheCount] = useState<number | null>(null)
+  // 学习统计（按日）：今日复习次数/认识率
+  const [stats, setStats] = useState<Record<string, { reviewed: number; known: number }>>({})
   // 手机同步服务地址（开启后显示，如 http://192.168.0.10:47832）
   const [syncAddr, setSyncAddr] = useState('')
 
@@ -126,6 +128,7 @@ export default function SettingsPage(): JSX.Element {
     api.vocabList().then((l: VocabItem[]) => setVocabList(l)).catch(() => {})
     api.favList().then((l: unknown[]) => setFavCount(l.length)).catch(() => {})
     api.captionsCacheSize().then(setCaptionCacheCount).catch(() => {})
+    api.statsGet().then(setStats).catch(() => {})
   }, [])
 
   if (!settings) return <div className="page">加载中…</div>
@@ -133,6 +136,19 @@ export default function SettingsPage(): JSX.Element {
   const vocabCount = vocabList?.length ?? null
   // 预览舞台的生词高亮与真实字幕一致：满级"已掌握"的词不再高亮
   const knownWords = toKnownLemmas(vocabList ?? [])
+  // 统计卡：已掌握数（满级）+ 今日复习/认识率
+  const masteredCount = vocabList
+    ? vocabList.filter((v) => (v.reviewLevel ?? 0) >= MASTERED_LEVEL).length
+    : null
+  const todayKey = (() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })()
+  const today = stats[todayKey] ?? { reviewed: 0, known: 0 }
+  const todayStats = {
+    reviewed: today.reviewed,
+    rate: today.reviewed > 0 ? `${Math.round((today.known / today.reviewed) * 100)}%` : '-'
+  }
 
   /** 实时保存：任何修改立即写盘并广播（浏览页等即时生效） */
   const update = (next: Settings): void => {
@@ -609,6 +625,18 @@ export default function SettingsPage(): JSX.Element {
                 <div className="stat-tile">
                   <div className="stat-num">{vocabCount ?? '-'}</div>
                   <div className="stat-label">生词积累（词）</div>
+                </div>
+                <div className="stat-tile">
+                  <div className="stat-num">{masteredCount ?? '-'}</div>
+                  <div className="stat-label">已掌握（词）</div>
+                </div>
+                <div className="stat-tile">
+                  <div className="stat-num">{todayStats.reviewed}</div>
+                  <div className="stat-label">今日复习（次）</div>
+                </div>
+                <div className="stat-tile">
+                  <div className="stat-num">{todayStats.rate}</div>
+                  <div className="stat-label">今日认识率</div>
                 </div>
                 <div className="stat-tile">
                   <div className="stat-num">{favCount ?? '-'}</div>

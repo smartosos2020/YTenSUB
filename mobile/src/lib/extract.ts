@@ -127,6 +127,33 @@ export const VISIBILITY_SPOOF = `
 true
 `
 
+/** 后台降画质：压到 144p（只省视频流流量，音频不受影响）；记住原清晰度供恢复 */
+export const QUALITY_LOW_SCRIPT = `(function(){
+  var p = document.getElementById('movie_player')
+  if (!p || !p.setPlaybackQualityRange) return
+  try {
+    window.__ytq = p.getPlaybackQuality ? p.getPlaybackQuality() : 'auto'
+    p.setPlaybackQualityRange('tiny', 'tiny')
+    window.ReactNativeWebView.postMessage(JSON.stringify({ kind: 'dbg', msg: 'quality->tiny (was ' + window.__ytq + ')' }))
+  } catch (e) {}
+})()`
+
+/** 回前台恢复原清晰度（auto 则恢复全范围自适应） */
+export const QUALITY_RESTORE_SCRIPT = `(function(){
+  var p = document.getElementById('movie_player')
+  if (!p || !p.setPlaybackQualityRange) return
+  try {
+    var q = window.__ytq || 'auto'
+    if (q === 'auto') {
+      p.setPlaybackQualityRange('tiny', 'highres')
+      if (p.setPlaybackQuality) p.setPlaybackQuality('auto')
+    } else {
+      p.setPlaybackQualityRange(q, q)
+    }
+    window.ReactNativeWebView.postMessage(JSON.stringify({ kind: 'dbg', msg: 'quality->' + q }))
+  } catch (e) {}
+})()`
+
 /** 跳转到指定时间并播放（点字幕行 seek） */
 export function seekScript(t: number): string {
   return `(function(){ var v = document.querySelector('video'); if (v) { v.currentTime = ${JSON.stringify(t)}; v.play() } })()`

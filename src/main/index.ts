@@ -123,6 +123,7 @@ function registerIpc(): void {
   ipcMain.handle('vocab:review', (_e, id: string, level: number) =>
     store.updateVocabReview(id, level)
   )
+  ipcMain.handle('stats:get', () => store.getStats())
 
   ipcMain.handle('fav:add', (_e, fav: Omit<Favorite, 'addedAt'>) => store.addFavorite(fav))
   ipcMain.handle('fav:list', (_e, folderId?: string | null) => store.listFavorites(folderId))

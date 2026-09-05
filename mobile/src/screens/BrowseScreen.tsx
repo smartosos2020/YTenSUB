@@ -5,7 +5,8 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake'
 import CaptionList, { alignZh } from '../components/CaptionList'
 import TranslateSheet from '../components/TranslateSheet'
 import { Cue, parseCaptionText } from '../lib/captions'
-import { EXTRACT_SCRIPT, PAUSE_SCRIPT, PLAY_DIAG_SCRIPT, PLAY_SCRIPT, PROBE_SCRIPT, seekScript, VISIBILITY_SPOOF } from '../lib/extract'
+import { EXTRACT_SCRIPT, PAUSE_SCRIPT, PLAY_DIAG_SCRIPT, PLAY_SCRIPT, PROBE_SCRIPT, QUALITY_LOW_SCRIPT, QUALITY_RESTORE_SCRIPT, seekScript, VISIBILITY_SPOOF } from '../lib/extract'
+import { capcacheGet, capcachePut } from '../lib/capcache'
 import { lemmatize } from '../lib/lemma'
 import { VocabItem } from '../lib/storage'
 import { BgPlayer, onMediaAction } from '../../modules/bg-player'
@@ -84,6 +85,14 @@ export default function BrowseScreen({ vocab, onVocabChanged }: Props): React.JS
     if (videoId) BgPlayer.update(!paused, videoTitle)
   }, [paused, videoTitle, videoId])
 
+  // 后台降画质：进后台/息屏时压到 144p（省视频流流量），回前台恢复原清晰度
+  React.useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      wvRef.current?.injectJavaScript(s === 'active' ? QUALITY_RESTORE_SCRIPT : QUALITY_LOW_SCRIPT)
+    })
+    return () => sub.remove()
+  }, [])
+
   // 媒体卡片/锁屏按钮：原生侧走音频焦点通道直接控制 WebView（后台页面 JS 冻结，注入无效）。
   // 这里只同步"用户主动暂停"标记，让息屏自动续播不顶回
   React.useEffect(
@@ -136,6 +145,12 @@ export default function BrowseScreen({ vocab, onVocabChanged }: Props): React.JS
     setCues(en)
     setZhLines(en.length && zh.length ? alignZh(en, zh) : null)
     setVideoTitle(p.title ?? '')
+    // 写入本地字幕缓存：下次打开同视频秒出（空字幕不写，留给下次重试）
+    void capcachePut(p.videoId, {
+      title: p.title ?? '',
+      en,
+      zh: zh.length > 0 ? zh : null
+    }).catch(() => {})
   }, [])
 
   const onMessage = useCallback(
@@ -168,12 +183,20 @@ export default function BrowseScreen({ vocab, onVocabChanged }: Props): React.JS
         }
         const id = msg.videoId ?? ''
         setVideoId((prev) => (prev === id ? prev : id))
-        // 换视频时触发提取（同一视频只提一次）
+        // 换视频时触发提取（同一视频只提一次）；先查本地字幕缓存，命中即秒出
         if (id && id !== lastExtractRef.current) {
           lastExtractRef.current = id
           setCues([])
           setZhLines(null)
-          wvRef.current?.injectJavaScript(EXTRACT_SCRIPT)
+          void capcacheGet(id).then((hit) => {
+            if (hit) {
+              setCues(hit.en)
+              setZhLines(hit.en.length && hit.zh?.length ? alignZh(hit.en, hit.zh) : null)
+              setVideoTitle(hit.title)
+            } else {
+              wvRef.current?.injectJavaScript(EXTRACT_SCRIPT)
+            }
+          })
         }
       } else if (msg.kind === 'extract' && msg.payload) {
         void handleExtract(msg.payload)

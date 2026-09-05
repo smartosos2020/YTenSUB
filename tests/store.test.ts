@@ -121,6 +121,23 @@ describe('Store', () => {
     store.updateVocabReview('nope', 1)
   })
 
+  it('复习结算记录当日统计：次数与认识数', () => {
+    const { store } = makeStore()
+    const item = store.addVocab({
+      text: 'word',
+      translation: '词',
+      videoId: 'v1',
+      videoTitle: 't',
+      timestamp: 0,
+      sentence: ''
+    })
+    store.updateVocabReview(item.id, 2) // 认识
+    store.updateVocabReview(item.id, 0) // 不认识
+    const d = new Date()
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    expect(store.getStats()[day]).toEqual({ reviewed: 2, known: 1 })
+  })
+
   it('主文件损坏时从 .bak 恢复上一次完好的数据', () => {
     const { store, file } = makeStore()
     store.addVocab({
