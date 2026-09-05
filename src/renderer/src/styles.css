@@ -1620,9 +1620,35 @@ button.popup-ctx-btn:hover {
   align-items: center;
 }
 
+/* 编辑弹窗分类选中反馈 */
+.move-folder-list button.selected {
+  background: var(--active-bg);
+  color: var(--text-strong);
+}
+
 .move-current {
   font-size: 11px;
   color: var(--accent);
+}
+
+/* 紧凑块切换（收藏页筛选条 / 编辑弹窗难度）：与设置页 seg-tabs 同族 */
+.seg-tabs.mini {
+  padding: 2px;
+}
+
+.seg-tabs.mini button {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.fav-filter-seg {
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.level-seg {
+  margin: 6px 0 4px;
+  flex-wrap: wrap;
 }
 
 .folder-bar {

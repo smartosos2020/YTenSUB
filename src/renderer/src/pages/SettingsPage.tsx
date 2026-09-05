@@ -463,9 +463,9 @@ export default function SettingsPage(): JSX.Element {
               </div>
               <div className="behavior-row">
                 <span className="engine-info">
-                  <span className="engine-name">收藏时自动打内容标签</span>
+                  <span className="engine-name">自动标签 LLM 兜底</span>
                   <span className="engine-hint">
-                    先按 YouTube 官方分类自动映射（免费）；映射不上且 LLM 已配置时由 LLM 判断，手动改过的标签不覆盖
+                    收藏时始终先按 YouTube 官方分类自动打标签（免费）；此开关只控制映射不上时是否用 LLM 判断（需已配置）
                   </span>
                 </span>
                 <Switch

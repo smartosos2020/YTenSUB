@@ -70,20 +70,19 @@ export default function EditFavModal({ fav, folders, onClose, onSaved }: Props):
         </div>
 
         <div className="field-label">难度（CEFR）</div>
+        <div className="seg-tabs level-seg">
+          <button className={level === '' ? 'selected' : ''} onClick={() => setLevel('')}>
+            未评估
+          </button>
+          {CEFR_LEVELS.map((l) => (
+            <button key={l} className={level === l ? 'selected' : ''} onClick={() => setLevel(l)}>
+              {l}
+            </button>
+          ))}
+        </div>
         <div className="level-row">
-          <select
-            value={level}
-            onChange={(e) => setLevel(e.target.value as CefrLevel | '')}
-          >
-            <option value="">未评估</option>
-            {CEFR_LEVELS.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
           {fav.levelAuto && fav.level && (
-            <span className="level-auto-hint">当前为自动估值 ≈{fav.level}</span>
+            <span className="level-auto-hint">当前为自动估值（{fav.level}）</span>
           )}
           <button className="icon-btn" disabled={estimating} onClick={() => void reEstimate()}>
             {estimating ? '估算中…' : '重新估算'}

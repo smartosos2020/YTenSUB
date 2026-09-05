@@ -296,27 +296,24 @@ export default function FavoritesPage(): JSX.Element {
         </aside>
 
         <div className="fav-main">
-          {/* 单行控制条：难度筛选 + 标签 chips + 搜索 + 视图切换 */}
+          {/* 单行控制条：难度 + 标签（块切换按钮）+ 搜索 + 视图切换 */}
           <div className="fav-controls">
-            <select
-              className="level-filter"
-              value={levelFilter}
-              onChange={(e) => setLevelFilter(e.target.value as LevelFilter)}
-              title="按难度筛选"
-            >
-              <option value="all">全部难度</option>
-              <option value="none">未评估</option>
-              {CEFR_LEVELS.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
+            <span className="seg-tabs mini" role="group" aria-label="难度筛选">
+              {(['all', 'none', ...CEFR_LEVELS] as LevelFilter[]).map((l) => (
+                <button
+                  key={l}
+                  className={levelFilter === l ? 'selected' : ''}
+                  onClick={() => setLevelFilter(l)}
+                >
+                  {l === 'all' ? '全部' : l === 'none' ? '未评估' : l}
+                </button>
               ))}
-            </select>
-            <span className="fav-filter-tags">
+            </span>
+            <span className="seg-tabs mini fav-filter-seg" role="group" aria-label="标签筛选">
               {[...FAV_TAG_PRESETS, ...customTagsInUse].map((t) => (
                 <button
                   key={t}
-                  className={tagFilter.includes(t) ? 'tag-chip selected' : 'tag-chip'}
+                  className={tagFilter.includes(t) ? 'selected' : ''}
                   onClick={() =>
                     setTagFilter((cur) =>
                       cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]
@@ -371,7 +368,7 @@ export default function FavoritesPage(): JSX.Element {
                       className="thumb-badge thumb-badge-left"
                       title={fav.levelAuto ? '难度（自动估值）' : '难度（手动定级）'}
                     >
-                      {fav.levelAuto ? `≈${fav.level}` : fav.level}
+                      {fav.level}
                     </span>
                   )}
                   {fmtDuration(fav.duration) && (
