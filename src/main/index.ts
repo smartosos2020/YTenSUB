@@ -10,6 +10,7 @@ import { googleTranslateFree, llmChat, llmChatDetailed, llmContextualTranslate, 
 import { buildShadowingMessages, fetchEnglishCues, mergeCuesToSentences, parseShadowingResponse, ruleBasedPick, withSceneNumbers } from './shadowing'
 import { Favorite, Settings, ShadowingScript, TranslateSource, VocabItem, CefrLevel, CEFR_LEVELS, FAV_TAG_PRESETS, mapYtCategoryToTag, defaultData } from '../shared/types'
 import { estimateLevelByFreq } from './cefr'
+import { CURATED_SNAPSHOT_URL } from '../shared/curated-config'
 
 const dataFile = path.join(app.getPath('userData'), 'ytensub-data.json')
 
@@ -46,8 +47,48 @@ let mainWin: BrowserWindow | null = null
 let syncServer: SyncServer | null = null
 
 /**
- * 收藏自动打标签（LLM）：标题+频道+台词样本 → 预设里选/自定义，写回收藏。
- * 手动改过标签的不覆盖；LLM 未配置或设置关闭时不动。
+ * 精选内容库：HEAD 比较远端快照更新时间，比本地新就换快照；失败回退本地。
+ */
+async function loadCuratedDb(): Promise<unknown[]> {
+  const p = path.join(app.getPath('userData'), 'content-db.json')
+  let localTs = 0
+  let localText: string | null
+  try {
+    localText = fs.readFileSync(p, 'utf8')
+    localTs = fs.statSync(p).mtimeMs
+  } catch {
+    localText = null
+  }
+  if (CURATED_SNAPSHOT_URL) {
+    try {
+      // HEAD 拿 Last-Modified：远端更新才下载完整快照
+      const head = await net.fetch(CURATED_SNAPSHOT_URL, { method: 'HEAD' })
+      const remoteTs = Date.parse(head.headers.get('last-modified') ?? '') || 0
+      if (remoteTs > localTs) {
+        const r = await net.fetch(CURATED_SNAPSHOT_URL)
+        if (r.ok) {
+          const text = await r.text()
+          const obj = JSON.parse(text) as Record<string, unknown>
+          fs.mkdirSync(path.dirname(p), { recursive: true })
+          fs.writeFileSync(p + '.tmp', text, 'utf8')
+          fs.renameSync(p + '.tmp', p)
+          return Object.values(obj)
+        }
+      }
+    } catch {
+      // 网络失败回退本地快照
+    }
+  }
+  try {
+    return localText ? Object.values(JSON.parse(localText) as Record<string, unknown>) : []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * 收藏自动打标签：YouTube 官方分类免费基线优先，映射不上且配置开启时走 LLM。
+ * 手动打过标签的不覆盖。
  */
 async function autoTagFav(videoId: string): Promise<void> {
   const fav = store.listFavorites().find((f) => f.videoId === videoId)
@@ -310,15 +351,8 @@ function registerIpc(): void {
   ipcMain.handle('captions:cache-size', () => captionsCache.size)
   ipcMain.handle('captions:clear-cache', () => captionsCache.clear())
 
-  // 精选内容库：读本地 content-db.json（管线脚本生成；没有则为空数组）
-  ipcMain.handle('curated:list', () => {
-    try {
-      const p = path.join(app.getPath('userData'), 'content-db.json')
-      return Object.values(JSON.parse(fs.readFileSync(p, 'utf8')) as Record<string, unknown>)
-    } catch {
-      return []
-    }
-  })
+  // 精选内容库：本地快照超 24h 时先尝试拉远端快照（R2），失败回退本地
+  ipcMain.handle('curated:list', () => loadCuratedDb())
 
   // 局域网同步：手机端拉取/推送（生词本 + 跟读脚本）
   ipcMain.handle('sync:start', async () => {

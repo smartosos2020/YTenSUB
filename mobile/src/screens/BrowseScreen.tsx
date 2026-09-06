@@ -23,12 +23,22 @@ const GOOGLE_UA =
 interface Props {
   vocab: VocabItem[]
   onVocabChanged: () => void
+  /** 外部请求打开的视频（精选页联动）；消费后回调清空 */
+  openVideoId?: string | null
+  onVideoHandled?: () => void
 }
 
 /** 竖屏浏览页：上部 WebView 播放视频，下部滚动字幕（点词翻译、点行 seek） */
-export default function BrowseScreen({ vocab, onVocabChanged }: Props): React.JSX.Element {
+export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVideoHandled }: Props): React.JSX.Element {
   const wvRef = useRef<WebView>(null)
   const [url, setUrl] = useState(HOME)
+
+  // 精选页联动：外部带 videoId 进来时切到该视频
+  React.useEffect(() => {
+    if (!openVideoId) return
+    setUrl(`https://www.youtube.com/watch?v=${openVideoId}`)
+    onVideoHandled?.()
+  }, [openVideoId, onVideoHandled])
   const [videoId, setVideoId] = useState('')
   const [videoTitle, setVideoTitle] = useState('')
   const [time, setTime] = useState(0)

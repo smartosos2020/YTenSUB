@@ -3,15 +3,17 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import BrowseScreen from './src/screens/BrowseScreen'
+import CuratedScreen from './src/screens/CuratedScreen'
 import VocabScreen from './src/screens/VocabScreen'
 import ReviewScreen from './src/screens/ReviewScreen'
 import ShadowingScreen from './src/screens/ShadowingScreen'
 import { VocabItem, vocabList } from './src/lib/storage'
 
-type Tab = 'browse' | 'shadowing' | 'review' | 'vocab'
+type Tab = 'browse' | 'curated' | 'shadowing' | 'review' | 'vocab'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'browse', label: '▶ 浏览' },
+  { key: 'curated', label: '🧭 精选' },
   { key: 'shadowing', label: '🗣 跟读' },
   { key: 'review', label: '↻ 复习' },
   { key: 'vocab', label: '📖 生词本' }
@@ -20,6 +22,8 @@ const TABS: { key: Tab; label: string }[] = [
 function Main(): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('browse')
   const [vocab, setVocab] = useState<VocabItem[]>([])
+  // 精选页点卡片 → 带视频切到浏览页
+  const [pendingVideo, setPendingVideo] = useState<string | null>(null)
   const insets = useSafeAreaInsets()
 
   const reloadVocab = useCallback((): void => {
@@ -34,8 +38,23 @@ function Main(): React.JSX.Element {
     <View style={[styles.app, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       {/* 浏览页保持挂载：切走再回来视频不中断 */}
       <View style={{ flex: 1, display: tab === 'browse' ? 'flex' : 'none' }}>
-        <BrowseScreen vocab={vocab} onVocabChanged={reloadVocab} />
+        <BrowseScreen
+          vocab={vocab}
+          onVocabChanged={reloadVocab}
+          openVideoId={pendingVideo}
+          onVideoHandled={() => setPendingVideo(null)}
+        />
       </View>
+      {tab === 'curated' && (
+        <View style={{ flex: 1 }}>
+          <CuratedScreen
+            onOpenVideo={(id) => {
+              setPendingVideo(id)
+              setTab('browse')
+            }}
+          />
+        </View>
+      )}
       {tab === 'shadowing' && (
         <View style={{ flex: 1 }}>
           <ShadowingScreen vocab={vocab} />

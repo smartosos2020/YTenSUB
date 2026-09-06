@@ -72,6 +72,26 @@ export async function runCuratedPipeline(opts: {
     log(`回填难度：${fixedLv}/${noLevel.length} 部`)
   }
 
+  // 回填：没有字幕的老条目，抓字幕存进快照（客户端免抓直接用）
+  const noCues = Object.values(db).filter((e) => !(e.cues ?? []).length)
+  if (noCues.length > 0) {
+    let fixedCues = 0
+    let cueFail = 0
+    for (const e of noCues) {
+      const caps = await fetchEnglishCues(e.videoId, opts.fetchFn)
+      if (caps) {
+        e.cues = caps.cues
+        fixedCues++
+        cueFail = 0
+      } else if (++cueFail >= 3) {
+        log('回填字幕遇限流，暂停（下次续传）')
+        break
+      }
+      await new Promise((r) => setTimeout(r, 400))
+    }
+    log(`回填字幕：${fixedCues}/${noCues.length} 部`)
+  }
+
   for (const seed of seeds) {
     try {
       const cid = await pipe.resolveChannelId(seed)
@@ -120,7 +140,8 @@ export async function runCuratedPipeline(opts: {
             categoryId: v.categoryId,
             thumbnail: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
             publishedAt: Date.parse(v.publishedAt) || 0,
-            fetchedAt: now
+            fetchedAt: now,
+            cues: caps.cues // 字幕随快照分发：客户端打开精选视频直接用，不必再抓（限流环境下也秒出）
           }
           added++
           await new Promise((r) => setTimeout(r, 250)) // 字幕抓取限速，温柔一点

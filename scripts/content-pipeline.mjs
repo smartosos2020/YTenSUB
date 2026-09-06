@@ -54,7 +54,13 @@ runCuratedPipeline({
   dictPath,
   fetchFn: (u, i) => fetch(u, i),
   onLog: (m) => console.log(m)
-}).catch((e) => {
-  console.error('管线失败：', e)
-  process.exitCode = 1
 })
+  .then(async () => {
+    // 管线成功后上传快照到 R2（未配置 R2_* 时静默跳过）
+    const { uploadSnapshot } = await import('./upload-snapshot.mjs')
+    await uploadSnapshot(dbPath, (m) => console.log(m))
+  })
+  .catch((e) => {
+    console.error('管线失败：', e)
+    process.exitCode = 1
+  })

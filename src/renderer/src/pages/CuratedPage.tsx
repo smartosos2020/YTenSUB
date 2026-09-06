@@ -97,6 +97,21 @@ export default function CuratedPage(): JSX.Element {
     void api.favList().then((l) => setFavs(l as Favorite[]))
   }
 
+  /** 打开精选视频：快照里带字幕就先写入缓存，浏览页直接命中（免抓字幕，限流时也秒出） */
+  const openVideo = (v: CuratedVideo): void => {
+    if (v.cues && v.cues.length > 0) {
+      void api.captionsPutCache(v.videoId, {
+        title: v.title,
+        channel: v.channel,
+        duration: v.duration,
+        ytCategory: v.ytCategory,
+        en: v.cues,
+        zh: null
+      }).catch(() => {})
+    }
+    navigate(`/browse?v=${encodeURIComponent(v.videoId)}`)
+  }
+
   return (
     <PageShell fill title="精选" desc="按你的水平和兴趣推荐；打开即进入完整学习功能">
       <div className="fav-body">
@@ -177,7 +192,7 @@ export default function CuratedPage(): JSX.Element {
                 <img
                   src={v.thumbnail}
                   alt=""
-                  onClick={() => navigate(`/browse?v=${encodeURIComponent(v.videoId)}`)}
+                  onClick={() => openVideo(v)}
                 />
                 {v.level && <span className="thumb-badge thumb-badge-left">{v.level}</span>}
                 <span className="thumb-badge thumb-badge-right">{fmtDuration(v.duration)}</span>
@@ -185,7 +200,7 @@ export default function CuratedPage(): JSX.Element {
               <div className="fav-info">
                 <div
                   className="fav-title"
-                  onClick={() => navigate(`/browse?v=${encodeURIComponent(v.videoId)}`)}
+                  onClick={() => openVideo(v)}
                 >
                   {v.title}
                 </div>
