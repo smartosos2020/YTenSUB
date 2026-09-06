@@ -6,6 +6,9 @@ export const CURATED_SNAPSHOT_URL =
 
 const CACHE_KEY = 'ytensub:curated-cache'
 
+// 会话级缓存：App 启动后第一次打开精选页才查远端新鲜度，之后整个会话直接用内存数据
+let sessionCache: CuratedVideo[] | null = null
+
 export interface CuratedVideo {
   videoId: string
   title: string
@@ -22,8 +25,9 @@ export interface CuratedVideo {
   cues?: { start: number; dur: number; text: string }[]
 }
 
-/** 读精选库：HEAD 比较远端更新时间，比本地新就换快照；失败回退本地缓存 */
+/** 读精选库：本次会话首次才 HEAD 比新鲜度，之后直接用会话缓存；失败回退本地缓存 */
 export async function loadCurated(): Promise<CuratedVideo[]> {
+  if (sessionCache) return sessionCache
   let cached: { ts: number; data: CuratedVideo[] } | null = null
   try {
     const raw = await AsyncStorage.getItem(CACHE_KEY)
@@ -41,6 +45,7 @@ export async function loadCurated(): Promise<CuratedVideo[]> {
         if (r.ok) {
           const obj = (await r.json()) as Record<string, CuratedVideo>
           const data = Object.values(obj)
+          sessionCache = data
           await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ ts: remoteTs || Date.now(), data }))
           return data
         }
@@ -49,7 +54,8 @@ export async function loadCurated(): Promise<CuratedVideo[]> {
       // 网络失败回退缓存
     }
   }
-  return cached?.data ?? []
+  sessionCache = cached?.data ?? []
+  return sessionCache
 }
 
 /** 与桌面端 rankCurated 同规则的简化版：难度贴近 + 标签命中 + 已收藏沉底 + 日期种子打散 */

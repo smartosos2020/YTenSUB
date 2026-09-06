@@ -47,17 +47,27 @@ let mainWin: BrowserWindow | null = null
 let syncServer: SyncServer | null = null
 
 /**
- * 精选内容库：HEAD 比较远端快照更新时间，比本地新就换快照；失败回退本地。
+ * 精选内容库：本次会话首次才 HEAD 比远端新鲜度，之后直接读本地文件；
+ * 首次失败回退本地快照。
  */
+let curatedSessionLoaded = false
+
 async function loadCuratedDb(): Promise<unknown[]> {
   const p = path.join(app.getPath('userData'), 'content-db.json')
+  const readLocal = (): unknown[] => {
+    try {
+      return Object.values(JSON.parse(fs.readFileSync(p, 'utf8')) as Record<string, unknown>)
+    } catch {
+      return []
+    }
+  }
+  if (curatedSessionLoaded) return readLocal()
+  curatedSessionLoaded = true
   let localTs = 0
-  let localText: string | null
   try {
-    localText = fs.readFileSync(p, 'utf8')
     localTs = fs.statSync(p).mtimeMs
   } catch {
-    localText = null
+    /* 本地无快照 */
   }
   if (CURATED_SNAPSHOT_URL) {
     try {
@@ -79,11 +89,7 @@ async function loadCuratedDb(): Promise<unknown[]> {
       // 网络失败回退本地快照
     }
   }
-  try {
-    return localText ? Object.values(JSON.parse(localText) as Record<string, unknown>) : []
-  } catch {
-    return []
-  }
+  return readLocal()
 }
 
 /**

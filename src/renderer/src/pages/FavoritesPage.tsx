@@ -327,6 +327,7 @@ export default function FavoritesPage(): JSX.Element {
                       {c.slice(0, 1).toUpperCase()}
                     </span>
                   )}
+                  <span className="creator-name">{c}</span>
                   <span className="folder-count">{countOfCreator(c)}</span>
                 </button>
               ))}

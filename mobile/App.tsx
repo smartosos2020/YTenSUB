@@ -1,7 +1,24 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { ErrorUtils, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
+import { BgPlayer } from './modules/bg-player'
+import { setLemmatizeErrorSink } from './src/lib/lemma'
+
+setLemmatizeErrorSink((m) => BgPlayer.log(m))
+
+// 全局 JS 崩溃上报：把堆栈写进 logcat（release 包排查用；API 不可用时静默跳过）
+try {
+  ErrorUtils.setGlobalHandler((e: Error, isFatal?: boolean) => {
+    try {
+      BgPlayer.log(`JS-CRASH fatal=${isFatal}: ${String(e)}\n${(e.stack ?? '').slice(0, 1500)}`)
+    } catch {
+      /* 忽略上报失败 */
+    }
+  })
+} catch {
+  /* ErrorUtils 不可用的环境直接跳过 */
+}
 import BrowseScreen from './src/screens/BrowseScreen'
 import CuratedScreen from './src/screens/CuratedScreen'
 import VocabScreen from './src/screens/VocabScreen'
