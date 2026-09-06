@@ -231,12 +231,13 @@ export default function SettingsPage(): JSX.Element {
     <PageShell
       title="偏好设置"
       desc="配置外观主题、字幕排版、翻译管道与本地 LLM 大模型推理服务"
-      actions={
+      descActions={
         <>
           <span className={saveFlash ? 'save-badge flash' : 'save-badge'}>
             {saveFlash ? '✓ 已保存' : '实时保存生效'}
           </span>
           <SegmentedControl
+            size="xs"
             value={tab}
             onChange={(v) => setTab(v as SettingsTab)}
             data={TABS.map((t) => ({ value: t.key, label: t.label }))}
@@ -332,6 +333,14 @@ export default function SettingsPage(): JSX.Element {
                   onChange={(e) => update({ ...settings, hoverTranslate: e.currentTarget.checked })}
                 />
               </div>
+              <div className="card-divider" />
+              <div className="field-label">网络代理</div>
+              <TextInput
+                value={settings.proxy ?? ''}
+                onChange={(e) => update({ ...settings, proxy: e.currentTarget.value })}
+                placeholder="留空 = 直连/跟随系统；例如 127.0.0.1:7890 或 socks5://127.0.0.1:1080"
+                description="访问 YouTube 需要自备网络环境时，在此配置代理（保存即时生效）"
+              />
               </section>
             </div>
           )}

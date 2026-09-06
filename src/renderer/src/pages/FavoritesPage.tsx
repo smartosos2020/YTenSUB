@@ -10,6 +10,7 @@ import UserSpeakIcon from '../components/icons/UserSpeakIcon'
 import SearchIcon from '../components/icons/SearchIcon'
 import EditIcon from '../components/icons/EditIcon'
 import PageShell from '../components/PageShell'
+import Pagination from '../components/Pagination'
 
 type ViewMode = 'grid' | 'list'
 /** 分组轴：分类（手动语义）/ 创作者（客观属性，虚拟分组不落库） */
@@ -197,10 +198,48 @@ export default function FavoritesPage(): JSX.Element {
     ...new Set(favorites.flatMap((f) => f.tags ?? []).filter((t) => !FAV_TAG_PRESETS.includes(t)))
   ]
 
+  // 分页：0 基页码；筛选条件变化时自动回第 1 页
+  const [page, setPage] = useState(0)
+  useEffect(() => setPage(0), [selectedFolder, selectedCreator, levelFilter, tagFilter, search, groupAxis, favorites])
+  const PAGE_SIZE = 24
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const cur = Math.min(page, pageCount - 1)
+  const pageItems = filtered.slice(cur * PAGE_SIZE, cur * PAGE_SIZE + PAGE_SIZE)
+
   return (
     <PageShell
+      fill
       title={`收藏的视频（${favorites.length}）`}
       desc="按分类或创作者管理，支持难度（CEFR）与内容标签筛选；卡片编辑按钮可改分类、难度、标签"
+      descActions={
+        <>
+          {/* 搜索 + 视图切换（标题栏右侧） */}
+          <div className="fav-search">
+            <SearchIcon />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索收藏视频或作者…"
+            />
+          </div>
+          <div className="mode-toggle">
+            <button
+              className={mode === 'grid' ? 'icon-btn selected' : 'icon-btn'}
+              title="缩略图"
+              onClick={() => setMode('grid')}
+            >
+              <GridIcon />
+            </button>
+            <button
+              className={mode === 'list' ? 'icon-btn selected' : 'icon-btn'}
+              title="列表"
+              onClick={() => setMode('list')}
+            >
+              <ListIcon />
+            </button>
+          </div>
+        </>
+      }
     >
       <div className="fav-body">
         <aside className="folder-bar">
@@ -295,8 +334,8 @@ export default function FavoritesPage(): JSX.Element {
           )}
         </aside>
 
-        <div className="fav-main">
-          {/* 单行控制条：难度 + 标签（块切换按钮）+ 搜索 + 视图切换 */}
+        <div className="fav-main fixed-main">
+          {/* 控制条：难度 + 标签筛选 + 分页（搜索/视图已移至标题栏） */}
           <div className="fav-controls">
             <span className="seg-tabs mini" role="group" aria-label="难度筛选">
               {(['all', 'none', ...CEFR_LEVELS] as LevelFilter[]).map((l) => (
@@ -305,7 +344,7 @@ export default function FavoritesPage(): JSX.Element {
                   className={levelFilter === l ? 'selected' : ''}
                   onClick={() => setLevelFilter(l)}
                 >
-                  {l === 'all' ? '全部' : l === 'none' ? '未评估' : l}
+                  {l === 'all' ? '全部' : l === 'none' ? '未评' : l}
                 </button>
               ))}
             </span>
@@ -324,42 +363,18 @@ export default function FavoritesPage(): JSX.Element {
                 </button>
               ))}
             </span>
-            <div className="fav-controls-right">
-              {genMsg && <span className="fav-gen-msg">{genMsg}</span>}
-              <div className="fav-search">
-                <SearchIcon />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="搜索收藏视频或作者…"
-                />
-              </div>
-              <div className="mode-toggle">
-                <button
-                  className={mode === 'grid' ? 'icon-btn selected' : 'icon-btn'}
-                  title="缩略图"
-                  onClick={() => setMode('grid')}
-                >
-                  <GridIcon />
-                </button>
-                <button
-                  className={mode === 'list' ? 'icon-btn selected' : 'icon-btn'}
-                  title="列表"
-                  onClick={() => setMode('list')}
-                >
-                  <ListIcon />
-                </button>
-              </div>
-            </div>
+            {genMsg && <span className="fav-gen-msg">{genMsg}</span>}
+            <Pagination page={cur} pageCount={pageCount} onChange={setPage} />
           </div>
 
+          <div className="list-scroll">
           {filtered.length === 0 && (
             <div className="empty-hint">
               {favorites.length === 0 ? '还没有收藏，去浏览页收藏视频吧' : '没有匹配的收藏'}
             </div>
           )}
           <div className={mode === 'grid' ? 'fav-grid' : 'fav-list'}>
-            {filtered.map((fav) => (
+            {pageItems.map((fav) => (
               <div key={fav.videoId} className="fav-card">
                 <div className="fav-thumb">
                   <img src={fav.thumbnail} alt="" onClick={() => open(fav)} />
@@ -430,6 +445,7 @@ export default function FavoritesPage(): JSX.Element {
                 </div>
               </div>
             ))}
+          </div>
           </div>
         </div>
       </div>

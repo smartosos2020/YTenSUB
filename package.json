@@ -12,7 +12,8 @@
     "lint": "eslint src tests",
     "build:dict": "node scripts/build-dict.mjs",
     "build:icon": "node scripts/build-icon.mjs",
-    "dist": "electron-vite build && electron-builder"
+    "dist": "electron-vite build && electron-builder",
+    "pipeline": "node scripts/content-pipeline.mjs"
   },
   "dependencies": {
     "@mantine/core": "^7.17.8",

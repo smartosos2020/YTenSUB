@@ -1,0 +1,255 @@
+[
+  {
+    "name": "Learn English with Bob the Canadian",
+    "handle": "@BobtheCanadian",
+    "topic": "英语教学",
+    "channelId": "UCB1ObFstcCdPg1cRdEtnazQ"
+  },
+  {
+    "name": "English PowerShift Podcast",
+    "handle": "@EnglishPowerShift",
+    "topic": "英语教学",
+    "channelId": "UC9155bsh8HxY9DwRss7JnlA"
+  },
+  {
+    "name": "BBC Learning English",
+    "handle": "@bbclearningenglish",
+    "topic": "英语教学",
+    "channelId": "UCHaHD477h-FeBbVh9Sh7syA"
+  },
+  {
+    "name": "EnglishClass101",
+    "handle": "@EnglishClass101",
+    "topic": "英语教学"
+  },
+  {
+    "name": "mmmEnglish",
+    "handle": "@mmmEnglish",
+    "topic": "英语教学"
+  },
+  {
+    "name": "Speak English With Vanessa",
+    "handle": "@SpeakEnglishWithVanessa",
+    "topic": "英语教学"
+  },
+  {
+    "name": "Luke's English Podcast",
+    "handle": "@LukeEnglishPodcast",
+    "topic": "英语教学"
+  },
+  {
+    "name": "Rachel's English",
+    "handle": "@rachelsenglish",
+    "topic": "英语教学/发音"
+  },
+  {
+    "name": "English with Lucy",
+    "handle": "@EnglishwithLucy",
+    "topic": "英语教学"
+  },
+  {
+    "name": "engVid",
+    "handle": "@engvidJamesESL",
+    "topic": "英语教学"
+  },
+  {
+    "name": "Go Natural English",
+    "handle": "@GoNaturalEnglish",
+    "topic": "英语教学"
+  },
+  {
+    "name": "Oxford Online English",
+    "handle": "@OxfordOnlineEnglish",
+    "topic": "英语教学"
+  },
+  {
+    "name": "English Singsing",
+    "handle": "@EnglishSingsing",
+    "topic": "英语入门"
+  },
+  {
+    "name": "VOA Learning English",
+    "handle": "@VOALearningEnglish",
+    "topic": "慢速英语/新闻"
+  },
+  {
+    "name": "TED",
+    "handle": "@TED",
+    "topic": "演讲"
+  },
+  {
+    "name": "TEDx Talks",
+    "handle": "@TEDx",
+    "topic": "演讲"
+  },
+  {
+    "name": "TED-Ed",
+    "handle": "@TEDEd",
+    "topic": "科普动画"
+  },
+  {
+    "name": "The Ezra Klein Show",
+    "handle": "@ezraklein",
+    "topic": "访谈/新闻"
+  },
+  {
+    "name": "All-In Podcast",
+    "handle": "@allin",
+    "topic": "商业/科技"
+  },
+  {
+    "name": "The Atlantic",
+    "handle": "@TheAtlantic",
+    "topic": "新闻/文化"
+  },
+  {
+    "name": "BBC World Service",
+    "handle": "@BBCWorldService",
+    "topic": "新闻"
+  },
+  {
+    "name": "CNBC",
+    "handle": "@CNBC",
+    "topic": "商业/新闻"
+  },
+  {
+    "name": "Vox",
+    "handle": "@Vox",
+    "topic": "科普/新闻"
+  },
+  {
+    "name": "Veritasium",
+    "handle": "@veritasium",
+    "topic": "科普"
+  },
+  {
+    "name": "Kurzgesagt – In a Nutshell",
+    "handle": "@kurzgesagt",
+    "topic": "科普"
+  },
+  {
+    "name": "CrashCourse",
+    "handle": "@crashcourse",
+    "topic": "教育"
+  },
+  {
+    "name": "Peter H. Diamandis",
+    "handle": "@PeterDiamandis",
+    "topic": "科技/未来"
+  },
+  {
+    "name": "Y Combinator",
+    "handle": "@ycombinator",
+    "topic": "商业/创业"
+  },
+  {
+    "name": "AsapSCIENCE",
+    "handle": "@AsapSCIENCE",
+    "topic": "科普"
+  },
+  {
+    "name": "MinuteEarth",
+    "handle": "@MinuteEarth",
+    "topic": "科普"
+  },
+  {
+    "name": "SciShow",
+    "handle": "@SciShow",
+    "topic": "科普"
+  },
+  {
+    "name": "It's Okay To Be Smart",
+    "handle": "@okaytobesmart",
+    "topic": "科普"
+  },
+  {
+    "name": "Mark Rober",
+    "handle": "@MarkRober",
+    "topic": "科普/工程"
+  },
+  {
+    "name": "SmarterEveryDay",
+    "handle": "@smartereveryday",
+    "topic": "科普/工程"
+  },
+  {
+    "name": "Vsauce",
+    "handle": "@Vsauce",
+    "topic": "科普/思维"
+  },
+  {
+    "name": "Bloomberg",
+    "handle": "@Bloomberg",
+    "topic": "商业/新闻"
+  },
+  {
+    "name": "Wall Street Journal",
+    "handle": "@wsj",
+    "topic": "商业/新闻"
+  },
+  {
+    "name": "Harvard Business Review",
+    "handle": "@HarvardBusinessReview",
+    "topic": "商业/管理"
+  },
+  {
+    "name": "Big Think",
+    "handle": "@bigthink",
+    "topic": "思维/访谈"
+  },
+  {
+    "name": "ABC News",
+    "handle": "@ABCNews",
+    "topic": "新闻"
+  },
+  {
+    "name": "CBS Mornings",
+    "handle": "@CBSMornings",
+    "topic": "新闻"
+  },
+  {
+    "name": "NBC News",
+    "handle": "@NBCNews",
+    "topic": "新闻"
+  },
+  {
+    "name": "DW News",
+    "handle": "@dwnews",
+    "topic": "新闻"
+  },
+  {
+    "name": "Al Jazeera English",
+    "handle": "@aljazeeraenglish",
+    "topic": "新闻"
+  },
+  {
+    "name": "Kara and Nate",
+    "handle": "@KaraandNate",
+    "topic": "生活/旅行"
+  },
+  {
+    "name": "Lost LeBlanc",
+    "handle": "@LostLeBlanc",
+    "topic": "生活/旅行"
+  },
+  {
+    "name": "Pick Up Limes",
+    "handle": "@PickUpLimes",
+    "topic": "生活/健康"
+  },
+  {
+    "name": "Matt D'Avella",
+    "handle": "@mattdavella",
+    "topic": "生活/习惯"
+  },
+  {
+    "name": "Ali Abdaal",
+    "handle": "@aliabdaal",
+    "topic": "效率/生活"
+  },
+  {
+    "name": "ColdFusion",
+    "handle": "@ColdFusion",
+    "topic": "科技/商业"
+  }
+]

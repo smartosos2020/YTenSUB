@@ -177,6 +177,12 @@ export interface Settings {
   levelEstimator: 'freq' | 'llm'
   /** 收藏时自动打内容标签（LLM，需配置；手动改过的标签不被覆盖） */
   autoTag: boolean
+  /** 精选页：用户自评水平（null = 不按难度过滤） */
+  curatedLevel: CefrLevel | null
+  /** 精选页：订阅标签（空 = 不按标签过滤） */
+  curatedTags: string[]
+  /** 网络代理（如 127.0.0.1:7890 或 socks5://...）；空 = 直连/跟随系统 */
+  proxy: string
 }
 
 export interface AppData {
@@ -209,7 +215,10 @@ export const DEFAULT_SETTINGS: Settings = {
   hoverTranslate: false,
   shadowingStrategy: 'llm-fallback',
   levelEstimator: 'freq',
-  autoTag: true
+  autoTag: true,
+  curatedLevel: null,
+  curatedTags: [],
+  proxy: ''
 }
 
 export function defaultData(): AppData {

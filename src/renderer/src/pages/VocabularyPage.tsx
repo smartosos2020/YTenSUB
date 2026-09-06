@@ -56,7 +56,7 @@ export default function VocabularyPage(): JSX.Element {
     <PageShell
       title={`生词本（${vocab.length}）`}
       desc="收藏的生词与例句，支持 CSV 导出与间隔重复复习"
-      actions={
+      descActions={
         <>
           <label>
             <input

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, session, shell } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -139,6 +139,12 @@ const dict = new Dict(dictPath)
 
 const TRANSLATOR_ORDER: TranslateSource[] = ['local', 'google', 'llm']
 
+/** 应用代理设置：defaultSession 覆盖渲染进程与 webview guest（YouTube 页面也走代理） */
+function applyProxy(proxy: string): void {
+  const p = proxy.trim()
+  void session.defaultSession.setProxy(p ? { proxyRules: p } : { mode: 'system' })
+}
+
 function registerIpc(): void {
   ipcMain.handle('translate:text', (_e, text: string) => {
     const s = store.getSettings()
@@ -248,6 +254,8 @@ function registerIpc(): void {
       nativeTheme.themeSource =
         patch.theme === 'day' ? 'light' : patch.theme === 'night' ? 'dark' : 'system'
     }
+    // 代理设置即时生效（含 webview 里的 YouTube 页面）
+    if (patch.proxy !== undefined) applyProxy(patch.proxy)
     return r
   })
 
@@ -301,6 +309,16 @@ function registerIpc(): void {
   )
   ipcMain.handle('captions:cache-size', () => captionsCache.size)
   ipcMain.handle('captions:clear-cache', () => captionsCache.clear())
+
+  // 精选内容库：读本地 content-db.json（管线脚本生成；没有则为空数组）
+  ipcMain.handle('curated:list', () => {
+    try {
+      const p = path.join(app.getPath('userData'), 'content-db.json')
+      return Object.values(JSON.parse(fs.readFileSync(p, 'utf8')) as Record<string, unknown>)
+    } catch {
+      return []
+    }
+  })
 
   // 局域网同步：手机端拉取/推送（生词本 + 跟读脚本）
   ipcMain.handle('sync:start', async () => {
@@ -557,6 +575,8 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null)
   registerIpc()
   createWindow()
+  // 代理设置（启动时从存储加载；目标用户需要自备网络环境时配）
+  applyProxy(store.getSettings().proxy ?? '')
   // 自动更新（GitHub Releases）：静默检查，下载完成后提示重启安装；dev 环境静默跳过
   // updater 全事件写日志到 userData/updater.log（更新失败时排查用）
   const updaterLogFile = path.join(app.getPath('userData'), 'updater.log')

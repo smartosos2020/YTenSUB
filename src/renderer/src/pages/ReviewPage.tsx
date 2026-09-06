@@ -102,7 +102,7 @@ export default function ReviewPage(): JSX.Element {
     <PageShell
       title="复习"
       desc={`间隔重复记忆卡片：按住卡片左滑不认识，右滑认识（第 ${done + 1} / ${total} 张）`}
-      actions={
+      descActions={
         <label className="review-toggle">
           <span>释义</span>
           <span className="switch" title="显示 / 隐藏释义">

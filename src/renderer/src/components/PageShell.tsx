@@ -9,12 +9,14 @@ interface Props {
   desc?: React.ReactNode
   /** 头部右侧控件区 */
   actions?: React.ReactNode
+  /** 说明行右侧控件区（与说明文字同一行） */
+  descActions?: React.ReactNode
   /** true = 外壳定高且不滚动，由子区域内部滚动（跟读页：播放条固定在底部） */
   fill?: boolean
   children: React.ReactNode
 }
 
-export default function PageShell({ title, desc, actions, fill, children }: Props): JSX.Element {
+export default function PageShell({ title, desc, actions, descActions, fill, children }: Props): JSX.Element {
   return (
     <div className={fill ? 'page page-shell page-shell-fill' : 'page page-shell'}>
       <header className="page-head">
@@ -22,7 +24,12 @@ export default function PageShell({ title, desc, actions, fill, children }: Prop
           <h2>{title}</h2>
           {actions && <div className="page-head-actions">{actions}</div>}
         </div>
-        {desc && <div className="page-desc">{desc}</div>}
+        {(desc || descActions) && (
+          <div className={descActions ? 'page-desc page-desc-row' : 'page-desc'}>
+            <span>{desc}</span>
+            {descActions && <span className="page-desc-actions">{descActions}</span>}
+          </div>
+        )}
       </header>
       {children}
     </div>

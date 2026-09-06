@@ -5,6 +5,7 @@ import { applyTheme } from './theme'
 import { usePersistentState } from './hooks/usePersistentState'
 import BrowsePage from './pages/BrowsePage'
 import FavoritesPage from './pages/FavoritesPage'
+import CuratedPage from './pages/CuratedPage'
 import VocabularyPage from './pages/VocabularyPage'
 import ReviewPage from './pages/ReviewPage'
 import ShadowingPage from './pages/ShadowingPage'
@@ -16,9 +17,11 @@ import BookIcon from './components/icons/BookIcon'
 import RepeatIcon from './components/icons/RepeatIcon'
 import GearIcon from './components/icons/GearIcon'
 import UpdateIcon from './components/icons/UpdateIcon'
+import CompassIcon from './components/icons/CompassIcon'
 
 const NAV_ITEMS: { to: string; label: string; icon: JSX.Element }[] = [
   { to: '/browse', label: '浏览', icon: <PlayIcon /> },
+  { to: '/curated', label: '精选', icon: <CompassIcon /> },
   { to: '/favorites', label: '收藏', icon: <StarOutlineIcon /> },
   { to: '/vocabulary', label: '生词本', icon: <BookIcon /> },
   { to: '/review', label: '复习', icon: <RepeatIcon /> },
@@ -45,6 +48,7 @@ function MainArea(): JSX.Element {
       {!onBrowse && (
         <Routes>
           <Route path="/favorites" element={<FavoritesPage />} />
+          <Route path="/curated" element={<CuratedPage />} />
           <Route path="/vocabulary" element={<VocabularyPage />} />
           <Route path="/review" element={<ReviewPage />} />
           <Route path="/shadowing" element={<ShadowingPage />} />

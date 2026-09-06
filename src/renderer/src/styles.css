@@ -510,6 +510,21 @@ button.update-btn.error {
   color: var(--text-dim);
 }
 
+/* 页面说明行带右侧控件（page-desc-row）：文字在左，控件在右 */
+.page-desc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.page-desc-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 /* 页面头部：标题行 + 说明 + 底部分隔线 */
 .page-head {
   border-bottom: 1px solid var(--border);
@@ -544,6 +559,11 @@ button.update-btn.error {
   color: var(--text-dim);
   font-size: 12px;
   margin-top: 2px;
+  /* 各模块页头部对齐：说明行固定高度（控件再高也不许撑开），分割线全在同一位置 */
+  height: 28px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
 }
 
 /* 设置分区：标题与说明提到卡片外上方 */
@@ -1370,6 +1390,44 @@ button.popup-ctx-btn:hover {
   gap: 10px;
 }
 
+/* 分页控件：<< < 1 2 3 … N > >> */
+.pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.pagination-num {
+  padding: 2px 7px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.pagination-num.selected {
+  background: var(--active-bg);
+  color: var(--text-strong);
+}
+
+.pagination-ellipsis {
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 0 2px;
+}
+
+/* 精选页：操作栏固定 + 列表内部滚动（收藏页同款复用） */
+.fixed-main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.list-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 /* 分组轴切换（分类/创作者） */
 .axis-toggle {
   display: flex;
@@ -1439,6 +1497,15 @@ button.popup-ctx-btn:hover {
   justify-content: center;
   color: #fff;
   font-size: 12px;
+}
+
+/* 创作者项里的频道名（精选页左栏） */
+.creator-name {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 卡片徽章：标签（信息区） */
@@ -1543,6 +1610,20 @@ button.popup-ctx-btn:hover {
 .fav-search input {
   padding-left: 26px;
   width: 200px;
+  height: 26px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+/* 收藏页视图切换：与 mini 块按钮同高协调 */
+.mode-toggle button {
+  padding: 3px 7px;
+}
+
+.mode-toggle button svg {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
 /* 分类行数量徽标 */
@@ -1637,7 +1718,7 @@ button.popup-ctx-btn:hover {
 }
 
 .seg-tabs.mini button {
-  padding: 3px 8px;
+  padding: 3px 7px;
   font-size: 12px;
 }
 

@@ -26,7 +26,7 @@ export function estimateLevelByFreq(cues: Cue[], dict: FreqLookup): CefrLevel | 
       if (rank > 3000) beyond3000++
     }
   }
-  if (known < 100) return null // 样本太少不估
+  if (known < 50) return null // 样本太少不估
   const r = beyond3000 / known
   if (r < 0.01) return 'A1'
   if (r < 0.025) return 'A2'
