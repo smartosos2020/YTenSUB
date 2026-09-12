@@ -5,16 +5,14 @@ interface Props {
   onChange: (page: number) => void
 }
 
-/** 页码序列：≤7 页全显；否则首尾 + 当前页窗口，间隙用 … */
+/** 页码序列：≤5 页全显；否则"当前页窗口 3 个 + … + 末页"（窗口紧邻末页时直接连上，不显示 …） */
 function pageSeq(count: number, c: number): (number | '…')[] {
-  if (count <= 7) return Array.from({ length: count }, (_, i) => i)
-  const set = new Set([0, 1, c - 1, c, c + 1, count - 2, count - 1].filter((i) => i >= 0 && i < count))
-  const arr = [...set].sort((a, b) => a - b)
-  const out: (number | '…')[] = []
-  for (let i = 0; i < arr.length; i++) {
-    if (i > 0 && arr[i] - arr[i - 1] > 1) out.push('…')
-    out.push(arr[i])
-  }
+  if (count <= 5) return Array.from({ length: count }, (_, i) => i)
+  const start = Math.min(Math.max(c - 1, 0), count - 3)
+  const window3 = [start, start + 1, start + 2]
+  const out: (number | '…')[] = [...window3]
+  if (window3[2] === count - 2) out.push(count - 1) // 窗口紧邻末页：直接连上
+  else if (window3[2] < count - 2) out.push('…', count - 1)
   return out
 }
 

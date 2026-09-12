@@ -10,6 +10,8 @@ export interface TranslateResult {
 interface DictEntry {
   p?: string
   t: string
+  /** COCA 词频排名（分档徽章用） */
+  f?: number
 }
 
 // 词典懒加载：3.3MB JSON 首次查词时才解析，不拖启动
@@ -34,6 +36,18 @@ function dictLookup(word: string): TranslateResult | null {
   const hit = map[w] ?? map[lemmatize(w)]
   if (!hit) return null
   return { translation: hit.t, phonetic: hit.p, source: 'local' }
+}
+
+/** 词频分档标签（内嵌翻译卡徽章）：≤3000 不显示，3000-6000 CET6，6000+ 雅思 */
+export function wordTierTag(word: string): string | null {
+  const map = ensureDict()
+  const w = word.trim().toLowerCase()
+  const hit = map[w] ?? map[lemmatize(w)]
+  const rank = hit?.f
+  if (rank == null) return null
+  if (rank <= 3000) return null
+  if (rank <= 6000) return 'CET6'
+  return '雅思'
 }
 
 /** Google 免费翻译接口（与桌面端同一端点） */

@@ -47,49 +47,81 @@ let mainWin: BrowserWindow | null = null
 let syncServer: SyncServer | null = null
 
 /**
- * 精选内容库：本次会话首次才 HEAD 比远端新鲜度，之后直接读本地文件；
- * 首次失败回退本地快照。
+ * 精选内容库：本机管线产出 content-db.json 存在时直接读（采集端永远最新）；
+ * 不存在时走"增量索引"远端同步：拉 index.json，全量引导或补增量后落本地缓存。
+ * 本次会话首次加载后不再重复请求。
  */
 let curatedSessionLoaded = false
 
+interface CuratedIndex {
+  latest: number
+  increments: { ts: number; file: string; count: number }[]
+}
+
+const CURATED_INDEX_URL = CURATED_SNAPSHOT_URL.replace(/content-db\.json$/, 'index.json')
+const CURATED_INC_URL_BASE = CURATED_SNAPSHOT_URL.replace(/content-db\.json$/, '')
+
 async function loadCuratedDb(): Promise<unknown[]> {
   const p = path.join(app.getPath('userData'), 'content-db.json')
-  const readLocal = (): unknown[] => {
+  // 采集端：本地管线库永远最新，直接读
+  if (fs.existsSync(p)) {
     try {
       return Object.values(JSON.parse(fs.readFileSync(p, 'utf8')) as Record<string, unknown>)
+    } catch {
+      /* 落到远端逻辑 */
+    }
+  }
+  // 非采集端：增量索引同步（缓存文件 curated-cache.json = { db, appliedTs }）
+  if (curatedSessionLoaded) return readCuratedCache()
+  curatedSessionLoaded = true
+  const cachePath = path.join(app.getPath('userData'), 'curated-cache.json')
+  let cache: { db: Record<string, unknown>; appliedTs: number } | null = null
+  try {
+    cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'))
+  } catch {
+    cache = null
+  }
+  try {
+    const ir = await net.fetch(CURATED_INDEX_URL)
+    if (ir.ok) {
+      const index = (await ir.json()) as CuratedIndex
+      const oldestTs = index.increments[0]?.ts ?? 0
+      const needBootstrap = !cache || cache.appliedTs < oldestTs
+      if (needBootstrap) {
+        const fr = await net.fetch(CURATED_SNAPSHOT_URL)
+        if (fr.ok) {
+          cache = {
+            db: (await fr.json()) as Record<string, unknown>,
+            appliedTs: index.latest
+          }
+        }
+      } else if (cache && cache.appliedTs < index.latest) {
+        for (const inc of index.increments.filter((i) => i.ts > cache!.appliedTs)) {
+          const er = await net.fetch(CURATED_INC_URL_BASE + inc.file)
+          if (!er.ok) break
+          Object.assign(cache.db, (await er.json()) as Record<string, unknown>)
+          cache.appliedTs = inc.ts
+        }
+      }
+      if (cache) {
+        fs.mkdirSync(path.dirname(cachePath), { recursive: true })
+        fs.writeFileSync(cachePath + '.tmp', JSON.stringify(cache), 'utf8')
+        fs.renameSync(cachePath + '.tmp', cachePath)
+      }
+    }
+  } catch {
+    // 网络失败回退本地缓存
+  }
+  return readCuratedCache()
+
+  function readCuratedCache(): unknown[] {
+    try {
+      const c = JSON.parse(fs.readFileSync(cachePath, 'utf8')) as { db: Record<string, unknown> }
+      return Object.values(c.db)
     } catch {
       return []
     }
   }
-  if (curatedSessionLoaded) return readLocal()
-  curatedSessionLoaded = true
-  let localTs = 0
-  try {
-    localTs = fs.statSync(p).mtimeMs
-  } catch {
-    /* 本地无快照 */
-  }
-  if (CURATED_SNAPSHOT_URL) {
-    try {
-      // HEAD 拿 Last-Modified：远端更新才下载完整快照
-      const head = await net.fetch(CURATED_SNAPSHOT_URL, { method: 'HEAD' })
-      const remoteTs = Date.parse(head.headers.get('last-modified') ?? '') || 0
-      if (remoteTs > localTs) {
-        const r = await net.fetch(CURATED_SNAPSHOT_URL)
-        if (r.ok) {
-          const text = await r.text()
-          const obj = JSON.parse(text) as Record<string, unknown>
-          fs.mkdirSync(path.dirname(p), { recursive: true })
-          fs.writeFileSync(p + '.tmp', text, 'utf8')
-          fs.renameSync(p + '.tmp', p)
-          return Object.values(obj)
-        }
-      }
-    } catch {
-      // 网络失败回退本地快照
-    }
-  }
-  return readLocal()
 }
 
 /**
@@ -113,7 +145,7 @@ async function autoTagFav(videoId: string): Promise<void> {
   let cues = captionsCache.get(videoId)?.en ?? null
   if (!cues || cues.length === 0) {
     const caps = await fetchEnglishCues(videoId, (u, i) => net.fetch(u, i))
-    if (!caps) return
+    if (!('cues' in caps)) return
     cues = caps.cues
     captionsCache.put(videoId, { title: caps.title, channel: '', ytCategory: caps.category, en: cues, zh: null })
   }
@@ -142,7 +174,7 @@ async function estimateFavLevel(
   if (!cues || cues.length === 0) {
     if (noFetch) return null // 缓存未命中且禁止抓取：跳过（收藏页后台批量估值用）
     const caps = await fetchEnglishCues(videoId, (u, i) => net.fetch(u, i))
-    if (!caps) return null
+    if (!('cues' in caps)) return null
     cues = caps.cues
     captionsCache.put(videoId, { title: caps.title, channel: '', ytCategory: caps.category, en: cues, zh: null })
   }
@@ -488,7 +520,7 @@ function registerIpc(): void {
     const caps = cachedCaps
       ? { title: cachedCaps.title, cues: cachedCaps.en }
       : await fetchEnglishCues(vid, (u, init) => net.fetch(u, init))
-    if (!caps) return { error: 'no-captions' }
+    if (!caps || !('cues' in caps)) return { error: 'no-captions' }
 
     // 碎片 cue 先合并成完整句子：LLM 精选和规则兜底都在句子上工作，效果好得多
     const sentences = mergeCuesToSentences(caps.cues)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { CuratedVideo, rankCurated } from '../../../shared/curated'
@@ -6,6 +6,8 @@ import { CEFR_LEVELS, CefrLevel, FAV_TAG_PRESETS, Favorite } from '../../../shar
 import PageShell from '../components/PageShell'
 import Pagination from '../components/Pagination'
 import StarOutlineIcon from '../components/icons/StarOutlineIcon'
+import RocketIcon from '../components/icons/RocketIcon'
+import { CURATED_CUES_URL_BASE } from '../../../shared/curated-config'
 
 /** 秒 → mm:ss / h:mm:ss */
 function fmtDuration(s: number): string {
@@ -42,9 +44,21 @@ export default function CuratedPage(): JSX.Element {
   const seenIds = useMemo(() => new Set(favs.map((f) => f.videoId)), [favs])
   // 创作者筛选（左栏）：null = 全部
   const [creatorFilter, setCreatorFilter] = useState<string | null>(null)
+  // 左栏滚动：下滑后右下角浮出"回顶部"小火箭
+  const creatorBarRef = useRef<HTMLElement>(null)
+  const [showTop, setShowTop] = useState(false)
   const creators = useMemo(
     () => [...new Set(videos.map((v) => v.channel).filter(Boolean))].sort(),
     [videos]
+  )
+  // 创作者搜索：按输入过滤左栏列表
+  const [creatorQuery, setCreatorQuery] = useState('')
+  const creatorsShown = useMemo(
+    () =>
+      creatorQuery.trim()
+        ? creators.filter((c) => c.toLowerCase().includes(creatorQuery.trim().toLowerCase()))
+        : creators,
+    [creators, creatorQuery]
   )
   const creatorCount = (c: string | null): number =>
     c === null ? videos.length : videos.filter((v) => v.channel === c).length
@@ -97,15 +111,24 @@ export default function CuratedPage(): JSX.Element {
     void api.favList().then((l) => setFavs(l as Favorite[]))
   }
 
-  /** 打开精选视频：快照里带字幕就先写入缓存，浏览页直接命中（免抓字幕，限流时也秒出） */
-  const openVideo = (v: CuratedVideo): void => {
-    if (v.cues && v.cues.length > 0) {
+  /** 打开精选视频：字幕优先用快照内嵌的，没有则从 R2 按需取（元数据快照不含字幕）写缓存 */
+  const openVideo = async (v: CuratedVideo): Promise<void> => {
+    let cues = v.cues
+    if ((!cues || cues.length === 0) && CURATED_CUES_URL_BASE) {
+      try {
+        const r = await fetch(`${CURATED_CUES_URL_BASE}${v.videoId}.json`)
+        if (r.ok) cues = (await r.json()) as CuratedVideo['cues']
+      } catch {
+        /* 取不到就走在线抓取链路 */
+      }
+    }
+    if (cues && cues.length > 0) {
       void api.captionsPutCache(v.videoId, {
         title: v.title,
         channel: v.channel,
         duration: v.duration,
         ytCategory: v.ytCategory,
-        en: v.cues,
+        en: cues,
         zh: null
       }).catch(() => {})
     }
@@ -116,12 +139,23 @@ export default function CuratedPage(): JSX.Element {
     <PageShell fill title="精选" desc="按你的水平和兴趣推荐；打开即进入完整学习功能">
       <div className="fav-body">
         {/* 左栏：创作者筛选 */}
-        <aside className="folder-bar">
+        <aside
+          className="folder-bar"
+          ref={creatorBarRef}
+          onScroll={(e) => setShowTop(e.currentTarget.scrollTop > 200)}
+        >
           <button className={creatorFilter === null ? 'selected' : ''} onClick={() => setCreatorFilter(null)}>
             全部
             <span className="folder-count">{creatorCount(null)}</span>
           </button>
-          {creators.map((c) => (
+          <input
+            className="creator-search"
+            type="text"
+            placeholder="搜索创作者"
+            value={creatorQuery}
+            onChange={(e) => setCreatorQuery(e.target.value)}
+          />
+          {creatorsShown.map((c) => (
             <button
               key={c}
               className={creatorFilter === c ? 'selected creator-item' : 'creator-item'}
@@ -139,6 +173,15 @@ export default function CuratedPage(): JSX.Element {
               <span className="folder-count">{creatorCount(c)}</span>
             </button>
           ))}
+          {showTop && (
+            <button
+              className="rocket-top"
+              title="回到顶部"
+              onClick={() => creatorBarRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            >
+              <RocketIcon />
+            </button>
+          )}
         </aside>
 
         <div className="fav-main fixed-main">
@@ -180,7 +223,7 @@ export default function CuratedPage(): JSX.Element {
       <div className="list-scroll">
       {videos.length === 0 ? (
         <div className="empty-hint">
-          内容库为空。请在项目目录运行 <code>npm run pipeline</code> 拉取精选视频（需 .env 里的 YouTube API key）
+          内容加载中或为空，稍后再试
         </div>
       ) : ranked.length === 0 ? (
         <div className="empty-hint">当前筛选条件下没有匹配的精选，放宽难度或标签试试</div>

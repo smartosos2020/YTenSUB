@@ -4,3 +4,7 @@
  */
 export const CURATED_SNAPSHOT_URL =
   'https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/content-db.json'
+
+/** 每视频字幕地址前缀：CURATED_CUES_URL_BASE + videoId + '.json' */
+export const CURATED_CUES_URL_BASE =
+  'https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/cues/'

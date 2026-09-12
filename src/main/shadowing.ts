@@ -6,14 +6,19 @@ type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 // YouTube innertube 公开客户端 key（与 web 端一致，youtube-dl 同款，非机密）
 const INNERTUBE_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8'
 
+/** 抓取结果：成功给 cues；失败给原因（限流 429 要区别于"视频没字幕"） */
+export type EnglishCuesResult =
+  | { title: string; cues: Cue[]; category: string }
+  | { error: 'no-captions' | 'rate-limited' }
+
 /**
- * 主进程侧拉取视频英文 cue：innertube ANDROID 客户端拿字幕轨地址，再取 json3 原文。
+ * 主进程侧拉取视频英文 cue：innertube ANDROID 客户端拿字幕轨地址，再取原文。
  * 与 guest 内 EXTRACT_SCRIPT 同一接口，用于不打开浏览页也能生成跟读脚本。
  */
 export async function fetchEnglishCues(
   videoId: string,
   fetchFn: FetchLike
-): Promise<{ title: string; cues: Cue[]; category: string } | null> {
+): Promise<EnglishCuesResult> {
   try {
     const res = await fetchFn(`https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_KEY}`, {
       method: 'POST',
@@ -34,19 +39,20 @@ export async function fetchEnglishCues(
     // 优先人工英文字幕，其次自动生成（kind === 'asr'）
     const ens = tracks.filter((t) => (t.languageCode ?? '').toLowerCase().startsWith('en'))
     const en = ens.find((t) => t.kind !== 'asr') ?? ens[0]
-    if (!en?.baseUrl) return null
+    if (!en?.baseUrl) return { error: 'no-captions' }
     // baseUrl 已自带 fmt 参数（srv3 XML），原样抓取即可，parseCaptionText 自动判别 json3/XML；
     // 追加 fmt=json3 会产生重复 fmt 参数被 YouTube 拒掉
     const r = await fetchFn(en.baseUrl)
+    if (!r.ok) return { error: r.status === 429 ? 'rate-limited' : 'no-captions' }
     const cues = parseCaptionText(await r.text())
-    if (cues.length === 0) return null
+    if (cues.length === 0) return { error: 'no-captions' }
     return {
       title: pr.videoDetails?.title ?? '',
       cues,
       category: pr.microformat?.playerMicroformatRenderer?.category ?? ''
     }
   } catch {
-    return null
+    return { error: 'no-captions' }
   }
 }
 

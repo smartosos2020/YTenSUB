@@ -32,6 +32,7 @@ export const PROBE_SCRIPT = `
       videoId: m || null,
       url: location.href,
       time: v ? v.currentTime : 0,
+      duration: v ? (v.duration || 0) : 0,
       paused: v ? v.paused : true
     }))
     lastId = m

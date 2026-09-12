@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import * as Speech from 'expo-speech'
 import { lemmatize } from '../lib/lemma'
 import { translate, TranslateResult } from '../lib/translate'
 import { VocabItem, vocabAdd, vocabRemove } from '../lib/storage'
+import { ThemeColors, useTheme } from '../lib/theme'
+import { VolumeIcon } from './icons'
 
 interface Props {
   /** 点到的单词（表面形态）；null = 关闭 */
@@ -30,6 +32,8 @@ export default function TranslateSheet({
   onClose,
   onVocabChanged
 }: Props): React.JSX.Element {
+  const { dark, colors } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, dark), [colors, dark])
   const [result, setResult] = useState<TranslateResult | null | 'loading'>('loading')
   const [done, setDone] = useState('')
 
@@ -77,7 +81,10 @@ export default function TranslateSheet({
           <View style={styles.head}>
             <Text style={styles.word}>{word}</Text>
             <TouchableOpacity onPress={speak} style={styles.speakBtn}>
-              <Text style={styles.speakText}>🔊 发音</Text>
+              <View style={styles.speakRow}>
+                <VolumeIcon size={16} color="#3ecf8e" />
+                <Text style={styles.speakText}>发音</Text>
+              </View>
             </TouchableOpacity>
           </View>
           {result === 'loading' ? (
@@ -121,27 +128,29 @@ export default function TranslateSheet({
   )
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors, dark: boolean) =>
+  StyleSheet.create({
   mask: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: '#1c1c1e',
+    backgroundColor: dark ? '#1c1c1e' : c.card,
     borderTopLeftRadius: 14,
     borderTopRightRadius: 14,
     padding: 18,
     paddingBottom: 28
   },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  word: { color: '#fff', fontSize: 22, fontWeight: '600' },
+  word: { color: c.text, fontSize: 22, fontWeight: '600' },
   speakBtn: { padding: 6 },
+  speakRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   speakText: { color: '#3ecf8e', fontSize: 15 },
-  loading: { color: '#888', marginTop: 12 },
-  phonetic: { color: '#9aa0a6', marginTop: 8 },
-  translation: { color: '#e8e8e8', fontSize: 16, lineHeight: 24, marginTop: 8 },
-  source: { color: '#666', fontSize: 12, marginTop: 8 },
+  loading: { color: c.subtext, marginTop: 12 },
+  phonetic: { color: c.subtext, marginTop: 8 },
+  translation: { color: c.text, fontSize: 16, lineHeight: 24, marginTop: 8 },
+  source: { color: c.subtext, fontSize: 12, marginTop: 8 },
   actions: { flexDirection: 'row', gap: 10, marginTop: 16 },
   btn: {
     flex: 1,
-    backgroundColor: '#2c2c2e',
+    backgroundColor: dark ? '#2c2c2e' : 'rgba(0,0,0,0.06)',
     borderRadius: 8,
     paddingVertical: 10,
     alignItems: 'center'
@@ -149,6 +158,6 @@ const styles = StyleSheet.create({
   btnDanger: { backgroundColor: '#4a2424' },
   btnGhost: { backgroundColor: 'transparent' },
   btnDisabled: { opacity: 0.4 },
-  btnText: { color: '#e8e8e8', fontSize: 15 },
+  btnText: { color: c.text, fontSize: 15 },
   done: { color: '#3ecf8e', fontSize: 15, flex: 1, textAlign: 'center', alignSelf: 'center' }
 })

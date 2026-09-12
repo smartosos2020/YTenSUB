@@ -2,6 +2,8 @@ import React from 'react'
 import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import * as Speech from 'expo-speech'
 import { VocabItem, vocabRemove } from '../lib/storage'
+import { ThemeColors, useTheme } from '../lib/theme'
+import { VolumeIcon } from '../components/icons'
 import SyncSheet from '../components/SyncSheet'
 
 interface Props {
@@ -11,6 +13,8 @@ interface Props {
 
 /** 生词本：收藏的词元列表（新→旧），点喇叭发音，长按删除；右上与电脑同步 */
 export default function VocabScreen({ vocab, onVocabChanged }: Props): React.JSX.Element {
+  const { colors } = useTheme()
+  const styles = React.useMemo(() => makeStyles(colors), [colors])
   const [syncOpen, setSyncOpen] = React.useState(false)
   const confirmRemove = (item: VocabItem): void => {
     Alert.alert('删除生词', `确定删除「${item.text}」？`, [
@@ -44,8 +48,8 @@ export default function VocabScreen({ vocab, onVocabChanged }: Props): React.JSX
           >
             <View style={styles.row}>
               <Text style={styles.word}>{item.text}</Text>
-              <TouchableOpacity onPress={() => Speech.speak(item.text, { language: 'en-US' })}>
-                <Text style={styles.speak}>🔊</Text>
+              <TouchableOpacity onPress={() => Speech.speak(item.text, { language: 'en-US' })} hitSlop={6}>
+                <VolumeIcon size={18} color={colors.subtext} />
               </TouchableOpacity>
             </View>
             {item.phonetic ? <Text style={styles.phonetic}>[{item.phonetic}]</Text> : null}
@@ -63,8 +67,9 @@ export default function VocabScreen({ vocab, onVocabChanged }: Props): React.JSX
   )
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f0f0f' },
+const makeStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -72,24 +77,23 @@ const styles = StyleSheet.create({
     paddingRight: 14
   },
   header: {
-    color: '#e8e8e8',
+    color: c.text,
     fontSize: 18,
     fontWeight: '600',
     padding: 14
   },
-  syncBtn: { color: '#3ecf8e', fontSize: 14 },
+  syncBtn: { color: c.accent, fontSize: 14 },
   card: {
-    backgroundColor: '#1c1c1e',
+    backgroundColor: c.card,
     marginHorizontal: 12,
     marginBottom: 8,
     borderRadius: 8,
     padding: 12
   },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  word: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  speak: { fontSize: 16, padding: 4 },
-  phonetic: { color: '#9aa0a6', fontSize: 12, marginTop: 2 },
-  translation: { color: '#c8c8c8', fontSize: 14, lineHeight: 20, marginTop: 4 },
+  word: { color: c.text, fontSize: 17, fontWeight: '600' },
+  phonetic: { color: c.subtext, fontSize: 12, marginTop: 2 },
+  translation: { color: c.text, fontSize: 14, lineHeight: 20, marginTop: 4 },
   empty: { padding: 32, alignItems: 'center' },
-  emptyText: { color: '#666', fontSize: 14, textAlign: 'center' }
+  emptyText: { color: c.subtext, fontSize: 14, textAlign: 'center' }
 })

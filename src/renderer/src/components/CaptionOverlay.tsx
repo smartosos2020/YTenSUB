@@ -101,6 +101,15 @@ export default function CaptionOverlay({
     e.preventDefault()
   }
 
+  /** 悬停单词时摘掉拖动提示（否则原生 tooltip 会遮挡翻译弹窗），空白处才显示 */
+  const toggleDragTip = (e: React.MouseEvent): void => {
+    const el = e.currentTarget as HTMLElement
+    const onWord = !!(e.target as HTMLElement).closest('.word')
+    const has = el.hasAttribute('title')
+    if (onWord && has) el.removeAttribute('title')
+    else if (!onWord && !has) el.setAttribute('title', '按住空白处可拖动')
+  }
+
   if (hidden || idx === -1) return null
   const cue = cues[idx]
   const zhText = showZh ? (zhLines?.[idx] ?? null) : null
@@ -124,6 +133,7 @@ export default function CaptionOverlay({
           className="caption-line"
           style={{ ...lineStyle, fontSize, fontWeight: weight === 400 ? undefined : weight }}
           onMouseDown={onMouseDown}
+          onMouseOver={toggleDragTip}
           title="按住空白处可拖动"
         >
           <WordSpans
@@ -139,6 +149,7 @@ export default function CaptionOverlay({
             className="caption-line caption-zh"
             style={{ ...lineStyle, fontSize: zhSize }}
             onMouseDown={onMouseDown}
+            onMouseOver={toggleDragTip}
             title="按住空白处可拖动"
           >
             {zhText}

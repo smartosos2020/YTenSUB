@@ -1741,9 +1741,58 @@ button.popup-ctx-btn:hover {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  overflow-y: auto;
+  scrollbar-width: none; /* 可滚动但不显示滚动条 */
+  -ms-overflow-style: none;
 }
 
-.folder-bar > button,
+.folder-bar::-webkit-scrollbar {
+  display: none;
+}
+
+/* 左栏创作者搜索框（全部按钮下方） */
+.creator-search {
+  width: 100%;
+  height: 26px;
+  font-size: 12px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  margin-bottom: 4px;
+}
+
+/* 左栏"回到顶部"悬浮小火箭：吸附在列表右下角（button 前缀提特异性，压过全局按钮基础样式） */
+button.rocket-top {
+  position: sticky;
+  bottom: 8px;
+  align-self: flex-end;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--hover-bg);
+  color: var(--text-dim);
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  padding: 0;
+}
+
+button.rocket-top svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+button.rocket-top:hover {
+  color: var(--text);
+  filter: brightness(1.15);
+}
+
+.folder-bar > button:not(.rocket-top),
 .folder-row button {
   width: 100%;
   text-align: left;
@@ -1753,7 +1802,7 @@ button.popup-ctx-btn:hover {
   color: var(--text-dim);
 }
 
-.folder-bar > button:hover:not(:disabled),
+.folder-bar > button:not(.rocket-top):hover:not(:disabled),
 .folder-row button:hover:not(:disabled) {
   color: var(--text);
 }

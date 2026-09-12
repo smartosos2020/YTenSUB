@@ -145,3 +145,36 @@ export async function shadowingMerge(incoming: ShadowingScript[]): Promise<void>
   }
   await AsyncStorage.setItem(SHADOWING_KEY, JSON.stringify(Object.fromEntries(byId)))
 }
+
+// ---------- 收藏视频 ----------
+
+export interface FavoriteItem {
+  videoId: string
+  title: string
+  channel: string
+  addedAt: number
+}
+
+const FAV_KEY = 'ytensub:favorites'
+
+/** 读取收藏列表（新收藏在前） */
+export async function favList(): Promise<FavoriteItem[]> {
+  try {
+    const raw = await AsyncStorage.getItem(FAV_KEY)
+    const arr = raw ? (JSON.parse(raw) as FavoriteItem[]) : []
+    return [...arr].sort((a, b) => b.addedAt - a.addedAt)
+  } catch {
+    return []
+  }
+}
+
+/** 收藏/取消收藏切换；返回切换后是否已收藏 */
+export async function favToggle(item: { videoId: string; title: string; channel: string }): Promise<boolean> {
+  const list = await favList()
+  const exists = list.some((f) => f.videoId === item.videoId)
+  const next = exists
+    ? list.filter((f) => f.videoId !== item.videoId)
+    : [{ ...item, addedAt: Date.now() }, ...list]
+  await AsyncStorage.setItem(FAV_KEY, JSON.stringify(next))
+  return !exists
+}

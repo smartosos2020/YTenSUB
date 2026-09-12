@@ -1,17 +1,27 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react'
-import { AppState, PermissionsAndroid, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Animated, AppState, Easing, PermissionsAndroid, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { WebView, WebViewMessageEvent } from 'react-native-webview'
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake'
+import Svg, { Polygon, Polyline } from 'react-native-svg'
 import CaptionList, { alignZh } from '../components/CaptionList'
 import TranslateSheet from '../components/TranslateSheet'
 import { Cue, parseCaptionText } from '../lib/captions'
 import { EXTRACT_SCRIPT, PAUSE_SCRIPT, PLAY_DIAG_SCRIPT, PLAY_SCRIPT, PROBE_SCRIPT, QUALITY_LOW_SCRIPT, QUALITY_RESTORE_SCRIPT, seekScript, VISIBILITY_SPOOF } from '../lib/extract'
 import { capcacheGet, capcachePut } from '../lib/capcache'
 import { lemmatize } from '../lib/lemma'
-import { VocabItem } from '../lib/storage'
+import { favList, favToggle, VocabItem } from '../lib/storage'
+import { useTheme } from '../lib/theme'
+import { MoonIcon, SunIcon } from '../components/icons'
 import { BgPlayer, onMediaAction } from '../../modules/bg-player'
 
 const HOME = 'https://www.youtube.com'
+
+function fmtTime(s: number): string {
+  const t = Math.max(0, Math.floor(s || 0))
+  const m = Math.floor(t / 60)
+  const sec = t % 60
+  return `${m}:${String(sec).padStart(2, '0')}`
+}
 // 桌面 UA：拿桌面版 watch 页面，行为与桌面端提取链路一致
 const DESKTOP_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
@@ -41,6 +51,7 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
   }, [openVideoId, onVideoHandled])
   const [videoId, setVideoId] = useState('')
   const [videoTitle, setVideoTitle] = useState('')
+  const [videoChannel, setVideoChannel] = useState('')
   const [time, setTime] = useState(0)
   const [cues, setCues] = useState<Cue[]>([])
   const [zhLines, setZhLines] = useState<(string | null)[] | null>(null)
@@ -48,6 +59,17 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
   const [paused, setPaused] = useState(true)
   // 字幕区收缩：收缩后网页区占满剩余空间
   const [subsCollapsed, setSubsCollapsed] = useState(false)
+  // 双语/英文切换（传给 CaptionList）
+  const [showZh, setShowZh] = useState(true)
+  // 当前视频是否已收藏
+  const [isFav, setIsFav] = useState(false)
+  const { dark, colors, toggle } = useTheme()
+  // 扩缩箭头旋转动画（0=指下/展开，1=旋转180°/收起）
+  const chevAnim = useRef(new Animated.Value(0)).current
+  // 字幕区扩缩：player 高度动画（展开 240，收起 = 总高 - 选项栏高）
+  const playerH = useRef(new Animated.Value(240)).current
+  const rootH = useRef(0)
+  const barH = useRef(0)
   const lastExtractRef = useRef('')
   // 后台续播状态：用户在前台主动暂停过则为 true；play 注入限流
   const userPausedRef = useRef(true)
@@ -117,6 +139,58 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
   /** 生词词元集合：字幕高亮 + 弹窗"已收藏"判断 */
   const knownLemmas = useMemo(() => new Set(vocab.map((v) => lemmatize(v.text))), [vocab])
 
+  // 扩缩箭头：收起时旋转 180°，200ms 过渡
+  React.useEffect(() => {
+    Animated.timing(chevAnim, { toValue: subsCollapsed ? 1 : 0, duration: 200, useNativeDriver: true }).start()
+  }, [subsCollapsed, chevAnim])
+  const chevSpin = chevAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] })
+
+  /** 字幕区扩缩：player 高度 250ms 缓出动画（开始快收尾慢）；布局未量到时不做动画 */
+  const toggleSubs = (): void => {
+    const next = !subsCollapsed
+    setSubsCollapsed(next)
+    if (rootH.current > 0 && barH.current > 0) {
+      Animated.timing(playerH, {
+        toValue: next ? rootH.current - barH.current : 240,
+        duration: 250,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false
+      }).start()
+    } else {
+      playerH.setValue(240)
+    }
+  }
+
+  // 双语/英文分段滑块位置动画
+  const [segW, setSegW] = useState(0)
+  const segAnim = useRef(new Animated.Value(0)).current
+  React.useEffect(() => {
+    Animated.timing(segAnim, { toValue: showZh ? 0 : 1, duration: 220, useNativeDriver: true }).start()
+  }, [showZh, segAnim])
+  // 容器 padding 2 无 border：选项/滑块宽 = (外宽 - 4)/2；onLayout 量到前兜底 26 防首帧塌陷
+  const segItemW = segW > 0 ? (segW - 4) / 2 : 26
+
+  // 换视频时查一次是否已收藏
+  React.useEffect(() => {
+    if (!videoId) {
+      setIsFav(false)
+      return
+    }
+    let alive = true
+    void favList().then((list) => {
+      if (alive) setIsFav(list.some((f) => f.videoId === videoId))
+    })
+    return () => {
+      alive = false
+    }
+  }, [videoId])
+
+  /** 悬浮星标：收藏/取消收藏当前视频 */
+  const onFavPress = (): void => {
+    if (!videoId) return
+    void favToggle({ videoId, title: videoTitle, channel: videoChannel }).then(setIsFav)
+  }
+
   /** 抓取字幕正文（RN 侧全局 fetch，无 cookie 无浏览器指纹），失败静默 */
   const fetchText = async (u: string | null): Promise<string | null> => {
     if (!u) return null
@@ -155,6 +229,7 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
     setCues(en)
     setZhLines(en.length && zh.length ? alignZh(en, zh) : null)
     setVideoTitle(p.title ?? '')
+    setVideoChannel(p.channel ?? '')
     // 写入本地字幕缓存：下次打开同视频秒出（空字幕不写，留给下次重试）
     void capcachePut(p.videoId, {
       title: p.title ?? '',
@@ -165,7 +240,7 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
 
   const onMessage = useCallback(
     (e: WebViewMessageEvent): void => {
-      let msg: { kind?: string; videoId?: string; time?: number; paused?: boolean; payload?: Parameters<typeof handleExtract>[0] }
+      let msg: { kind?: string; videoId?: string; time?: number; duration?: number; paused?: boolean; payload?: Parameters<typeof handleExtract>[0] }
       try {
         msg = JSON.parse(e.nativeEvent.data)
       } catch {
@@ -198,6 +273,7 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
           lastExtractRef.current = id
           setCues([])
           setZhLines(null)
+          setVideoChannel('') // 新视频的频道名等提取回调回填
           void capcacheGet(id).then((hit) => {
             if (hit) {
               setCues(hit.en)
@@ -242,9 +318,14 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
     : null
 
   return (
-    <View style={styles.container}>
-      {/* 顶部区域即 WebView（YouTube 页面内部导航），无地址栏 */}
-      <View style={subsCollapsed ? styles.playerExpanded : styles.player}>
+    <View
+      style={[styles.container, { backgroundColor: colors.bg }]}
+      onLayout={(e) => {
+        rootH.current = e.nativeEvent.layout.height
+      }}
+    >
+      {/* 顶部区域即 WebView（用 YouTube 自带播放控件）；高度由扩缩动画驱动，期间 WebView 持续 resize 属预期 */}
+      <Animated.View style={[styles.player, { height: playerH }]}>
         <WebView
           ref={wvRef}
           source={{ uri: url }}
@@ -257,16 +338,69 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
           allowsFullscreenVideo
           javaScriptEnabled
         />
-      </View>
-      {/* 字幕区收缩/展开开关（纯图标）：收缩后网页区占满 */}
-      <TouchableOpacity
-        style={styles.subsToggle}
-        onPress={() => setSubsCollapsed(!subsCollapsed)}
-        activeOpacity={0.7}
+      </Animated.View>
+      {/* 字幕选项栏：左=扩缩，右=日夜切换 + 双语/英文 */}
+      <View
+        style={[styles.optBar, { backgroundColor: colors.bar, borderBottomColor: colors.border }]}
+        onLayout={(e) => {
+          barH.current = e.nativeEvent.layout.height
+        }}
       >
-        <Text style={styles.subsToggleText}>{subsCollapsed ? '▲' : '▼'}</Text>
-      </TouchableOpacity>
-      {!subsCollapsed && (
+        <TouchableOpacity onPress={toggleSubs} activeOpacity={0.7} hitSlop={8} style={styles.chevBtn}>
+          <Animated.View style={{ transform: [{ rotate: chevSpin }] }}>
+            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.subtext} strokeWidth={2}>
+              <Polyline points="6 9 12 15 18 9" strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+          </Animated.View>
+        </TouchableOpacity>
+        <View style={styles.optRight}>
+          <TouchableOpacity
+            onPress={toggle}
+            activeOpacity={0.8}
+            style={[
+              styles.themePill,
+              { backgroundColor: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)', borderColor: colors.border }
+            ]}
+          >
+            {dark ? <MoonIcon size={15} color={colors.text} /> : <SunIcon size={15} color={colors.text} />}
+          </TouchableOpacity>
+          <View
+            style={[
+              styles.seg,
+              { backgroundColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' }
+            ]}
+            onLayout={(e) => setSegW(e.nativeEvent.layout.width)}
+          >
+            <Animated.View
+              style={[
+                styles.segSlider,
+                {
+                  width: segItemW,
+                  backgroundColor: colors.accent,
+                  transform: [{ translateX: Animated.multiply(segAnim, segItemW) }]
+                }
+              ]}
+            />
+            {([true, false] as const).map((zh) => {
+              const on = showZh === zh
+              return (
+                <TouchableOpacity
+                  key={zh ? 'zh' : 'en'}
+                  onPress={() => setShowZh(zh)}
+                  activeOpacity={0.8}
+                  style={[styles.segItem, { width: segItemW }]}
+                >
+                  <Text style={[styles.segText, { color: on ? '#FFFFFF' : colors.subtext }, on && styles.segTextOn]}>
+                    {zh ? '双' : '英'}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+        </View>
+      </View>
+      {/* 字幕区常挂载：player 高度动画时字幕区被挤压/释放（overflow 隐藏） */}
+      <View style={styles.subsArea}>
         <CaptionList
           cues={cues}
           zhLines={zhLines}
@@ -277,8 +411,13 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
             setSel({ word, sentence })
           }}
           onSeek={(t) => wvRef.current?.injectJavaScript(seekScript(t))}
+          showZh={showZh}
+          vocab={vocab}
+          onVocabChanged={onVocabChanged}
+          onInlineOpen={() => wvRef.current?.injectJavaScript(PAUSE_SCRIPT)} // 当前句卡内点词：暂停视频
+          onInlineClose={() => wvRef.current?.injectJavaScript(PLAY_SCRIPT)} // 手动关闭内嵌卡：恢复播放
         />
-      )}
+      </View>
       <TranslateSheet
         word={sel?.word ?? null}
         sentence={sel?.sentence ?? ''}
@@ -292,26 +431,72 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
         }}
         onVocabChanged={onVocabChanged}
       />
+      {/* 悬浮收藏：播放中才显示，底部导航上方；无背景无边框，只留星形 icon */}
+      {videoId !== '' && (
+        <TouchableOpacity style={styles.fab} activeOpacity={0.8} onPress={onFavPress}>
+          <Svg width={22} height={22} viewBox="0 0 24 24">
+            <Polygon
+              points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+              fill={isFav ? colors.accent : 'none'}
+              stroke={isFav ? colors.accent : colors.subtext}
+              strokeWidth={1.9}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </Svg>
+        </TouchableOpacity>
+      )}
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f0f0f' },
-  player: { height: 240, backgroundColor: '#000' },
-  playerExpanded: { flex: 1, backgroundColor: '#000' },
-  subsToggle: {
-    backgroundColor: '#171717',
-    paddingVertical: 8,
+  container: { flex: 1 },
+  player: { backgroundColor: '#000' },
+  subsArea: { flex: 1, overflow: 'hidden' },
+  optBar: {
+    flexDirection: 'row',
     alignItems: 'center',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#2c2c2e'
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 3,
+    borderBottomWidth: StyleSheet.hairlineWidth
   },
-  subsToggleText: { color: '#9aa0a6', fontSize: 13 },
-  title: {
-    color: '#9aa0a6',
-    fontSize: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 6
+  chevBtn: { padding: 4 },
+  optRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  themePill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 26,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  seg: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 999,
+    height: 26,
+    padding: 2
+  },
+  segSlider: {
+    position: 'absolute',
+    top: 2,
+    bottom: 2,
+    left: 2,
+    borderRadius: 999
+  },
+  segItem: { alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch', zIndex: 1 },
+  segText: { fontSize: 12 },
+  segTextOn: { fontWeight: '700' },
+  fab: {
+    position: 'absolute',
+    right: 16,
+    bottom: 76,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center'
   }
 })

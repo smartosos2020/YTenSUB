@@ -20,212 +20,254 @@
   {
     "name": "EnglishClass101",
     "handle": "@EnglishClass101",
-    "topic": "英语教学"
+    "topic": "英语教学",
+    "channelId": "UCeTVoczn9NOZA9blls3YgUg"
   },
   {
     "name": "mmmEnglish",
     "handle": "@mmmEnglish",
-    "topic": "英语教学"
+    "topic": "英语教学",
+    "channelId": "UCrRiVfHqBIIvSgKmgnSY66g"
   },
   {
     "name": "Speak English With Vanessa",
     "handle": "@SpeakEnglishWithVanessa",
-    "topic": "英语教学"
+    "topic": "英语教学",
+    "channelId": "UCxJGMJbjokfnr2-s4_RXPxQ"
   },
   {
     "name": "Luke's English Podcast",
     "handle": "@LukeEnglishPodcast",
-    "topic": "英语教学"
+    "topic": "英语教学",
+    "channelId": "UCiJfjXJlVvDmBXu3XnU8Sfw"
   },
   {
     "name": "Rachel's English",
     "handle": "@rachelsenglish",
-    "topic": "英语教学/发音"
+    "topic": "英语教学/发音",
+    "channelId": "UCvn_XCl_mgQmt3sD753zdJA"
   },
   {
     "name": "English with Lucy",
     "handle": "@EnglishwithLucy",
-    "topic": "英语教学"
+    "topic": "英语教学",
+    "channelId": "UCz4tgANd4yy8Oe0iXCdSWfA"
   },
   {
     "name": "engVid",
     "handle": "@engvidJamesESL",
-    "topic": "英语教学"
+    "topic": "英语教学",
+    "channelId": "UCnWr7iLgHs7WTd6Y-oC5Keg"
   },
   {
     "name": "Go Natural English",
     "handle": "@GoNaturalEnglish",
-    "topic": "英语教学"
+    "topic": "英语教学",
+    "channelId": "UC9Pbt3q-ihROg1lmmmQdU2w"
   },
   {
     "name": "Oxford Online English",
     "handle": "@OxfordOnlineEnglish",
-    "topic": "英语教学"
+    "topic": "英语教学",
+    "channelId": "UCNbeSPp8RYKmHUliYBUDizg"
   },
   {
     "name": "English Singsing",
     "handle": "@EnglishSingsing",
-    "topic": "英语入门"
+    "topic": "英语入门",
+    "channelId": "UCGwA4GjY4nGMIYvaJiA0EGA"
   },
   {
     "name": "VOA Learning English",
     "handle": "@VOALearningEnglish",
-    "topic": "慢速英语/新闻"
+    "topic": "慢速英语/新闻",
+    "channelId": "UCKyTokYo0nK2OA-az-sDijA"
   },
   {
     "name": "TED",
     "handle": "@TED",
-    "topic": "演讲"
+    "topic": "演讲",
+    "channelId": "UCAuUUnT6oDeKwE6v1NGQxug"
   },
   {
     "name": "TEDx Talks",
     "handle": "@TEDx",
-    "topic": "演讲"
+    "topic": "演讲",
+    "channelId": "UCsT0YIqwnpJCM-mx7-gSA4Q"
   },
   {
     "name": "TED-Ed",
     "handle": "@TEDEd",
-    "topic": "科普动画"
+    "topic": "科普动画",
+    "channelId": "UCsooa4yRKGN_zEE8iknghZA"
   },
   {
     "name": "The Ezra Klein Show",
     "handle": "@ezraklein",
-    "topic": "访谈/新闻"
+    "topic": "访谈/新闻",
+    "channelId": "UCO17ydwxqZbmyJ5_-hLlbOg"
   },
   {
     "name": "All-In Podcast",
     "handle": "@allin",
-    "topic": "商业/科技"
+    "topic": "商业/科技",
+    "channelId": "UCESLZhusAkFfsNsApnjF_Cg"
   },
   {
     "name": "The Atlantic",
     "handle": "@TheAtlantic",
-    "topic": "新闻/文化"
+    "topic": "新闻/文化",
+    "channelId": "UCK0z0_5uL7mb9IjntOKi5XQ"
   },
   {
     "name": "BBC World Service",
     "handle": "@BBCWorldService",
-    "topic": "新闻"
+    "topic": "新闻",
+    "channelId": "UCQXHTFnQYFTqN0MqmNh9EIA"
   },
   {
     "name": "CNBC",
     "handle": "@CNBC",
-    "topic": "商业/新闻"
+    "topic": "商业/新闻",
+    "channelId": "UCvJJ_dzjViJCoLf5uKUTwoA"
   },
   {
     "name": "Vox",
     "handle": "@Vox",
-    "topic": "科普/新闻"
+    "topic": "科普/新闻",
+    "channelId": "UCLXo7UDZvByw2ixzpQCufnA"
   },
   {
     "name": "Veritasium",
     "handle": "@veritasium",
-    "topic": "科普"
+    "topic": "科普",
+    "channelId": "UCHnyfMqiRRG1u-2MsSQLbXA"
   },
   {
     "name": "Kurzgesagt – In a Nutshell",
     "handle": "@kurzgesagt",
-    "topic": "科普"
+    "topic": "科普",
+    "channelId": "UCsXVk37bltHxD1rDPwtNM8Q"
   },
   {
     "name": "CrashCourse",
     "handle": "@crashcourse",
-    "topic": "教育"
+    "topic": "教育",
+    "channelId": "UCX6b17PVsYBQ0ip5gyeme-Q"
   },
   {
     "name": "Peter H. Diamandis",
     "handle": "@PeterDiamandis",
-    "topic": "科技/未来"
+    "topic": "科技/未来",
+    "channelId": "UCvxm0qTrGN_1LMYgUaftWyQ"
   },
   {
     "name": "Y Combinator",
     "handle": "@ycombinator",
-    "topic": "商业/创业"
+    "topic": "商业/创业",
+    "channelId": "UCcefcZRL2oaA_uBNeo5UOWg"
   },
   {
     "name": "AsapSCIENCE",
     "handle": "@AsapSCIENCE",
-    "topic": "科普"
+    "topic": "科普",
+    "channelId": "UCC552Sd-3nyi_tk2BudLUzA"
   },
   {
     "name": "MinuteEarth",
     "handle": "@MinuteEarth",
-    "topic": "科普"
+    "topic": "科普",
+    "channelId": "UCeiYXex_fwgYDonaTcSIk6w"
   },
   {
     "name": "SciShow",
     "handle": "@SciShow",
-    "topic": "科普"
+    "topic": "科普",
+    "channelId": "UCZYTClx2T1of7BRZ86-8fow"
   },
   {
     "name": "It's Okay To Be Smart",
     "handle": "@okaytobesmart",
-    "topic": "科普"
+    "topic": "科普",
+    "channelId": "UCH4BNI0-FOK2dMXoFtViWHw"
   },
   {
     "name": "Mark Rober",
     "handle": "@MarkRober",
-    "topic": "科普/工程"
+    "topic": "科普/工程",
+    "channelId": "UCY1kMZp36IQSyNx_9h4mpCg"
   },
   {
     "name": "SmarterEveryDay",
     "handle": "@smartereveryday",
-    "topic": "科普/工程"
+    "topic": "科普/工程",
+    "channelId": "UC6107grRI4m0o2-emgoDnAA"
   },
   {
     "name": "Vsauce",
     "handle": "@Vsauce",
-    "topic": "科普/思维"
+    "topic": "科普/思维",
+    "channelId": "UC6nSFpj9HTCZ5t-N3Rm3-HA"
   },
   {
     "name": "Bloomberg",
     "handle": "@Bloomberg",
-    "topic": "商业/新闻"
+    "topic": "商业/新闻",
+    "channelId": "UCIALMKvObZNtJ6AmdCLP7Lg"
   },
   {
     "name": "Wall Street Journal",
     "handle": "@wsj",
-    "topic": "商业/新闻"
+    "topic": "商业/新闻",
+    "channelId": "UCK7tptUDHh-RYDsdxO1-5QQ"
   },
   {
     "name": "Harvard Business Review",
     "handle": "@HarvardBusinessReview",
-    "topic": "商业/管理"
+    "topic": "商业/管理",
+    "channelId": "UCWo4IA01TXzBeGJJKWHOG9g"
   },
   {
     "name": "Big Think",
     "handle": "@bigthink",
-    "topic": "思维/访谈"
+    "topic": "思维/访谈",
+    "channelId": "UCvQECJukTDE2i6aCoMnS-Vg"
   },
   {
     "name": "ABC News",
     "handle": "@ABCNews",
-    "topic": "新闻"
+    "topic": "新闻",
+    "channelId": "UCBi2mrWuNuyYy4gbM6fU18Q"
   },
   {
     "name": "CBS Mornings",
     "handle": "@CBSMornings",
-    "topic": "新闻"
+    "topic": "新闻",
+    "channelId": "UC-SJ6nODDmufqBzPBwCvYvQ"
   },
   {
     "name": "NBC News",
     "handle": "@NBCNews",
-    "topic": "新闻"
+    "topic": "新闻",
+    "channelId": "UCeY0bbntWzzVIaj2z3QigXg"
   },
   {
     "name": "DW News",
     "handle": "@dwnews",
-    "topic": "新闻"
+    "topic": "新闻",
+    "channelId": "UCknLrEdhRCp1aegoMqRaCZg"
   },
   {
     "name": "Al Jazeera English",
     "handle": "@aljazeeraenglish",
-    "topic": "新闻"
+    "topic": "新闻",
+    "channelId": "UCNye-wNBqNL5ZzHSJj3l8Bg"
   },
   {
     "name": "Kara and Nate",
     "handle": "@KaraandNate",
-    "topic": "生活/旅行"
+    "topic": "生活/旅行",
+    "channelId": "UC4ijq8Cg-8zQKx8OH12dUSw"
   },
   {
     "name": "Lost LeBlanc",

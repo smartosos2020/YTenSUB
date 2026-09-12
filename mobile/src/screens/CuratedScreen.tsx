@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import { CuratedVideo, loadCurated, rankCurated } from '../lib/curated'
+import { CuratedVideo, CURATED_CUES_URL_BASE, loadCurated, rankCurated } from '../lib/curated'
 import { capcachePut } from '../lib/capcache'
+import { ThemeColors, useTheme } from '../lib/theme'
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 const PAGE_SIZE = 20
@@ -19,6 +20,8 @@ interface Props {
 
 /** 精选页：按水平/标签/创作者筛选远端内容库，点开去浏览页播放 */
 export default function CuratedScreen({ onOpenVideo }: Props): React.JSX.Element {
+  const { dark, colors } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, dark), [colors, dark])
   const [videos, setVideos] = useState<CuratedVideo[]>([])
   const [level, setLevel] = useState<string | null>(null)
   const [tags, setTags] = useState<string[]>([])
@@ -51,10 +54,19 @@ export default function CuratedScreen({ onOpenVideo }: Props): React.JSX.Element
   const creators = useMemo(() => [...new Set(videos.map((v) => v.channel).filter(Boolean))], [videos])
   const allTags = useMemo(() => [...new Set(videos.flatMap((v) => v.tags))], [videos])
 
-  /** 打开精选视频：快照带字幕就先写本地缓存，浏览页直接命中（限流也秒出） */
-  const openVideo = (v: CuratedVideo): void => {
-    if (v.cues && v.cues.length > 0) {
-      void capcachePut(v.videoId, { title: v.title, en: v.cues, zh: null }).catch(() => {})
+  /** 打开精选视频：字幕优先快照内嵌的，没有则从 R2 按需取后写本地缓存 */
+  const openVideo = async (v: CuratedVideo): Promise<void> => {
+    let cues = v.cues
+    if ((!cues || cues.length === 0) && CURATED_CUES_URL_BASE) {
+      try {
+        const r = await fetch(`${CURATED_CUES_URL_BASE}${v.videoId}.json`)
+        if (r.ok) cues = (await r.json()) as CuratedVideo['cues']
+      } catch {
+        /* 取不到就走在线抓取链路 */
+      }
+    }
+    if (cues && cues.length > 0) {
+      void capcachePut(v.videoId, { title: v.title, en: cues, zh: null }).catch(() => {})
     }
     onOpenVideo(v.videoId)
   }
@@ -103,11 +115,13 @@ export default function CuratedScreen({ onOpenVideo }: Props): React.JSX.Element
         style={{ flex: 1 }}
         data={items}
         keyExtractor={(v) => v.videoId}
+        numColumns={2}
+        columnWrapperStyle={styles.row}
         ListEmptyComponent={
           <Text style={styles.empty}>{videos.length === 0 ? '内容库加载中或为空（稍后再试）' : '没有匹配的精选，放宽筛选试试'}</Text>
         }
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.card} activeOpacity={0.8} onPress={() => openVideo(item)}>
+          <TouchableOpacity style={styles.card} activeOpacity={0.8} onPress={() => void openVideo(item)}>
             <View>
               <Image source={{ uri: item.thumbnail }} style={styles.thumb} />
               {item.level && <Text style={styles.badgeLv}>{item.level}</Text>}
@@ -141,30 +155,44 @@ export default function CuratedScreen({ onOpenVideo }: Props): React.JSX.Element
   )
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f0f0f' },
-  header: { color: '#e8e8e8', fontSize: 18, fontWeight: '600', padding: 14, paddingBottom: 4 },
+const makeStyles = (c: ThemeColors, dark: boolean) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
+  header: { color: c.text, fontSize: 18, fontWeight: '600', padding: 14, paddingBottom: 4 },
   segRow: { flexGrow: 0, paddingHorizontal: 10, marginBottom: 4 },
-  seg: { backgroundColor: '#1c1c1e', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginHorizontal: 2 },
-  segOn: { backgroundColor: '#1d4536', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginHorizontal: 2 },
-  segText: { color: '#e8e8e8', fontSize: 12 },
-  empty: { color: '#666', textAlign: 'center', marginTop: 40, fontSize: 13 },
-  card: { backgroundColor: '#1c1c1e', marginHorizontal: 12, marginBottom: 10, borderRadius: 8, overflow: 'hidden' },
+  seg: { backgroundColor: c.card, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginHorizontal: 2 },
+  segOn: {
+    backgroundColor: dark ? '#1d4536' : 'rgba(0,122,255,0.15)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginHorizontal: 2
+  },
+  segText: { color: c.text, fontSize: 12 },
+  empty: { color: c.subtext, textAlign: 'center', marginTop: 40, fontSize: 13 },
+  row: { paddingHorizontal: 12, gap: 8 },
+  card: {
+    flex: 1,
+    backgroundColor: c.card,
+    marginBottom: 10,
+    borderRadius: 8,
+    overflow: 'hidden'
+  },
   thumb: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' },
   badgeLv: {
-    position: 'absolute', top: 6, left: 6,
-    backgroundColor: '#3ecf8e', color: '#fff', fontSize: 11,
-    paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, overflow: 'hidden'
+    position: 'absolute', top: 5, left: 5,
+    backgroundColor: '#3ecf8e', color: '#fff', fontSize: 10,
+    paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, overflow: 'hidden'
   },
   badgeDur: {
-    position: 'absolute', top: 6, right: 6,
-    backgroundColor: '#3ecf8e', color: '#fff', fontSize: 11,
-    paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, overflow: 'hidden'
+    position: 'absolute', top: 5, right: 5,
+    backgroundColor: '#3ecf8e', color: '#fff', fontSize: 10,
+    paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, overflow: 'hidden'
   },
-  title: { color: '#e8e8e8', fontSize: 14, lineHeight: 20, paddingHorizontal: 10, paddingTop: 8 },
-  channel: { color: '#9aa0a6', fontSize: 12, flex: 1, marginRight: 8 },
+  title: { color: c.text, fontSize: 12, lineHeight: 17, paddingHorizontal: 8, paddingTop: 6 },
+  channel: { color: c.subtext, fontSize: 11, paddingHorizontal: 8, paddingBottom: 8, paddingTop: 2 },
   pager: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 24, paddingVertical: 14 },
-  pagerBtn: { color: '#3ecf8e', fontSize: 14 },
-  pagerOff: { color: '#555', fontSize: 14 },
-  pagerInfo: { color: '#9aa0a6', fontSize: 13 }
+  pagerBtn: { color: c.accent, fontSize: 14 },
+  pagerOff: { color: c.subtext, fontSize: 14 },
+  pagerInfo: { color: c.subtext, fontSize: 13 }
 })

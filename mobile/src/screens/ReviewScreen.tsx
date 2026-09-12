@@ -1,7 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import * as Speech from 'expo-speech'
 import { MASTERED_LEVEL, VocabItem, vocabReview } from '../lib/storage'
+import { ThemeColors, useTheme } from '../lib/theme'
+import { VolumeIcon } from '../components/icons'
 
 function isDue(v: VocabItem, now: number): boolean {
   return v.reviewDue === undefined || v.reviewDue <= now
@@ -25,6 +27,8 @@ interface Props {
 
 /** 复习页：卡片式间隔重复。右滑=认识（升级），左滑=不认识（回 0 级，10 分钟后再见） */
 export default function ReviewScreen({ vocab, onVocabChanged }: Props): React.JSX.Element {
+  const { colors } = useTheme()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const [queue, setQueue] = useState<VocabItem[] | null>(null)
   const [total, setTotal] = useState(0)
   const [revealed, setRevealed] = useState(true)
@@ -104,8 +108,8 @@ export default function ReviewScreen({ vocab, onVocabChanged }: Props): React.JS
           <TouchableOpacity activeOpacity={0.9} onPress={() => setRevealed(!revealed)}>
             <View style={styles.wordRow}>
               <Text style={styles.word}>{item.text}</Text>
-              <TouchableOpacity onPress={() => Speech.speak(item.text, { language: 'en-US' })}>
-                <Text style={styles.speak}>🔊</Text>
+              <TouchableOpacity onPress={() => Speech.speak(item.text, { language: 'en-US' })} hitSlop={6}>
+                <VolumeIcon size={22} color={colors.subtext} />
               </TouchableOpacity>
             </View>
             {item.phonetic ? <Text style={styles.phonetic}>[{item.phonetic}]</Text> : null}
@@ -132,20 +136,21 @@ export default function ReviewScreen({ vocab, onVocabChanged }: Props): React.JS
   )
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f0f0f' },
+const makeStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingRight: 14
   },
-  header: { color: '#e8e8e8', fontSize: 18, fontWeight: '600', padding: 14 },
-  progress: { color: '#9aa0a6', fontSize: 13 },
-  hint: { color: '#666', fontSize: 12, paddingHorizontal: 14, marginBottom: 8 },
+  header: { color: c.text, fontSize: 18, fontWeight: '600', padding: 14 },
+  progress: { color: c.subtext, fontSize: 13 },
+  hint: { color: c.subtext, fontSize: 12, paddingHorizontal: 14, marginBottom: 8 },
   center: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
   card: {
-    backgroundColor: '#1c1c1e',
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 24,
     minHeight: 180,
@@ -153,17 +158,16 @@ const styles = StyleSheet.create({
   },
   tint: { borderRadius: 12 },
   wordRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  word: { color: '#fff', fontSize: 26, fontWeight: '600' },
-  speak: { fontSize: 20, padding: 4 },
-  phonetic: { color: '#9aa0a6', marginTop: 4 },
-  translation: { color: '#e8e8e8', fontSize: 17, lineHeight: 26, marginTop: 14 },
-  sentence: { color: '#9aa0a6', fontSize: 13, lineHeight: 20, marginTop: 10 },
-  revealHint: { color: '#666', fontSize: 13, marginTop: 20, textAlign: 'center' },
+  word: { color: c.text, fontSize: 26, fontWeight: '600' },
+  phonetic: { color: c.subtext, marginTop: 4 },
+  translation: { color: c.text, fontSize: 17, lineHeight: 26, marginTop: 14 },
+  sentence: { color: c.subtext, fontSize: 13, lineHeight: 20, marginTop: 10 },
+  revealHint: { color: c.subtext, fontSize: 13, marginTop: 20, textAlign: 'center' },
   actions: { flexDirection: 'row', gap: 12, marginTop: 20 },
   btn: { flex: 1, borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
   btnNo: { backgroundColor: '#4a2424' },
   btnYes: { backgroundColor: '#1d4536' },
   btnText: { color: '#e8e8e8', fontSize: 15 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  emptyText: { color: '#666', fontSize: 14 }
+  emptyText: { color: c.subtext, fontSize: 14 }
 })

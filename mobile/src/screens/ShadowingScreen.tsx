@@ -3,6 +3,7 @@ import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native
 import * as Speech from 'expo-speech'
 import { MASTERED_LEVEL, ShadowingScript, shadowingList, VocabItem } from '../lib/storage'
 import { lemmatize } from '../lib/lemma'
+import { ThemeColors, useTheme } from '../lib/theme'
 
 /** 每句预估朗读时长（秒）：按词数估算，下限 2.5s；与桌面端同规则 */
 function estDuration(text: string): number {
@@ -16,6 +17,8 @@ interface Props {
 
 /** 跟读页：列表选脚本 → 提词器播放（自动滚动 + 速度调节 + 每句 TTS 示范） */
 export default function ShadowingScreen({ vocab }: Props): React.JSX.Element {
+  const { dark, colors } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, dark), [colors, dark])
   const [scripts, setScripts] = useState<ShadowingScript[]>([])
   const [script, setScript] = useState<ShadowingScript | null>(null)
   const [position, setPosition] = useState(0)
@@ -212,45 +215,46 @@ export default function ShadowingScreen({ vocab }: Props): React.JSX.Element {
 }
 
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f0f0f' },
-  header: { color: '#e8e8e8', fontSize: 18, fontWeight: '600', padding: 14 },
+const makeStyles = (c: ThemeColors, dark: boolean) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
+  header: { color: c.text, fontSize: 18, fontWeight: '600', padding: 14 },
   headerRow: { flexDirection: 'row', alignItems: 'center', padding: 10, gap: 10 },
-  back: { color: '#3ecf8e', fontSize: 15 },
-  headerTitle: { color: '#e8e8e8', fontSize: 14, flex: 1 },
+  back: { color: c.accent, fontSize: 15 },
+  headerTitle: { color: c.text, fontSize: 14, flex: 1 },
   scriptCard: {
-    backgroundColor: '#1c1c1e',
+    backgroundColor: c.card,
     marginHorizontal: 12,
     marginBottom: 8,
     borderRadius: 8,
     padding: 12
   },
-  scriptTitle: { color: '#e8e8e8', fontSize: 15, lineHeight: 21 },
-  scriptMeta: { color: '#9aa0a6', fontSize: 12, marginTop: 4 },
+  scriptTitle: { color: c.text, fontSize: 15, lineHeight: 21 },
+  scriptMeta: { color: c.subtext, fontSize: 12, marginTop: 4 },
   empty: { padding: 32, alignItems: 'center' },
-  emptyText: { color: '#666', fontSize: 13, textAlign: 'center', lineHeight: 22 },
+  emptyText: { color: c.subtext, fontSize: 13, textAlign: 'center', lineHeight: 22 },
   script: { flex: 1 },
-  scene: { color: '#9aa0a6', fontSize: 12, paddingHorizontal: 14, paddingTop: 12 },
+  scene: { color: c.subtext, fontSize: 12, paddingHorizontal: 14, paddingTop: 12 },
   line: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderLeftWidth: 2,
     borderLeftColor: 'transparent'
   },
-  lineActive: { backgroundColor: '#1a2a24', borderLeftColor: '#3ecf8e' },
-  en: { color: '#e8e8e8', fontSize: 17, lineHeight: 26 },
-  zh: { color: '#9aa0a6', fontSize: 13, lineHeight: 20, marginTop: 2 },
+  lineActive: { backgroundColor: c.activeCard, borderLeftColor: '#3ecf8e' },
+  en: { color: c.text, fontSize: 17, lineHeight: 26 },
+  zh: { color: c.subtext, fontSize: 13, lineHeight: 20, marginTop: 2 },
   wordKnown: { color: '#f0a35e' },
   playerBar: {
-    backgroundColor: '#171717',
+    backgroundColor: c.bar,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#2c2c2e',
+    borderTopColor: c.border,
     paddingBottom: 10
   },
-  progressTrack: { height: 3, backgroundColor: '#2c2c2e' },
+  progressTrack: { height: 3, backgroundColor: dark ? '#2c2c2e' : 'rgba(0,0,0,0.1)' },
   progressFill: { height: 3, backgroundColor: '#3ecf8e' },
   controls: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 8 },
   ctrlBtn: { paddingVertical: 8, paddingHorizontal: 12 },
-  ctrlOn: { backgroundColor: '#1d4536', borderRadius: 6 },
-  ctrlText: { color: '#e8e8e8', fontSize: 14 }
+  ctrlOn: { backgroundColor: 'rgba(10,132,255,0.25)', borderRadius: 6 },
+  ctrlText: { color: c.text, fontSize: 14 }
 })

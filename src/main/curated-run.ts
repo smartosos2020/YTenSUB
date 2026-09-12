@@ -60,7 +60,7 @@ export async function runCuratedPipeline(opts: {
     let fixedLv = 0
     for (const e of noLevel) {
       const caps = await fetchEnglishCues(e.videoId, opts.fetchFn)
-      if (caps) {
+      if ('cues' in caps) {
         const lv = estimateLevelByFreq(caps.cues, dict)
         if (lv) {
           e.level = lv
@@ -79,14 +79,15 @@ export async function runCuratedPipeline(opts: {
     let cueFail = 0
     for (const e of noCues) {
       const caps = await fetchEnglishCues(e.videoId, opts.fetchFn)
-      if (caps) {
+      if ('cues' in caps) {
         e.cues = caps.cues
         fixedCues++
         cueFail = 0
-      } else if (++cueFail >= 3) {
+      } else if (caps.error === 'rate-limited' && ++cueFail >= 3) {
         log('回填字幕遇限流，暂停（下次续传）')
         break
       }
+      // no-captions：视频本身没字幕轨，不计入限流，直接跳过
       await new Promise((r) => setTimeout(r, 400))
     }
     log(`回填字幕：${fixedCues}/${noCues.length} 部`)
@@ -111,16 +112,17 @@ export async function runCuratedPipeline(opts: {
       let consecutiveFail = 0
       for (const v of details) {
         try {
-          // 限流重试一次（429 是当天常态：Google 按 IP 限速），连续失败 3 次提前收工
+          // 限流（429）重试一次，连续 3 次提前收工；视频本身没字幕轨直接跳过不误判
           let caps = await fetchEnglishCues(v.videoId, opts.fetchFn)
-          if (!caps) {
+          if ('error' in caps && caps.error === 'rate-limited') {
             await new Promise((r) => setTimeout(r, 4000))
             caps = await fetchEnglishCues(v.videoId, opts.fetchFn)
           }
-          if (!caps) {
+          if ('error' in caps) {
+            if (caps.error === 'no-captions') continue // 没字幕轨：跳过，不算限流
             consecutiveFail++
             if (consecutiveFail >= 3) {
-              log('连续 3 部抓不到字幕，可能被限流（429）——今天到此为止，明天再跑即可增量续传')
+              log('连续 3 部字幕被限流（429）——今天到此为止，明天再跑即可增量续传')
               throw new Error('rate-limited')
             }
             continue
