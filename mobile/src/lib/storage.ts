@@ -130,11 +130,6 @@ export async function shadowingList(): Promise<ShadowingScript[]> {
   }
 }
 
-export async function shadowingGet(videoId: string): Promise<ShadowingScript | null> {
-  const list = await shadowingList()
-  return list.find((s) => s.videoId === videoId) ?? null
-}
-
 /** 跟读脚本合并：按 videoId，generatedAt 新者胜 */
 export async function shadowingMerge(incoming: ShadowingScript[]): Promise<void> {
   const local = await shadowingList()

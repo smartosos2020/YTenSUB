@@ -34,7 +34,11 @@ export default function ReviewScreen({ vocab, onVocabChanged }: Props): React.JS
   const [revealed, setRevealed] = useState(true)
   const dragX = useRef(new Animated.Value(0)).current
 
+  // 队列只在进页时构建一次：评分后 onVocabChanged 刷新的 vocab 不再触发重洗（否则进度恒为 1/N）
+  const initedRef = useRef(false)
   useEffect(() => {
+    if (initedRef.current) return
+    initedRef.current = true
     const now = Date.now()
     const due = shuffle(vocab.filter((v) => isDue(v, now)))
     setQueue(due)
@@ -46,7 +50,7 @@ export default function ReviewScreen({ vocab, onVocabChanged }: Props): React.JS
   const grade = (known: boolean): void => {
     if (!item) return
     const level = known ? Math.min((item.reviewLevel ?? -1) + 1, MASTERED_LEVEL) : 0
-    void vocabReview(item.id, level).then(onVocabChanged)
+    void vocabReview(item.id, level).then(onVocabChanged).catch(() => {})
     setQueue((q) => (q ?? []).slice(1))
   }
 

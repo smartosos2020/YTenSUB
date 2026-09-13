@@ -46,5 +46,16 @@ export const api: YTenSubApi = {
     const r = await raw.favMove(videoId, folderId)
     window.dispatchEvent(new Event(FAVS_CHANGED_EVENT))
     return r
+  },
+  // 分类增删同样广播：浏览页侧栏收藏列表要即时感知新分类
+  folderAdd: async (name) => {
+    const r = await raw.folderAdd(name)
+    window.dispatchEvent(new Event(FAVS_CHANGED_EVENT))
+    return r
+  },
+  folderRemove: async (id) => {
+    const r = await raw.folderRemove(id)
+    window.dispatchEvent(new Event(FAVS_CHANGED_EVENT))
+    return r
   }
 }

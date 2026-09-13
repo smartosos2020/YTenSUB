@@ -4,7 +4,6 @@ import * as Speech from 'expo-speech'
 import { Cue, findActiveCueIndex } from '../lib/captions'
 import { lemmatize } from '../lib/lemma'
 import { translate, TranslateResult, wordTierTag } from '../lib/translate'
-import { lemmatize as lem } from '../lib/lemma'
 import { VocabItem, vocabAdd, vocabRemove } from '../lib/storage'
 import { ThemeColors, useTheme } from '../lib/theme'
 import { VolumeIcon, XIcon } from './icons'
@@ -48,6 +47,9 @@ interface Props {
   /** 生词本（内嵌卡的加词/已加状态与移除） */
   vocab: VocabItem[]
   onVocabChanged: () => void
+  /** 当前视频出处：内嵌卡收藏生词时带上 */
+  videoId: string
+  videoTitle: string
   /** 当前句卡片内点词展开内嵌翻译卡时回调（BrowseScreen 用来暂停视频） */
   onInlineOpen?: () => void
   /** 内嵌翻译卡手动关闭时回调（切句自动收起不触发） */
@@ -91,18 +93,24 @@ function InlineWordCard({
   sentence,
   vocab,
   onVocabChanged,
-  onClose
+  onClose,
+  videoId,
+  videoTitle,
+  time
 }: {
   word: string
   sentence: string
   vocab: VocabItem[]
   onVocabChanged: () => void
   onClose: () => void
+  videoId: string
+  videoTitle: string
+  time: number
 }): React.JSX.Element {
   const { dark, colors } = useTheme()
   const styles = useMemo(() => makeStyles(colors, dark), [colors, dark])
   const [result, setResult] = useState<TranslateResult | null | 'loading'>('loading')
-  const savedItem = vocab.find((v) => lem(v.text) === lem(word)) ?? null
+  const savedItem = vocab.find((v) => lemmatize(v.text) === lemmatize(word)) ?? null
   const tier = wordTierTag(word)
 
   useEffect(() => {
@@ -116,18 +124,18 @@ function InlineWordCard({
 
   const toggle = async (): Promise<void> => {
     if (savedItem) {
-      await vocabRemove(savedItem.id)
+      await vocabRemove(savedItem.id).catch(() => {})
     } else {
       if (!result || result === 'loading') return
       await vocabAdd({
         text: lemmatize(word),
         translation: result.translation,
         phonetic: result.phonetic,
-        videoId: '',
-        videoTitle: '',
-        timestamp: 0,
+        videoId,
+        videoTitle,
+        timestamp: Math.floor(time),
         sentence
-      })
+      }).catch(() => {})
     }
     onVocabChanged()
   }
@@ -178,7 +186,9 @@ export default function CaptionList({
   vocab,
   onVocabChanged,
   onInlineOpen,
-  onInlineClose
+  onInlineClose,
+  videoId,
+  videoTitle
 }: Props): React.JSX.Element {
   const { dark, colors } = useTheme()
   const styles = useMemo(() => makeStyles(colors, dark), [colors, dark])
@@ -226,6 +236,9 @@ export default function CaptionList({
                   sentence={expanded.sentence}
                   vocab={vocab}
                   onVocabChanged={onVocabChanged}
+                  videoId={videoId}
+                  videoTitle={videoTitle}
+                  time={time}
                   onClose={() => {
                     setExpanded(null)
                     onInlineClose?.()

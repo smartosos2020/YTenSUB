@@ -1,28 +1,14 @@
 /**
- * 精选内容管线（Phase 0 单机版）：
+ * 精选内容管线：
  * 种子频道 → YouTube Data API 拉最新视频 → 过滤（有字幕/时长/英文）→
  * 抓字幕定 CEFR 级（词频）→ 打标签（官方分类映射）→ 写本地 content-db.json。
+ * 产物经快照 + 增量包（index.json）上传 R2 分发给客户端（见 scripts/upload-snapshot.mjs）。
  *
  * 由 scripts/content-pipeline.mjs 以 esbuild 打包后运行（不依赖 electron）。
  */
 
-export interface CuratedVideo {
-  videoId: string
-  title: string
-  channel: string
-  channelId: string
-  duration: number
-  level: string | null
-  tags: string[]
-  ytCategory: string
-  /** 官方数字分类 ID（回填标签用；老条目可能没有） */
-  categoryId?: string
-  thumbnail: string
-  publishedAt: number
-  fetchedAt: number
-  /** 英文字幕（管线已抓，客户端免抓直接用——限流环境下精选视频字幕仍然秒出） */
-  cues?: { start: number; dur: number; text: string }[]
-}
+// CuratedVideo 定义收敛到 shared（与渲染进程/客户端共用），此处重导出保持原有引用不变
+export type { CuratedVideo } from '../shared/curated'
 
 export interface SeedChannel {
   name: string

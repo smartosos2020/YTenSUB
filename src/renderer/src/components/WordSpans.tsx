@@ -49,8 +49,10 @@ export default function WordSpans({ text, sentence, knownWords, onWord, onWordHo
               onWordHover
                 ? (e) => {
                     cancelHover()
-                    const rect = e.currentTarget.getBoundingClientRect()
+                    const el = e.currentTarget
+                    const rect = el.getBoundingClientRect()
                     hoverTimerRef.current = window.setTimeout(() => {
+                      if (!el.isConnected) return // 词已卸载（字幕滚动走）不再弹翻译
                       onWordHover(word, rect, sentence ?? text)
                     }, 300)
                   }

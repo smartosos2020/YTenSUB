@@ -1,3 +1,5 @@
+import { INNERTUBE_ANDROID_CLIENT_VERSION, INNERTUBE_KEY } from './innertube'
+
 /**
  * 在 YouTube 页面主世界执行的提取脚本（通过 webview.executeJavaScript）。
  *
@@ -22,12 +24,12 @@ export const EXTRACT_SCRIPT = `(async () => {
   let apiError = null
   let ytCategory = ''
   try {
-    const res = await fetch('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', {
+    const res = await fetch('https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_KEY}', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'omit',
       body: JSON.stringify({
-        context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38', androidSdkVersion: 34, hl: 'en' } },
+        context: { client: { clientName: 'ANDROID', clientVersion: '${INNERTUBE_ANDROID_CLIENT_VERSION}', androidSdkVersion: 34, hl: 'en' } },
         videoId
       })
     })

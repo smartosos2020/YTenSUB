@@ -8,16 +8,7 @@ import Pagination from '../components/Pagination'
 import StarOutlineIcon from '../components/icons/StarOutlineIcon'
 import RocketIcon from '../components/icons/RocketIcon'
 import { CURATED_CUES_URL_BASE } from '../../../shared/curated-config'
-
-/** 秒 → mm:ss / h:mm:ss */
-function fmtDuration(s: number): string {
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  const sec = Math.floor(s % 60)
-  return h > 0
-    ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
-    : `${m}:${String(sec).padStart(2, '0')}`
-}
+import { fmtDuration, hueOf } from '../lib/format'
 
 /** 精选页：按自评水平 + 兴趣标签从本地内容库推荐视频（Phase 0 单机版） */
 export default function CuratedPage(): JSX.Element {
@@ -62,12 +53,6 @@ export default function CuratedPage(): JSX.Element {
   )
   const creatorCount = (c: string | null): number =>
     c === null ? videos.length : videos.filter((v) => v.channel === c).length
-  /** 无头像兜底：频道名首字母 + 按名字哈希的稳定色相（与收藏页一致） */
-  const hueOf = (s: string): number => {
-    let h = 0
-    for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) % 360
-    return h
-  }
   // 收藏夹里同频道有头像就复用，更有辨识度
   const creatorAvatar = (c: string): string | null =>
     favs.find((f) => f.channel === c && f.avatar)?.avatar ?? null

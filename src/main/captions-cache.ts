@@ -102,15 +102,21 @@ export class CaptionsCache {
       clearTimeout(this.timer)
       this.timer = null
     }
-    fs.mkdirSync(path.dirname(this.file), { recursive: true })
-    const tmp = this.file + '.tmp'
-    fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(this.map)), 'utf8')
-    // 覆盖前把上一份留作 .bak：主文件损坏时 load 可回滚
     try {
-      if (fs.existsSync(this.file)) fs.copyFileSync(this.file, this.file + '.bak')
-    } catch {
-      // 备份失败不阻断写入
+      fs.mkdirSync(path.dirname(this.file), { recursive: true })
+      const tmp = this.file + '.tmp'
+      fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(this.map)), 'utf8')
+      // 覆盖前把上一份留作 .bak：主文件损坏时 load 可回滚
+      try {
+        if (fs.existsSync(this.file)) fs.copyFileSync(this.file, this.file + '.bak')
+      } catch {
+        // 备份失败不阻断写入
+      }
+      fs.renameSync(tmp, this.file)
+    } catch (e) {
+      // 写盘失败只记日志：缓存可重建，且下一次 scheduleSave 会重试；
+      // 不抛出——定时器回调/退出钩子里的异常会打断 app.quit()
+      console.error('[ytensub] 字幕缓存落盘失败:', e)
     }
-    fs.renameSync(tmp, this.file)
   }
 }

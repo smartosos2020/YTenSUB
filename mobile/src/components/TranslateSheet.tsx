@@ -62,14 +62,14 @@ export default function TranslateSheet({
       videoTitle,
       timestamp: Math.floor(time),
       sentence
-    })
+    }).catch(() => {})
     setDone('已收藏')
     onVocabChanged()
   }
 
   const remove = async (): Promise<void> => {
     if (!savedItem) return
-    await vocabRemove(savedItem.id)
+    await vocabRemove(savedItem.id).catch(() => {})
     setDone('已删除')
     onVocabChanged()
   }

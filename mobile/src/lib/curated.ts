@@ -14,7 +14,6 @@ export const CURATED_CUES_URL_BASE =
   'https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/cues/'
 
 const CACHE_KEY = 'ytensub:curated-cache-v2'
-const INDEX_KEEP_FALLBACK = 0 // appliedTs 落后于索引最早增量时回退全量
 
 // 会话级缓存：App 启动后第一次打开精选页才同步，之后整个会话直接用内存数据
 let sessionCache: CuratedVideo[] | null = null
@@ -53,7 +52,7 @@ export function setCuratedLogSink(sink: (msg: string) => void): void {
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
-    const r = await fetch(url)
+    const r = await fetch(url, { signal: AbortSignal.timeout(10_000) })
     if (!r.ok) return null
     return (await r.json()) as T
   } catch (e) {
@@ -81,7 +80,8 @@ export async function loadCurated(): Promise<CuratedVideo[]> {
   const index = await fetchJson<CuratedIndex>(CURATED_INDEX_URL)
   if (index && Array.isArray(index.increments)) {
     const oldestTs = index.increments.length > 0 ? index.increments[0].ts : 0
-    const needBootstrap = !cache || cache.appliedTs < oldestTs - INDEX_KEEP_FALLBACK
+    // appliedTs 落后于索引最早增量时回退全量引导
+    const needBootstrap = !cache || cache.appliedTs < oldestTs
 
     if (needBootstrap) {
       // 没有本地库或落后太多：全量引导
@@ -111,8 +111,12 @@ export async function loadCurated(): Promise<CuratedVideo[]> {
     curatedLogSink?.('curated: index 拉取失败，用本地缓存')
   }
 
-  sessionCache = cache?.db ? Object.values(cache.db) : []
-  return sessionCache
+  if (cache?.db) {
+    // 拿到真实数据（网络同步或本地缓存）才写会话缓存；都没有则保持 null，下次进页允许重试
+    sessionCache = Object.values(cache.db)
+    return sessionCache
+  }
+  return []
 }
 
 /** 与桌面端 rankCurated 同规则的简化版：难度贴近 + 标签命中 + 已收藏沉底 + 日期种子打散 */

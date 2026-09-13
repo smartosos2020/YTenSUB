@@ -56,7 +56,7 @@ async function googleTranslate(text: string): Promise<TranslateResult | null> {
     const url =
       'https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-CN&dt=t&q=' +
       encodeURIComponent(text)
-    const r = await fetch(url)
+    const r = await fetch(url, { signal: AbortSignal.timeout(10_000) })
     const data = (await r.json()) as unknown[]
     const segs = (data?.[0] as unknown[]) ?? []
     const translation = segs

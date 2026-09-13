@@ -34,6 +34,14 @@ export default function ShadowingScreen({ vocab }: Props): React.JSX.Element {
     void shadowingList().then(setScripts)
   }, [])
 
+  // 组件卸载时停掉示范音，避免切页后 TTS 还在念
+  useEffect(
+    () => () => {
+      void Speech.stop()
+    },
+    []
+  )
+
   // 生词词元：脚本里高亮未掌握的生词
   const knownLemmas = useMemo(
     () =>

@@ -15,7 +15,7 @@ export interface CuratedVideo {
   thumbnail: string
   publishedAt: number
   fetchedAt: number
-  /** 英文字幕（管线已抓，客户端免抓直接用） */
+  /** 英文字幕（管线已抓，客户端免抓直接用——限流环境下精选视频字幕仍然秒出） */
   cues?: { start: number; dur: number; text: string }[]
 }
 

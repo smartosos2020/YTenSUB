@@ -16,12 +16,6 @@ import { BgPlayer, onMediaAction } from '../../modules/bg-player'
 
 const HOME = 'https://www.youtube.com'
 
-function fmtTime(s: number): string {
-  const t = Math.max(0, Math.floor(s || 0))
-  const m = Math.floor(t / 60)
-  const sec = t % 60
-  return `${m}:${String(sec).padStart(2, '0')}`
-}
 // 桌面 UA：拿桌面版 watch 页面，行为与桌面端提取链路一致
 const DESKTOP_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
@@ -75,6 +69,13 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
   const userPausedRef = useRef(true)
   const lastPlayInjectRef = useRef(0)
 
+  // BgPlayer.update 在服务未就绪时返回 false：500ms 后补一次，只补一次不循环
+  const updateBg = (playing: boolean, title: string): void => {
+    if (!BgPlayer.update(playing, title)) {
+      setTimeout(() => BgPlayer.update(playing, title), 500)
+    }
+  }
+
   // 实验：播放中保持亮屏（息屏播放的前置验证——先看长播放时音频流是否稳定）
   React.useEffect(() => {
     if (!paused && videoId) void activateKeepAwakeAsync('player')
@@ -94,7 +95,7 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
     }
     const start = (): void => {
       BgPlayer.start()
-      BgPlayer.update(!pausedRef.current, titleRef.current)
+      updateBg(!pausedRef.current, titleRef.current)
     }
     // Android 13+ 前台服务通知需要运行时权限，只在首次播放时请求
     if (!notifPermAsked.current && Platform.OS === 'android' && Platform.Version >= 33) {
@@ -114,7 +115,7 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
   pausedRef.current = paused
   titleRef.current = videoTitle
   React.useEffect(() => {
-    if (videoId) BgPlayer.update(!paused, videoTitle)
+    if (videoId) updateBg(!paused, videoTitle)
   }, [paused, videoTitle, videoId])
 
   // 后台降画质：进后台/息屏时压到 144p（省视频流流量），回前台恢复原清晰度
@@ -251,14 +252,14 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
         setPaused(msg.paused ?? true)
         // 后台诊断：App 不在前台时把页面心跳打进 Metro 日志（息屏后 renderer 是否活着、YouTube 是否自停）
         if (AppState.currentState !== 'active') {
-          console.log('[bg-tick]', JSON.stringify({ t: msg.time, paused: msg.paused }))
+          if (__DEV__) console.log('[bg-tick]', JSON.stringify({ t: msg.time, paused: msg.paused }))
           // 后台续播：YouTube 在息屏/切后台时会自行暂停，这里顶回去；
           // 用户在前台主动暂停过的不顶（尊重用户意愿）
           if (msg.paused && !userPausedRef.current) {
             const now = Date.now()
             if (now - lastPlayInjectRef.current > 800) {
               lastPlayInjectRef.current = now
-              console.log('[bg-resume] inject play')
+              if (__DEV__) console.log('[bg-resume] inject play')
               wvRef.current?.injectJavaScript(PLAY_DIAG_SCRIPT)
             }
           }
@@ -414,6 +415,8 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
           showZh={showZh}
           vocab={vocab}
           onVocabChanged={onVocabChanged}
+          videoId={videoId}
+          videoTitle={videoTitle}
           onInlineOpen={() => wvRef.current?.injectJavaScript(PAUSE_SCRIPT)} // 当前句卡内点词：暂停视频
           onInlineClose={() => wvRef.current?.injectJavaScript(PLAY_SCRIPT)} // 手动关闭内嵌卡：恢复播放
         />

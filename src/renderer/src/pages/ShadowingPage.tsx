@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, VOCAB_CHANGED_EVENT } from '../api'
 import { speakText } from '../speech'
-import { playGuestSegment } from '../guest-audio'
+import { playGuestSegment, stopGuestSegment } from '../guest-audio'
 import { ShadowingScript, VocabItem } from '../../../shared/types'
 import { toKnownLemmas, findSavedByLemma } from '../lemma'
 import WordSpans from '../components/WordSpans'
@@ -20,7 +20,8 @@ function estDuration(text: string): number {
 
 /**
  * 跟读练习页：提词器式播放器。
- * 播放 = 脚本按预估时长自动滚动（速度可调）；原声 = 系统 TTS 朗读当前句（发音参考）；
+ * 播放 = 脚本按预估时长自动滚动（速度可调）；原声 = raw 脚本（原始字幕）经 guest-audio 桥
+ * 播放视频对应片段，其余策略的脚本走系统 TTS 朗读当前句（发音参考）；
  * BGM 独立循环播放，不受调速影响。currentTime 抽象为 position，
  * 将来接入音轨（LLM 语音）时只需把 position 的时间源换成 audio.currentTime。
  */
@@ -168,10 +169,13 @@ export default function ShadowingPage(): JSX.Element {
 
   const togglePlay = (): void => {
     if (atEnd) setPosition(0)
+    // raw 脚本暂停提词器时同步停掉 guest 原声片段
+    if (playing && script.generatedBy === 'raw') stopGuestSegment()
     setPlaying(!playing)
   }
 
   const stop = (): void => {
+    if (script.generatedBy === 'raw') stopGuestSegment()
     setPlaying(false)
     setPosition(0)
   }

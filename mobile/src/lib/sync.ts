@@ -33,7 +33,7 @@ export function normalizeAddr(input: string): string | null {
 
 /** 从电脑拉取：本地与远端合并后写回（生词双向合并，跟读脚本取新） */
 export async function pullFromDesktop(base: string): Promise<{ vocab: number; shadowing: number }> {
-  const r = await fetch(base + '/export')
+  const r = await fetch(base + '/export', { signal: AbortSignal.timeout(10_000) })
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
   const payload = (await r.json()) as SyncPayload
   const merged = mergeVocab(await vocabList(), payload.vocab ?? [])
@@ -53,7 +53,8 @@ export async function pushToDesktop(base: string): Promise<{ vocab: number; shad
   const r = await fetch(base + '/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(10_000)
   })
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
   return (await r.json()) as { vocab: number; shadowing: number }

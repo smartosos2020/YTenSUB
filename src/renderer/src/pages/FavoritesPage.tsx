@@ -11,6 +11,7 @@ import SearchIcon from '../components/icons/SearchIcon'
 import EditIcon from '../components/icons/EditIcon'
 import PageShell from '../components/PageShell'
 import Pagination from '../components/Pagination'
+import { fmtDuration, hueOf } from '../lib/format'
 
 type ViewMode = 'grid' | 'list'
 /** 分组轴：分类（手动语义）/ 创作者（客观属性，虚拟分组不落库） */
@@ -37,17 +38,6 @@ const STRATEGY_EXPECT: Record<string, string> = {
   'llm-fallback': 'llm',
   'rules-only': 'rules',
   raw: 'raw'
-}
-
-/** 秒 → mm:ss / h:mm:ss */
-function fmtDuration(s?: number): string | null {
-  if (!s) return null
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  const sec = Math.floor(s % 60)
-  return h > 0
-    ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
-    : `${m}:${String(sec).padStart(2, '0')}`
 }
 
 export default function FavoritesPage(): JSX.Element {
@@ -173,12 +163,6 @@ export default function FavoritesPage(): JSX.Element {
     c === undefined ? favorites.length : favorites.filter((f) => f.channel === c).length
   const creatorAvatar = (c: string): string | null =>
     favorites.find((f) => f.channel === c && f.avatar)?.avatar ?? null
-  /** 无头像兜底：名字首字母 + 按名字哈希的稳定色相 */
-  const hueOf = (s: string): number => {
-    let h = 0
-    for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) % 360
-    return h
-  }
 
   // 组合筛选：分组轴（分类/创作者）+ 搜索 + 难度 + 标签（多选"或"）
   const q = search.trim().toLowerCase()
@@ -198,9 +182,9 @@ export default function FavoritesPage(): JSX.Element {
     ...new Set(favorites.flatMap((f) => f.tags ?? []).filter((t) => !FAV_TAG_PRESETS.includes(t)))
   ]
 
-  // 分页：0 基页码；筛选条件变化时自动回第 1 页
+  // 分页：0 基页码；筛选条件变化时自动回第 1 页（不含 favorites：后台估值 reload 不弹回页码）
   const [page, setPage] = useState(0)
-  useEffect(() => setPage(0), [selectedFolder, selectedCreator, levelFilter, tagFilter, search, groupAxis, favorites])
+  useEffect(() => setPage(0), [selectedFolder, selectedCreator, levelFilter, tagFilter, search, groupAxis])
   const PAGE_SIZE = 24
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const cur = Math.min(page, pageCount - 1)

@@ -51,7 +51,8 @@ let syncServer: SyncServer | null = null
  * 不存在时走"增量索引"远端同步：拉 index.json，全量引导或补增量后落本地缓存。
  * 本次会话首次加载后不再重复请求。
  */
-let curatedSessionLoaded = false
+// in-flight Promise 即会话级缓存：并发调用复用同一次远端同步，完成后结果直接复用
+let curatedInflight: Promise<unknown[]> | null = null
 
 interface CuratedIndex {
   latest: number
@@ -63,7 +64,7 @@ const CURATED_INC_URL_BASE = CURATED_SNAPSHOT_URL.replace(/content-db\.json$/, '
 
 async function loadCuratedDb(): Promise<unknown[]> {
   const p = path.join(app.getPath('userData'), 'content-db.json')
-  // 采集端：本地管线库永远最新，直接读
+  // 采集端：本地管线库永远最新，直接读（不走会话缓存，管线更新即时可见）
   if (fs.existsSync(p)) {
     try {
       return Object.values(JSON.parse(fs.readFileSync(p, 'utf8')) as Record<string, unknown>)
@@ -71,9 +72,13 @@ async function loadCuratedDb(): Promise<unknown[]> {
       /* 落到远端逻辑 */
     }
   }
-  // 非采集端：增量索引同步（缓存文件 curated-cache.json = { db, appliedTs }）
-  if (curatedSessionLoaded) return readCuratedCache()
-  curatedSessionLoaded = true
+  // 非采集端：复用 in-flight Promise，并发调用共享同一次增量同步，完成后会话内直接复用结果
+  if (!curatedInflight) curatedInflight = syncCuratedDb()
+  return curatedInflight
+}
+
+/** 增量索引同步（缓存文件 curated-cache.json = { db, appliedTs }），失败回退本地缓存 */
+async function syncCuratedDb(): Promise<unknown[]> {
   const cachePath = path.join(app.getPath('userData'), 'curated-cache.json')
   let cache: { db: Record<string, unknown>; appliedTs: number } | null = null
   try {
@@ -370,8 +375,11 @@ function registerIpc(): void {
   ipcMain.handle('captions:fetch-text', async (_e, url: string) => {
     try {
       const u = new URL(url)
+      if (u.protocol !== 'https:') return null
       if (u.hostname !== 'www.youtube.com' || !u.pathname.startsWith('/api/timedtext')) return null
-      const r = await net.fetch(url)
+      // redirect:manual——不跟随 3xx，防重定向把请求拐到白名单外的地址（SSRF）
+      const r = await net.fetch(url, { redirect: 'manual' })
+      if (r.status >= 300 && r.status < 400) return null
       const text = await r.text()
       return text || null
     } catch {
@@ -389,7 +397,8 @@ function registerIpc(): void {
   ipcMain.handle('captions:cache-size', () => captionsCache.size)
   ipcMain.handle('captions:clear-cache', () => captionsCache.clear())
 
-  // 精选内容库：本地快照超 24h 时先尝试拉远端快照（R2），失败回退本地
+  // 精选内容库：采集端直接读本地产物；其余端走 index.json 增量同步（远端快照 + 增量包），
+  // 会话内只加载一次（in-flight Promise 缓存），失败回退本地缓存
   ipcMain.handle('curated:list', () => loadCuratedDb())
 
   // 局域网同步：手机端拉取/推送（生词本 + 跟读脚本）
@@ -508,9 +517,23 @@ function registerIpc(): void {
   /**
    * 跟读脚本生成：主进程直接拉字幕（不依赖浏览页），LLM 精选清洗句子，
    * Google 批量出中文释义，写库后返回。已生成过且未指定 force 时直接返回缓存。
+   * 进行中的同 videoId 请求复用同一 Promise（in-flight 去重），防渲染进程重复触发。
    */
-  ipcMain.handle('shadowing:generate', async (_e, videoId: string, force?: boolean) => {
+  const shadowingInflight = new Map<string, ReturnType<typeof generateShadowing>>()
+  ipcMain.handle('shadowing:generate', (_e, videoId: string, force?: boolean) => {
     const vid = String(videoId ?? '').trim()
+    const inflight = shadowingInflight.get(vid)
+    if (inflight) return inflight
+    const p = generateShadowing(vid, force)
+    shadowingInflight.set(vid, p)
+    const done = (): void => {
+      if (shadowingInflight.get(vid) === p) shadowingInflight.delete(vid)
+    }
+    p.then(done, done)
+    return p
+  })
+
+  async function generateShadowing(vid: string, force?: boolean) {
     if (!vid) return { error: 'no-captions' }
     const existing = store.getShadowing(vid)
     if (existing && !force) return { script: existing }
@@ -604,7 +627,7 @@ function registerIpc(): void {
     }
     store.setShadowing(script)
     return { script }
-  })
+  }
 }
 
 function createWindow(): void {

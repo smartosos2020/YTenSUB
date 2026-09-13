@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { normalizeAddr, pullFromDesktop, pushToDesktop } from '../lib/sync'
+import { ThemeColors, useTheme } from '../lib/theme'
 
 const ADDR_KEY = 'ytensub:sync-addr'
 
@@ -14,6 +15,8 @@ interface Props {
 
 /** 与电脑端同步（生词本 + 跟读脚本）：电脑端设置页开启服务后，把显示的地址填进来 */
 export default function SyncSheet({ visible, onClose, onSynced }: Props): React.JSX.Element {
+  const { dark, colors } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, dark), [colors, dark])
   const [addr, setAddr] = useState('')
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
@@ -56,7 +59,7 @@ export default function SyncSheet({ visible, onClose, onSynced }: Props): React.
             value={addr}
             onChangeText={setAddr}
             placeholder="例如 192.168.0.10"
-            placeholderTextColor="#666"
+            placeholderTextColor={colors.subtext}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
@@ -87,20 +90,21 @@ export default function SyncSheet({ visible, onClose, onSynced }: Props): React.
   )
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors, dark: boolean) =>
+  StyleSheet.create({
   mask: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: '#1c1c1e',
+    backgroundColor: dark ? '#1c1c1e' : c.card,
     borderTopLeftRadius: 14,
     borderTopRightRadius: 14,
     padding: 18,
     paddingBottom: 28
   },
-  title: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  hint: { color: '#9aa0a6', fontSize: 12, marginTop: 6, lineHeight: 18 },
+  title: { color: c.text, fontSize: 17, fontWeight: '600' },
+  hint: { color: c.subtext, fontSize: 12, marginTop: 6, lineHeight: 18 },
   input: {
-    backgroundColor: '#262626',
-    color: '#e8e8e8',
+    backgroundColor: dark ? '#262626' : 'rgba(0,0,0,0.06)',
+    color: c.text,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -110,13 +114,13 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 10, marginTop: 14 },
   btn: {
     flex: 1,
-    backgroundColor: '#2c2c2e',
+    backgroundColor: dark ? '#2c2c2e' : 'rgba(0,0,0,0.06)',
     borderRadius: 8,
     paddingVertical: 10,
     alignItems: 'center'
   },
   btnDisabled: { opacity: 0.4 },
-  btnText: { color: '#e8e8e8', fontSize: 15 },
+  btnText: { color: c.text, fontSize: 15 },
   msg: { color: '#3ecf8e', fontSize: 13, marginTop: 12 },
   closeBtn: { marginTop: 10, paddingVertical: 10, alignItems: 'center' }
 })

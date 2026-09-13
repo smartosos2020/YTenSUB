@@ -17,7 +17,7 @@ interface Props {
   onSeek: (t: number) => void
   onWordSelect: (sel: WordSelection) => void
   /** 悬停取词（悬停 300ms 弹出翻译，设置页开关控制） */
-  onWordHover?: (sel: WordSelection) => void
+  onWordHover?: (word: string, rect: DOMRect, sentence: string) => void
   /** 是否显示中文字幕（开关状态，默认关） */
   showZh: boolean
   /** 与 cues 等长对齐的中文字幕；null 表示尚未就绪 */
@@ -176,10 +176,6 @@ export default function SubtitlePanel({
     (text: string, rect: DOMRect, sentence: string) => onWordSelect({ text, rect, sentence }),
     [onWordSelect]
   )
-  const handleWordHover = useCallback(
-    (text: string, rect: DOMRect, sentence: string) => onWordHover?.({ text, rect, sentence }),
-    [onWordHover]
-  )
 
   // 拖选短语（可跨单词）：mouseup 时取选区文本
   const handleMouseUp = (): void => {
@@ -231,7 +227,7 @@ export default function SubtitlePanel({
                 knownWords={knownWords}
                 onSeek={onSeek}
                 onWord={handleWord}
-                onWordHover={onWordHover ? handleWordHover : undefined}
+                onWordHover={onWordHover}
               />
             </div>
           ))}

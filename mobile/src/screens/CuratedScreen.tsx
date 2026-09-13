@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { CuratedVideo, CURATED_CUES_URL_BASE, loadCurated, rankCurated } from '../lib/curated'
 import { capcachePut } from '../lib/capcache'
+import { favList } from '../lib/storage'
 import { ThemeColors, useTheme } from '../lib/theme'
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
@@ -27,9 +28,14 @@ export default function CuratedScreen({ onOpenVideo }: Props): React.JSX.Element
   const [tags, setTags] = useState<string[]>([])
   const [creator, setCreator] = useState<string | null>(null)
   const [page, setPage] = useState(0)
+  // 已收藏视频 id：排序时沉底（挂载时加载一次）
+  const [seenIds, setSeenIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     void loadCurated().then(setVideos)
+  }, [])
+  useEffect(() => {
+    void favList().then((list) => setSeenIds(new Set(list.map((f) => f.videoId))))
   }, [])
   useEffect(() => setPage(0), [level, tags, creator])
 
@@ -44,8 +50,8 @@ export default function CuratedScreen({ onOpenVideo }: Props): React.JSX.Element
     [videos, creator, level, tags]
   )
   const ranked = useMemo(
-    () => rankCurated(filtered, { level, tags }, new Set(), new Date().toISOString().slice(0, 10)),
-    [filtered, level, tags]
+    () => rankCurated(filtered, { level, tags }, seenIds, new Date().toISOString().slice(0, 10)),
+    [filtered, level, tags, seenIds]
   )
   const pageCount = Math.max(1, Math.ceil(ranked.length / PAGE_SIZE))
   const cur = Math.min(page, pageCount - 1)

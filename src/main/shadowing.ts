@@ -1,10 +1,8 @@
 import { Cue, parseCaptionText } from '../shared/captions'
+import { INNERTUBE_ANDROID_CLIENT_VERSION, INNERTUBE_KEY } from '../shared/innertube'
 import { ChatMessage } from './translate'
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
-
-// YouTube innertube 公开客户端 key（与 web 端一致，youtube-dl 同款，非机密）
-const INNERTUBE_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8'
 
 /** 抓取结果：成功给 cues；失败给原因（限流 429 要区别于"视频没字幕"） */
 export type EnglishCuesResult =
@@ -25,7 +23,7 @@ export async function fetchEnglishCues(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         context: {
-          client: { clientName: 'ANDROID', clientVersion: '20.10.38', androidSdkVersion: 34, hl: 'en' }
+          client: { clientName: 'ANDROID', clientVersion: INNERTUBE_ANDROID_CLIENT_VERSION, androidSdkVersion: 34, hl: 'en' }
         },
         videoId
       })
@@ -125,7 +123,7 @@ export function withSceneNumbers(picked: { i: number; text: string }[]): number[
   return scenes
 }
 
-/** 防御性解析 LLM 输出：找出第一个 JSON 数组，校验 i/text，去重排序，最多 40 条 */
+/** 防御性解析 LLM 输出：找出第一个 JSON 数组，校验 i/text，去重排序，最多 60 条 */
 export function parseShadowingResponse(
   raw: string,
   cueCount: number

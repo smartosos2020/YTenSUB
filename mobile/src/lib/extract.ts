@@ -21,7 +21,6 @@ export const PROBE_SCRIPT = `
       return origPause.apply(this, arguments)
     }
   } catch (e) {}
-  var lastId = null
   setInterval(function() {
     var m = location.pathname === '/watch'
       ? new URLSearchParams(location.search).get('v')
@@ -35,7 +34,6 @@ export const PROBE_SCRIPT = `
       duration: v ? (v.duration || 0) : 0,
       paused: v ? v.paused : true
     }))
-    lastId = m
   }, 250)
 })()
 `

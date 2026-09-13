@@ -11,12 +11,14 @@ setCuratedLogSink((m) => BgPlayer.log(m))
 
 // 全局 JS 崩溃上报：把堆栈写进 logcat（release 包排查用；API 不可用时静默跳过）
 try {
+  const prev = ErrorUtils.getGlobalHandler()
   ErrorUtils.setGlobalHandler((e: Error, isFatal?: boolean) => {
     try {
       BgPlayer.log(`JS-CRASH fatal=${isFatal}: ${String(e)}\n${(e.stack ?? '').slice(0, 1500)}`)
     } catch {
       /* 忽略上报失败 */
     }
+    prev(e, isFatal) // 上报完交回默认处理（红屏/重启），不吞掉
   })
 } catch {
   /* ErrorUtils 不可用的环境直接跳过 */

@@ -10,7 +10,7 @@ export interface ZhSubtitlesState {
   zhLoading: boolean
   toggleZh: (v: boolean) => void
   resetZh: () => void
-  loadZhNative: (parsed: Cue[], zhParsed: Cue[]) => void
+  loadZhNative: (zhParsed: Cue[]) => void
   /** 是否存在视频自带/机翻中文轨（偏移调整仅对其有意义） */
   hasZhNative: boolean
   /** 中文字幕时间偏移（秒，正=延后） */
@@ -55,7 +55,7 @@ export function useZhSubtitles(cues: Cue[]): ZhSubtitlesState {
   }, [])
 
   /** 提取成功：保留中文轨原文（视频自带或 YouTube 机翻 tlang），对齐由 zhNative 派生 */
-  const loadZhNative = useCallback((_parsed: Cue[], zhParsed: Cue[]): void => {
+  const loadZhNative = useCallback((zhParsed: Cue[]): void => {
     zhJobRef.current++
     setZhRaw(zhParsed.length ? zhParsed : null)
     setZhTrans(null)
@@ -83,6 +83,8 @@ export function useZhSubtitles(cues: Cue[]): ZhSubtitlesState {
           for (let j = 0; j < part.length; j++) acc[i + j] = part[j]
           setZhTrans([...acc])
         }
+      } catch {
+        // 翻译请求失败：吞掉避免 unhandled rejection，加载态由 finally 按序号清理
       } finally {
         if (zhJobRef.current === job) setZhLoading(false)
       }

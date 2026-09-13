@@ -96,6 +96,11 @@ export default function BrowsePage(): JSX.Element {
   const [theme, setTheme] = useState<Theme>('night')
 
   const wvRef = useRef<WebviewTag | null>(null)
+  // onMsg 闭包需要最新 video：无视频（首页/搜索页）划词时不弹翻译
+  const videoRef = useRef<VideoInfo | null>(null)
+  useEffect(() => {
+    videoRef.current = video
+  }, [video])
 
   const { sideTab, setSideTab, sideCollapsed, toggleSide, sideWidth, startSideResize } =
     useSidePanel()
@@ -259,20 +264,26 @@ export default function BrowsePage(): JSX.Element {
     return () => window.removeEventListener(VOCAB_CHANGED_EVENT, load)
   }, [])
 
+  // 提取任务序号：快速连切视频时作废旧请求，旧结果不得覆盖新视频状态
+  const extractJobRef = useRef(0)
+
   const extract = useCallback(
     async (wv: WebviewTag, videoId: string): Promise<void> => {
+      const job = ++extractJobRef.current
       // 先查本地字幕缓存：命中即秒出（锚点在主进程侧已刷新），未命中才走在线抓取
       const cached = await api.captionsGetCache(videoId).catch(() => null)
+      if (extractJobRef.current !== job) return
       if (cached) {
-        loadZhNative(cached.en, cached.zh ?? [])
+        loadZhNative(cached.zh ?? [])
         setVideo({ videoId, title: cached.title, channel: cached.channel, duration: cached.duration, avatar: cached.avatar, category: cached.ytCategory })
         setHasCaptions(cached.en.length > 0)
         setCues(cached.en)
-        setIsFav(await api.favIs(videoId))
+        setIsFav(await api.favIs(videoId).catch(() => false))
         return
       }
       try {
         const res = await wv.executeJavaScript(EXTRACT_SCRIPT)
+        if (extractJobRef.current !== job) return
         if (res?.ok && res.videoId) {
           // 字幕正文走主进程抓取（guest 里会被 YouTube 拖慢 35s+），英中两路并行
           let zhUrl: string | null = res.zhBaseUrl ?? null
@@ -285,16 +296,17 @@ export default function BrowsePage(): JSX.Element {
             res.enBaseUrl ? api.captionsFetchText(res.enBaseUrl) : Promise.resolve(null),
             zhUrl ? api.captionsFetchText(zhUrl) : Promise.resolve(null)
           ])
+          if (extractJobRef.current !== job) return
           const parsed = parseCaptionText(enText)
           if (res.hasCaptions && parsed.length === 0) {
             console.warn('[ytensub] 字幕解析为空')
           }
           const zhParsed = parseCaptionText(zhText)
-          loadZhNative(parsed, zhParsed)
+          loadZhNative(zhParsed)
           setVideo({ videoId: res.videoId, title: res.title, channel: res.channel, duration: res.duration, avatar: res.channelAvatar, category: res.ytCategory })
           setHasCaptions(res.hasCaptions)
           setCues(parsed)
-          setIsFav(await api.favIs(res.videoId))
+          setIsFav(await api.favIs(res.videoId).catch(() => false))
           // 写入本地缓存：下次打开同视频秒出（空字幕不写，留给下次重试）
           void api
             .captionsPutCache(res.videoId, {
@@ -308,11 +320,13 @@ export default function BrowsePage(): JSX.Element {
             })
             .catch(() => {})
         } else {
+          if (extractJobRef.current !== job) return
           setVideo(null)
           setCues([])
           resetZh()
         }
       } catch {
+        if (extractJobRef.current !== job) return
         setVideo(null)
         setCues([])
         resetZh()
@@ -415,6 +429,7 @@ export default function BrowsePage(): JSX.Element {
             window.setTimeout(() => playSegmentNow(pending.start, pending.dur), 1200)
           }
         } else {
+          extractJobRef.current++ // 离开视频页：作废进行中的提取任务
           setVideo(null)
           setCues([])
           resetZh()
@@ -438,6 +453,7 @@ export default function BrowsePage(): JSX.Element {
         handleEscape()
       } else if (msg.kind === 'word' && msg.text && msg.rect) {
         // guest 页面划词（评论区等）：guest 视口坐标 + webview 在宿主中的偏移 = 宿主坐标
+        if (!videoRef.current) return // 首页/搜索页划词：无视频语境，不弹翻译
         const wvBox = wv.getBoundingClientRect()
         const r = msg.rect
         openSelection({
@@ -697,7 +713,7 @@ export default function BrowsePage(): JSX.Element {
                 hasCaptions={hasCaptions}
                 onSeek={seek}
                 onWordSelect={openSelection}
-                onWordHover={hoverTranslate ? openSelection : undefined}
+                onWordHover={hoverTranslate ? hoverWord : undefined}
                 showZh={showZh}
                 zhLines={zhLines}
                 zhLoading={zhLoading}

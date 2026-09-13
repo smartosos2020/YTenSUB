@@ -55,16 +55,22 @@ export class Store {
       clearTimeout(this.timer)
       this.timer = null
     }
-    fs.mkdirSync(path.dirname(this.file), { recursive: true })
-    const tmp = this.file + '.tmp'
-    fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2), 'utf8')
-    // 覆盖前把上一份完好数据留作 .bak：主文件损坏时 load 可回滚
     try {
-      if (fs.existsSync(this.file)) fs.copyFileSync(this.file, this.file + '.bak')
-    } catch {
-      // 备份失败不阻断写入
+      fs.mkdirSync(path.dirname(this.file), { recursive: true })
+      const tmp = this.file + '.tmp'
+      fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2), 'utf8')
+      // 覆盖前把上一份完好数据留作 .bak：主文件损坏时 load 可回滚
+      try {
+        if (fs.existsSync(this.file)) fs.copyFileSync(this.file, this.file + '.bak')
+      } catch {
+        // 备份失败不阻断写入
+      }
+      fs.renameSync(tmp, this.file)
+    } catch (e) {
+      // 写盘失败只记日志：内存数据仍在，下一次 scheduleSave 会重试；
+      // 不抛出——定时器回调/退出钩子（window-all-closed）里的异常会打断 app.quit()
+      console.error('[ytensub] store 落盘失败:', e)
     }
-    fs.renameSync(tmp, this.file)
   }
 
   // ---------- folders ----------
@@ -193,7 +199,7 @@ export class Store {
     this.scheduleSave()
   }
 
-  /** 数据导入：整体替换并重读（调用方负责校验过结构） */
+  /** 数据导入：整体替换（调用方负责校验过结构） */
   replaceAll(data: AppData): void {
     this.data = data
     this.scheduleSave()

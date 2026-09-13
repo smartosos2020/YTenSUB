@@ -91,13 +91,37 @@ export function startSyncServer(store: Store): Promise<SyncServer | null> {
       return
     }
     if (req.method === 'POST' && req.url === '/import') {
+      // body 累加上限 10MB：超限直接 413 并销毁连接，防局域网内恶意/异常大请求撑爆内存
+      const MAX_BODY = 10 * 1024 * 1024
       let body = ''
-      req.on('data', (c) => (body += c))
+      let tooLarge = false
+      req.on('data', (c: Buffer) => {
+        if (tooLarge) return
+        body += c
+        if (body.length > MAX_BODY) {
+          tooLarge = true
+          res.writeHead(413)
+          res.end('payload too large')
+          req.destroy()
+        }
+      })
+      req.on('error', () => {
+        // 连接层错误兜底：无 error 监听进程会因 unhandled error 崩掉
+        tooLarge = true
+      })
       req.on('end', () => {
+        if (tooLarge) return
         try {
           const payload = JSON.parse(body) as SyncPayload
-          const vocab = mergeVocab(store.listVocab(), payload.vocab ?? [])
-          const shadowing = mergeShadowing(store.listShadowing(), payload.shadowing ?? [])
+          // 最小字段校验：坏条目直接丢弃，避免 merge/落盘链路因 undefined 字段崩掉
+          const inVocab = (Array.isArray(payload.vocab) ? payload.vocab : []).filter(
+            (v) => v && typeof v.text === 'string'
+          )
+          const inShadowing = (Array.isArray(payload.shadowing) ? payload.shadowing : []).filter(
+            (s) => s && typeof s.videoId === 'string'
+          )
+          const vocab = mergeVocab(store.listVocab(), inVocab)
+          const shadowing = mergeShadowing(store.listShadowing(), inShadowing)
           // 经 replaceAll 落盘：复用现有的校验/备份/写盘链路
           const data = store.exportAll()
           data.vocab = vocab

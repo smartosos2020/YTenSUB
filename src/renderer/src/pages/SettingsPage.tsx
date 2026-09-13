@@ -212,19 +212,29 @@ export default function SettingsPage(): JSX.Element {
     if (!t || pipeTesting) return
     setPipeTesting(true)
     setPipeResult(null)
-    const t0 = Date.now()
-    const r = (await api.translate(t)) as TranslateResult | null
-    const ms = Date.now() - t0
-    const SRC: Record<string, string> = { local: '本地离线词典', google: 'Google 翻译', llm: 'LLM 大模型' }
-    setPipeResult(r ? { translation: r.translation, source: SRC[r.source] ?? r.source, ms } : null)
-    setPipeTesting(false)
+    try {
+      const t0 = Date.now()
+      const r = (await api.translate(t)) as TranslateResult | null
+      const ms = Date.now() - t0
+      const SRC: Record<string, string> = { local: '本地离线词典', google: 'Google 翻译', llm: 'LLM 大模型' }
+      setPipeResult(r ? { translation: r.translation, source: SRC[r.source] ?? r.source, ms } : null)
+    } catch {
+      setPipeResult(null)
+    } finally {
+      setPipeTesting(false)
+    }
   }
 
   const runLlmTest = async (): Promise<void> => {
     setLlmTestState('testing')
-    const r = (await api.llmTest()) as { ok: boolean; ms: number }
-    setLlmMs(r.ms)
-    setLlmTestState(r.ok ? 'ok' : 'fail')
+    try {
+      const r = (await api.llmTest()) as { ok: boolean; ms: number }
+      setLlmMs(r.ms)
+      setLlmTestState(r.ok ? 'ok' : 'fail')
+    } catch {
+      // 主进程报错（IPC 异常等）也落到失败态，不卡在 testing
+      setLlmTestState('fail')
+    }
   }
 
   return (
