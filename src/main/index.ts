@@ -9,6 +9,8 @@ import { Dict } from './dict'
 import { googleTranslateFree, llmChat, llmChatDetailed, llmContextualTranslate, llmTagFavorite, llmTranslate, translateBatch, translateText } from './translate'
 import { buildShadowingMessages, fetchEnglishCues, mergeCuesToSentences, parseShadowingResponse, ruleBasedPick, withSceneNumbers } from './shadowing'
 import { Favorite, Settings, ShadowingScript, TranslateSource, VocabItem, CefrLevel, CEFR_LEVELS, FAV_TAG_PRESETS, mapYtCategoryToTag, defaultData } from '../shared/types'
+import type { AuthSession } from '../shared/auth-api'
+import type { CachedEntitlement } from '../shared/entitlement'
 import { estimateLevelByFreq } from './cefr'
 import { CURATED_SNAPSHOT_URL } from '../shared/curated-config'
 
@@ -342,6 +344,14 @@ function registerIpc(): void {
     if (patch.proxy !== undefined) applyProxy(patch.proxy)
     return r
   })
+
+  // 账号会话：登录/登出落库
+  ipcMain.handle('auth:get', () => store.getAuth())
+  ipcMain.handle('auth:set', (_e, auth: AuthSession | null) => store.setAuth(auth))
+
+  // 权益本地缓存：在线求证成功后写入，离线时按 graceDays 宽限
+  ipcMain.handle('entitlement:get', () => store.getEntitlement())
+  ipcMain.handle('entitlement:set', (_e, e: CachedEntitlement | null) => store.setEntitlement(e))
 
   // 自定义标题栏（frame: false）的窗口控制
   ipcMain.on('window:minimize', () => mainWin?.minimize())

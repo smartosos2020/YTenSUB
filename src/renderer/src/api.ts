@@ -5,6 +5,7 @@ const raw = (window as unknown as { api: YTenSubApi }).api
 export const SETTINGS_CHANGED_EVENT = 'ytensub:settings-changed'
 export const FAVS_CHANGED_EVENT = 'ytensub:favs-changed'
 export const VOCAB_CHANGED_EVENT = 'ytensub:vocab-changed'
+export const AUTH_CHANGED_EVENT = 'ytensub:auth-changed'
 
 export const api: YTenSubApi = {
   ...raw,
@@ -29,6 +30,18 @@ export const api: YTenSubApi = {
   settingsSet: async (patch) => {
     const r = await raw.settingsSet(patch)
     window.dispatchEvent(new Event(SETTINGS_CHANGED_EVENT))
+    return r
+  },
+  // 登录/登出后广播事件，后续权益相关的常驻页面可即时刷新
+  authSet: async (auth) => {
+    const r = await raw.authSet(auth)
+    window.dispatchEvent(new Event(AUTH_CHANGED_EVENT))
+    return r
+  },
+  // 权益缓存变更同样广播 auth-changed：档位变化影响付费功能的可用状态
+  entitlementSet: async (e) => {
+    const r = await raw.entitlementSet(e)
+    window.dispatchEvent(new Event(AUTH_CHANGED_EVENT))
     return r
   },
   // 收藏增删后广播事件，让浏览页左侧收藏列表即时刷新

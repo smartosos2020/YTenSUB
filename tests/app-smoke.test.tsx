@@ -49,7 +49,11 @@ const apiMock = {
   windowToggleMaximize: vi.fn(),
   windowClose: vi.fn(),
   onWindowMaximizeChanged: vi.fn(() => () => {}),
-  getWebviewPreloadPath: vi.fn(async () => 'file:///mock/preload.js')
+  getWebviewPreloadPath: vi.fn(async () => 'file:///mock/preload.js'),
+  authGet: vi.fn(async () => null),
+  authSet: vi.fn(async () => undefined),
+  entitlementGet: vi.fn(async () => null),
+  entitlementSet: vi.fn(async () => undefined)
 }
 ;(window as unknown as { api: unknown }).api = apiMock
 

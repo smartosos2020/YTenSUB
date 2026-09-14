@@ -29,7 +29,9 @@ import VocabScreen from './src/screens/VocabScreen'
 import ReviewScreen from './src/screens/ReviewScreen'
 import ShadowingScreen from './src/screens/ShadowingScreen'
 import FavoritesScreen from './src/screens/FavoritesScreen'
+import MyScreen from './src/screens/MyScreen'
 import { VocabItem, vocabList } from './src/lib/storage'
+import { primeAuth } from './src/lib/auth'
 import { ThemeProvider, useTheme } from './src/lib/theme'
 import BottomDock, { DockTab } from './src/components/BottomDock'
 
@@ -51,6 +53,11 @@ function Main(): React.JSX.Element {
     reloadVocab()
   }, [reloadVocab])
 
+  // 启动预热：读本地会话，有会话则后台拉一次权益（A3，账号弹窗直接读 authCache）
+  useEffect(() => {
+    void primeAuth()
+  }, [])
+
   return (
     <View style={[styles.app, { backgroundColor: colors.bg }, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       {/* 浏览页保持挂载：切走再回来视频不中断 */}
@@ -69,6 +76,7 @@ function Main(): React.JSX.Element {
               setPendingVideo(id)
               setTab('browse')
             }}
+            onGoMy={() => setTab('my')}
           />
         </View>
       )}
@@ -95,6 +103,11 @@ function Main(): React.JSX.Element {
               setTab('browse')
             }}
           />
+        </View>
+      )}
+      {tab === 'my' && (
+        <View style={{ flex: 1 }}>
+          <MyScreen />
         </View>
       )}
       <BottomDock active={tab} onChange={setTab} />

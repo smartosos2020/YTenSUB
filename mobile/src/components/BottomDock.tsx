@@ -2,8 +2,9 @@ import React from 'react'
 import { Animated, StyleSheet, TouchableOpacity, View } from 'react-native'
 import Svg, { Circle, Path, Polygon, Polyline } from 'react-native-svg'
 import { useTheme } from '../lib/theme'
+import { UserIcon } from './icons'
 
-export type DockTab = 'browse' | 'curated' | 'shadowing' | 'review' | 'vocab' | 'fav'
+export type DockTab = 'browse' | 'curated' | 'shadowing' | 'review' | 'vocab' | 'fav' | 'my'
 
 const TABS: { key: DockTab; label: string; icon: (color: string) => React.JSX.Element }[] = [
   {
@@ -68,6 +69,11 @@ const TABS: { key: DockTab; label: string; icon: (color: string) => React.JSX.El
         />
       </Svg>
     )
+  },
+  {
+    key: 'my',
+    label: '我的',
+    icon: (c) => <UserIcon size={22} color={c} />
   }
 ]
 

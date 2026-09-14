@@ -11,6 +11,8 @@ import {
   VocabItem,
   defaultData
 } from '../shared/types'
+import type { AuthSession } from '../shared/auth-api'
+import type { CachedEntitlement } from '../shared/entitlement'
 
 /**
  * 单 JSON 文件存储，防抖 + 原子写入 + .bak 备份。
@@ -223,5 +225,27 @@ export class Store {
     }
     this.scheduleSave()
     return this.data.settings
+  }
+
+  // ---------- auth ----------
+  /** 账号会话（邮箱 + token）；null = 未登录 */
+  getAuth(): AuthSession | null {
+    return this.data.auth
+  }
+
+  setAuth(auth: AuthSession | null): void {
+    this.data.auth = auth
+    this.scheduleSave()
+  }
+
+  // ---------- entitlement ----------
+  /** 权益本地缓存（离线宽限用）；null = 无缓存 */
+  getEntitlement(): CachedEntitlement | null {
+    return this.data.entitlement
+  }
+
+  setEntitlement(e: CachedEntitlement | null): void {
+    this.data.entitlement = e
+    this.scheduleSave()
   }
 }

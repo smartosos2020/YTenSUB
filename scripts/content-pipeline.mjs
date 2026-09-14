@@ -24,6 +24,33 @@ if (!apiKey) {
   console.error('缺少 YOUTUBE_API_KEY：请在项目根目录 .env 写入 YOUTUBE_API_KEY=...')
   process.exit(1)
 }
+// C1 用户频道合并（可选）：缺任一键就当纯种子跑，不报错
+const apiUrl = /AUTH_API_URL=(\S+)/.exec(envText)?.[1]
+const adminToken = /ADMIN_TOKEN=(\S+)/.exec(envText)?.[1]
+
+const seedPath = path.join(root, 'scripts', 'seed-channels.json')
+
+/** 拉取已审核用户频道 → 种子条目；失败/未配置均降级为纯种子（返回 []） */
+async function loadUserSeeds() {
+  if (!apiUrl || !adminToken) {
+    console.log('未配置 AUTH_API_URL/ADMIN_TOKEN：跳过用户频道合并（纯种子模式）')
+    return []
+  }
+  try {
+    const { fetchApprovedUserChannels, userChannelsToSeeds } = await import('./user-channels.mjs')
+    const approved = await fetchApprovedUserChannels(apiUrl, adminToken)
+    const fileSeeds = JSON.parse(fs.readFileSync(seedPath, 'utf8'))
+    const extra = userChannelsToSeeds(approved, fileSeeds)
+    console.log(
+      `合并用户频道：${extra.length} 个（服务端审核通过 ${approved.length} 个）` +
+        (extra.length ? '：' + extra.map((s) => s.handle).join('、') : '')
+    )
+    return extra
+  } catch (e) {
+    console.log(`用户频道拉取失败，按纯种子继续：${String(e)}`)
+    return []
+  }
+}
 
 const dictPath = path.join(root, 'resources', 'dict.json')
 if (!fs.existsSync(dictPath)) {
@@ -47,14 +74,18 @@ esbuild.buildSync({
 const { runCuratedPipeline } = require2(outFile)
 const dbPath = path.join(process.env.APPDATA || os.homedir(), 'YTenSUB', 'content-db.json')
 
-runCuratedPipeline({
-  apiKey,
-  dbPath,
-  seedPath: path.join(root, 'scripts', 'seed-channels.json'),
-  dictPath,
-  fetchFn: (u, i) => fetch(u, i),
-  onLog: (m) => console.log(m)
-})
+loadUserSeeds()
+  .then((extraSeeds) =>
+    runCuratedPipeline({
+      apiKey,
+      dbPath,
+      seedPath,
+      dictPath,
+      extraSeeds,
+      fetchFn: (u, i) => fetch(u, i),
+      onLog: (m) => console.log(m)
+    })
+  )
   .then(async () => {
     // 管线成功后上传快照到 R2（未配置 R2_* 时静默跳过）
     const { uploadSnapshot } = await import('./upload-snapshot.mjs')

@@ -1,3 +1,6 @@
+import type { AuthSession } from './auth-api'
+import type { CachedEntitlement } from './entitlement'
+
 export interface Folder {
   id: string
   name: string
@@ -194,6 +197,10 @@ export interface AppData {
   shadowing: Record<string, ShadowingScript>
   /** 学习统计：按日（YYYY-MM-DD）记录复习次数与认识次数 */
   stats: Record<string, { reviewed: number; known: number }>
+  /** 账号会话（邮箱 + token）；null = 未登录 */
+  auth: AuthSession | null
+  /** 权益本地缓存（含 verifiedAt；离线按 graceDays 宽限，fail closed） */
+  entitlement: CachedEntitlement | null
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -228,6 +235,8 @@ export function defaultData(): AppData {
     vocab: [],
     settings: DEFAULT_SETTINGS,
     shadowing: {},
-    stats: {}
+    stats: {},
+    auth: null,
+    entitlement: null
   }
 }

@@ -1,5 +1,5 @@
 import React from 'react'
-import Svg, { Circle, Path, Polygon } from 'react-native-svg'
+import Svg, { Circle, Path, Polygon, Rect } from 'react-native-svg'
 
 interface IconProps {
   size?: number
@@ -77,6 +77,44 @@ export function SunIcon({ size = 16, color }: IconProps): React.JSX.Element {
     >
       <Circle cx={12} cy={12} r={5} />
       <Path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+    </Svg>
+  )
+}
+
+/** feather user：人形（圆头 + 双肩弧线），「我的」tab 用 */
+export function UserIcon({ size = 18, color }: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.9}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <Circle cx={12} cy={7} r={4} />
+    </Svg>
+  )
+}
+
+/** feather lock：锁（精选免费额度外的锁定卡片用） */
+export function LockIcon({ size = 18, color }: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.9}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Rect x={3} y={11} width={18} height={11} rx={2} ry={2} />
+      <Path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </Svg>
   )
 }

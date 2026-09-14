@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import { Favorite, Settings, VocabItem } from '../shared/types'
+import type { AuthSession } from '../shared/auth-api'
+import type { CachedEntitlement } from '../shared/entitlement'
 import type { CaptionCacheEntry } from '../main/captions-cache'
 
 const api = {
@@ -29,6 +31,12 @@ const api = {
 
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (patch: Partial<Settings>) => ipcRenderer.invoke('settings:set', patch),
+
+  authGet: (): Promise<AuthSession | null> => ipcRenderer.invoke('auth:get'),
+  authSet: (auth: AuthSession | null) => ipcRenderer.invoke('auth:set', auth),
+
+  entitlementGet: (): Promise<CachedEntitlement | null> => ipcRenderer.invoke('entitlement:get'),
+  entitlementSet: (e: CachedEntitlement | null) => ipcRenderer.invoke('entitlement:set', e),
 
   vocabReview: (id: string, level: number) => ipcRenderer.invoke('vocab:review', id, level),
   saveTextFile: (opts: { defaultName: string; content: string; filterName: string; ext: string }) =>

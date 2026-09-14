@@ -23,10 +23,14 @@ export async function runCuratedPipeline(opts: {
   dictPath: string
   fetchFn: FetchLike
   onLog: (m: string) => void
+  /** 额外种子（如已审核用户频道），与文件种子一起采集但不回写种子文件 */
+  extraSeeds?: SeedChannel[]
 }): Promise<void> {
   const log = opts.onLog
   const pipe = new CuratedPipeline({ apiKey: opts.apiKey, fetchFn: opts.fetchFn, onLog: log })
-  const seeds = JSON.parse(fs.readFileSync(opts.seedPath, 'utf8')) as SeedChannel[]
+  const fileSeeds = JSON.parse(fs.readFileSync(opts.seedPath, 'utf8')) as SeedChannel[]
+  // 用户频道排最前：付费功能优先采集，避免种子列表中途遇 429 收工导致用户频道饿死
+  const seeds = opts.extraSeeds?.length ? opts.extraSeeds.concat(fileSeeds) : fileSeeds
   const db: Record<string, CuratedVideo> = fs.existsSync(opts.dbPath)
     ? (JSON.parse(fs.readFileSync(opts.dbPath, 'utf8')) as Record<string, CuratedVideo>)
     : {}
@@ -161,7 +165,8 @@ export async function runCuratedPipeline(opts: {
     }
   }
 
-  fs.writeFileSync(opts.seedPath, JSON.stringify(seeds, null, 2), 'utf8')
+  // 回写只落文件种子（缓存解析到的 channelId）；extraSeeds 每次从服务端重拉，不写入
+  fs.writeFileSync(opts.seedPath, JSON.stringify(fileSeeds, null, 2), 'utf8')
   const tmp = opts.dbPath + '.tmp'
   fs.mkdirSync(path.dirname(opts.dbPath), { recursive: true })
   fs.writeFileSync(tmp, JSON.stringify(db, null, 2), 'utf8')

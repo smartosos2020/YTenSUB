@@ -3,14 +3,20 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { CuratedVideo, rankCurated } from '../../../shared/curated'
 import { CEFR_LEVELS, CefrLevel, FAV_TAG_PRESETS, Favorite } from '../../../shared/types'
+import { AuthSession, Plan, fetchFilterSensitive, fetchProCues } from '../../../shared/auth-api'
+import { effectiveCachedPlan, FREE_DAILY_QUOTA } from '../../../shared/entitlement'
+import { filterSensitiveVideos } from '../../../shared/sensitive'
+import { schedulePrefsPush, syncEntitlementCache } from '../lib/account-sync'
 import PageShell from '../components/PageShell'
 import Pagination from '../components/Pagination'
+import PaywallModal from '../components/PaywallModal'
 import StarOutlineIcon from '../components/icons/StarOutlineIcon'
+import LockIcon from '../components/icons/LockIcon'
 import RocketIcon from '../components/icons/RocketIcon'
 import { CURATED_CUES_URL_BASE } from '../../../shared/curated-config'
 import { fmtDuration, hueOf } from '../lib/format'
 
-/** 精选页：按自评水平 + 兴趣标签从本地内容库推荐视频（Phase 0 单机版） */
+/** 精选页：按自评水平 + 兴趣标签从本地内容库推荐视频；免费档每日前 FREE_DAILY_QUOTA 部，付费档不限 */
 export default function CuratedPage(): JSX.Element {
   const navigate = useNavigate()
   const [videos, setVideos] = useState<CuratedVideo[]>([])
@@ -18,6 +24,16 @@ export default function CuratedPage(): JSX.Element {
   const [level, setLevel] = useState<CefrLevel | null>(null)
   const [tags, setTags] = useState<string[]>([])
   const [justFaved, setJustFaved] = useState<string[]>([])
+  // 当前档位（fail closed 默认 free）；锁定卡片点击时弹付费墙
+  const [plan, setPlan] = useState<Plan>('free')
+  const [paywallOpen, setPaywallOpen] = useState(false)
+  // 登录会话（pro+ 字幕秒出等付费通道要用 token）
+  const [session, setSession] = useState<AuthSession | null>(null)
+  // 敏感话题过滤开关（三级解析，fail closed 默认 true，客户端不做本地持久化）：
+  // ① 在线求证的权益响应 filterSensitive 字段（用户级：admin 强制开/关 > 全局开关，服务端已解析）
+  // ② 未登录或在线求证失败 → 公共全局开关 /config/filter-sensitive
+  // ③ 都失败 → true（合规优先）
+  const [filterSensitive, setFilterSensitive] = useState(true)
 
   useEffect(() => {
     void api.curatedList().then((l) => setVideos(l as CuratedVideo[]))
@@ -26,10 +42,38 @@ export default function CuratedPage(): JSX.Element {
       setLevel(s.curatedLevel ?? null)
       setTags(s.curatedTags ?? [])
     })
+    // 档位判定 + 敏感开关解析：先按本地缓存（离线按 graceDays 宽限），有 session 再在线求证并刷新缓存
+    void (async () => {
+      // 未登录/求证失败的公共兜底；再失败维持默认 true
+      const fallBackToGlobal = (): void => {
+        fetchFilterSensitive()
+          .then((r) => setFilterSensitive(r.on))
+          .catch(() => {})
+      }
+      const [auth, cached] = await Promise.all([api.authGet(), api.entitlementGet()])
+      setSession(auth)
+      setPlan(effectiveCachedPlan(cached, Date.now()))
+      // 本地缓存带用户级字段就先顶上（undefined = 旧缓存没有该字段，不动 fail-closed 默认值）
+      if (cached?.filterSensitive !== undefined) setFilterSensitive(cached.filterSensitive)
+      if (!auth) {
+        fallBackToGlobal()
+        return
+      }
+      const fresh = await syncEntitlementCache(auth.token)
+      if (fresh) {
+        setPlan(effectiveCachedPlan(fresh, Date.now()))
+        // 用户级生效值（缓存已随 syncEntitlementCache 落库）；缺省按 true
+        setFilterSensitive(fresh.filterSensitive ?? true)
+      } else {
+        fallBackToGlobal()
+      }
+    })()
   }, [])
 
   const savePrefs = useCallback((lv: CefrLevel | null, tg: string[]): void => {
     void api.settingsSet({ curatedLevel: lv, curatedTags: tg })
+    // 偏好随账号同步：仅登录且付费档才上云（服务端强制，403/离线静默）
+    schedulePrefsPush(lv, tg)
   }, [])
 
   const seenIds = useMemo(() => new Set(favs.map((f) => f.videoId)), [favs])
@@ -69,8 +113,9 @@ export default function CuratedPage(): JSX.Element {
       if (tags.length > 0 && !tags.some((t) => v.tags.includes(t))) return false
       return true
     })
-    return rankCurated(pool, { level, tags }, seenIds, dateSeed)
-  }, [videos, creatorFilter, level, tags, seenIds, dateSeed])
+    // 敏感话题过滤在排序前套用：免费档"前 N 部"额度作用于过滤后的列表
+    return rankCurated(filterSensitiveVideos(pool, filterSensitive), { level, tags }, seenIds, dateSeed)
+  }, [videos, creatorFilter, level, tags, filterSensitive, seenIds, dateSeed])
   const PAGE_SIZE = 24
   const pageCount = Math.max(1, Math.ceil(ranked.length / PAGE_SIZE))
   const cur = Math.min(page, pageCount - 1)
@@ -96,9 +141,19 @@ export default function CuratedPage(): JSX.Element {
     void api.favList().then((l) => setFavs(l as Favorite[]))
   }
 
-  /** 打开精选视频：字幕优先用快照内嵌的，没有则从 R2 按需取（元数据快照不含字幕）写缓存 */
+  /** 打开精选视频：字幕优先用快照内嵌的，pro+ 走服务端秒出，否则从公共 R2 按需取（元数据快照不含字幕）写缓存 */
   const openVideo = async (v: CuratedVideo): Promise<void> => {
     let cues = v.cues
+    // C2 字幕秒出（pro+ 专属服务端通道）：403/404/网络失败静默回退到下方公共 R2 路径。
+    // D4-B 切换（公共 cues 下线）后：免费/pro 走 innertube 自抓兜底，pro+ 走本分支——即双闸门的客户端半闸
+    if ((!cues || cues.length === 0) && plan === 'pro_plus' && session) {
+      try {
+        const proCues = await fetchProCues(session.token, v.videoId)
+        if (proCues.length > 0) cues = proCues
+      } catch {
+        /* 静默回退公共 R2 */
+      }
+    }
     if ((!cues || cues.length === 0) && CURATED_CUES_URL_BASE) {
       try {
         const r = await fetch(`${CURATED_CUES_URL_BASE}${v.videoId}.json`)
@@ -214,8 +269,11 @@ export default function CuratedPage(): JSX.Element {
         <div className="empty-hint">当前筛选条件下没有匹配的精选，放宽难度或标签试试</div>
       ) : (
         <div className="fav-grid">
-            {pageItems.map((v) => (
-            <div key={v.videoId} className="fav-card">
+            {pageItems.map((v, i) => {
+            // 免费档：ranked 排序前 FREE_DAILY_QUOTA 部可点，其余整卡锁定（点击弹付费墙）
+            const locked = plan === 'free' && cur * PAGE_SIZE + i >= FREE_DAILY_QUOTA
+            return (
+            <div key={v.videoId} className={locked ? 'fav-card locked' : 'fav-card'}>
               <div className="fav-thumb">
                 <img
                   src={v.thumbnail}
@@ -252,13 +310,21 @@ export default function CuratedPage(): JSX.Element {
                   )}
                 </span>
               </div>
+              {locked && (
+                <button className="lock-mask" onClick={() => setPaywallOpen(true)}>
+                  <LockIcon />
+                  <span>升级解锁全部精选</span>
+                </button>
+              )}
             </div>
-          ))}
+            )
+          })}
           </div>
       )}
       </div>
         </div>
       </div>
+      {paywallOpen && <PaywallModal onClose={() => setPaywallOpen(false)} />}
     </PageShell>
   )
 }

@@ -2020,6 +2020,117 @@ button.rocket-top:hover {
   background: var(--accent);
 }
 
+/* 付费墙弹窗：免费精选额度用尽时弹出（沿 regen-overlay 的弹层结构） */
+.paywall-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+}
+
+.paywall-card {
+  position: relative;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-hi);
+  border-radius: 12px;
+  padding: 24px;
+  width: 440px;
+}
+
+/* 选择器带 button 前缀，与全局 button:not([class*='mantine']) 同特异性并靠后覆盖 */
+button.paywall-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 4px;
+  border-color: transparent;
+  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+}
+
+button.paywall-close svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+.paywall-title {
+  color: var(--text-strong);
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.paywall-desc {
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.paywall-plans {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 14px 0 16px;
+}
+
+.paywall-plan {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.paywall-plan-name {
+  color: var(--accent);
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.paywall-plan ul {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.9;
+}
+
+.paywall-note {
+  margin-top: 10px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* 免费额度外的锁定卡：整卡半透明遮罩 + 锁图标，点击弹付费墙（不打开视频） */
+button.lock-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #ffffff;
+  font-size: 13px;
+}
+
+button.lock-mask:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+button.lock-mask svg {
+  width: 22px;
+  height: 22px;
+}
+
 /* ---------- Vocabulary ---------- */
 
 /* 删除等次级操作：悬停卡片才显现，保持列表干净 */
@@ -2646,6 +2757,37 @@ button.rocket-top:hover {
 
 .saved-hint::before {
   content: '[ok] ';
+}
+
+/* 账号区信息行：账号/权益说明 + 右侧操作按钮（同 behavior-row 布局，但不带 pointer 光标） */
+.auth-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+/* 账号区操作反馈：成功复用 saved-hint（accent 色），失败复用 llm-test-fail（红）；
+   本类须排在 saved-hint 之后以盖掉它的 margin-left */
+.auth-msg {
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+
+/* 「我的」页底部公告胶囊：accent 浅底 + 细描边（日夜主题随变量切换），文案原样换行输出 */
+.profile-announce {
+  margin: 18px auto 4px;
+  padding: 8px 16px;
+  max-width: 640px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-dim);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+  white-space: pre-wrap;
 }
 
 /* ---------- 复习页 ---------- */

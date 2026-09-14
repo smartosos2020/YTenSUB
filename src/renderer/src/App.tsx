@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { api, SETTINGS_CHANGED_EVENT } from './api'
 import { applyTheme } from './theme'
+import { pullPrefsToSettings, syncEntitlementCache } from './lib/account-sync'
 import { usePersistentState } from './hooks/usePersistentState'
 import BrowsePage from './pages/BrowsePage'
 import FavoritesPage from './pages/FavoritesPage'
@@ -10,6 +11,7 @@ import VocabularyPage from './pages/VocabularyPage'
 import ReviewPage from './pages/ReviewPage'
 import ShadowingPage from './pages/ShadowingPage'
 import SettingsPage from './pages/SettingsPage'
+import ProfilePage from './pages/ProfilePage'
 import TitleBar from './components/TitleBar'
 import PlayIcon from './components/icons/PlayIcon'
 import StarOutlineIcon from './components/icons/StarOutlineIcon'
@@ -18,6 +20,7 @@ import RepeatIcon from './components/icons/RepeatIcon'
 import GearIcon from './components/icons/GearIcon'
 import UpdateIcon from './components/icons/UpdateIcon'
 import CompassIcon from './components/icons/CompassIcon'
+import UserIcon from './components/icons/UserIcon'
 
 const NAV_ITEMS: { to: string; label: string; icon: JSX.Element }[] = [
   { to: '/browse', label: '浏览', icon: <PlayIcon /> },
@@ -25,6 +28,7 @@ const NAV_ITEMS: { to: string; label: string; icon: JSX.Element }[] = [
   { to: '/favorites', label: '收藏', icon: <StarOutlineIcon /> },
   { to: '/vocabulary', label: '生词本', icon: <BookIcon /> },
   { to: '/review', label: '复习', icon: <RepeatIcon /> },
+  { to: '/profile', label: '我的', icon: <UserIcon /> },
   { to: '/settings', label: '设置', icon: <GearIcon /> }
 ]
 
@@ -52,6 +56,7 @@ function MainArea(): JSX.Element {
           <Route path="/vocabulary" element={<VocabularyPage />} />
           <Route path="/review" element={<ReviewPage />} />
           <Route path="/shadowing" element={<ShadowingPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       )}
@@ -116,6 +121,17 @@ export default function App(): JSX.Element {
       offDownloaded()
       offError()
     }
+  }, [])
+
+  // 启动时账号同步（有 session 才跑）：在线拉权益落缓存，失败静默（离线靠 graceDays 宽限）；
+  // 再把远端偏好（服务器为准）回写本地设置
+  useEffect(() => {
+    void (async () => {
+      const auth = await api.authGet()
+      if (!auth) return
+      await syncEntitlementCache(auth.token)
+      await pullPrefsToSettings(auth.token)
+    })()
   }, [])
 
   return (

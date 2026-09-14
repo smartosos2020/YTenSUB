@@ -1,9 +1,32 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { CuratedVideo, CURATED_CUES_URL_BASE, loadCurated, rankCurated } from '../lib/curated'
 import { capcachePut } from '../lib/capcache'
 import { favList } from '../lib/storage'
 import { ThemeColors, useTheme } from '../lib/theme'
+import {
+  authCache,
+  CuratedPrefs,
+  fetchEntitlement,
+  fetchFilterSensitive,
+  fetchProCues,
+  loadPrefsCache,
+  loadSession,
+  Plan,
+  putPrefs,
+  savePrefsCache
+} from '../lib/auth'
+import {
+  cacheEntitlement,
+  effectiveCachedPlan,
+  FREE_DAILY_QUOTA,
+  isPaidPlan,
+  loadEntitlementCache,
+  saveEntitlementCache
+} from '../lib/entitlement'
+import { LockIcon } from '../components/icons'
+import PaywallSheet from '../components/PaywallSheet'
+import { filterSensitiveVideos } from '../lib/sensitive'
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 const PAGE_SIZE = 20
@@ -17,10 +40,12 @@ function fmtDuration(s: number): string {
 interface Props {
   /** 点卡片去浏览页播放该视频 */
   onOpenVideo: (videoId: string) => void
+  /** 付费墙主按钮：切到「我的」tab */
+  onGoMy: () => void
 }
 
-/** 精选页：按水平/标签/创作者筛选远端内容库，点开去浏览页播放 */
-export default function CuratedScreen({ onOpenVideo }: Props): React.JSX.Element {
+/** 精选页：按水平/标签/创作者筛选远端内容库，点开去浏览页播放；免费档每天前 3 部，第 4 部起锁定出付费墙 */
+export default function CuratedScreen({ onOpenVideo, onGoMy }: Props): React.JSX.Element {
   const { dark, colors } = useTheme()
   const styles = useMemo(() => makeStyles(colors, dark), [colors, dark])
   const [videos, setVideos] = useState<CuratedVideo[]>([])
@@ -30,6 +55,14 @@ export default function CuratedScreen({ onOpenVideo }: Props): React.JSX.Element
   const [page, setPage] = useState(0)
   // 已收藏视频 id：排序时沉底（挂载时加载一次）
   const [seenIds, setSeenIds] = useState<Set<string>>(new Set())
+  // 当前档位：默认 free（fail closed），挂载时在线求证后按缓存+宽限期重定
+  const [plan, setPlan] = useState<Plan>('free')
+  const [paywallOpen, setPaywallOpen] = useState(false)
+  // 敏感过滤开关：用户级（权益字段，服务端解析：用户覆盖 > 全局）> 全局公共开关；默认开
+  const [filterOn, setFilterOn] = useState(true)
+  // 偏好缓存加载完成后才允许变更防抖上传（避免把初始空值传上去）
+  const prefsReady = useRef(false)
+  const paid = isPaidPlan(plan)
 
   useEffect(() => {
     void loadCurated().then(setVideos)
@@ -38,6 +71,75 @@ export default function CuratedScreen({ onOpenVideo }: Props): React.JSX.Element
     void favList().then((list) => setSeenIds(new Set(list.map((f) => f.videoId))))
   }, [])
   useEffect(() => setPage(0), [level, tags, creator])
+
+  // 进入精选页：有会话先在线拉权益（成功写缓存），再按缓存+宽限期定档位（D5）；失败静默走缓存
+  // 敏感过滤开关三级解析（复用本次 fetchEntitlement，不多发请求）：
+  // 本地权益缓存的用户级字段（离线宽限期内直接用）→ 在线求证覆盖 → 未登录/失败回退全局公共开关 → 都失败按开
+  useEffect(() => {
+    void (async () => {
+      const s = authCache.session ?? (await loadSession())
+      const cached = await loadEntitlementCache()
+      /** 回退全局公共开关；再失败按开（fail closed，合规优先） */
+      const fallbackGlobal = async (): Promise<void> => {
+        try {
+          const r = await fetchFilterSensitive()
+          setFilterOn(r.on)
+        } catch {
+          setFilterOn(true)
+        }
+      }
+      if (s) {
+        // 旧缓存可能没有 filterSensitive 字段，有才先用
+        if (cached?.filterSensitive !== undefined) setFilterOn(cached.filterSensitive)
+        try {
+          const r = await fetchEntitlement(s.token)
+          authCache.entitlement = r.entitlement
+          await saveEntitlementCache(cacheEntitlement(r.entitlement, Date.now()))
+          // 服务端已解析（用户级覆盖 > 全局开关）；字段缺省按 true
+          setFilterOn(r.entitlement.filterSensitive ?? true)
+        } catch {
+          // 在线求证失败且缓存无用户级字段：回退全局公共开关
+          if (cached?.filterSensitive === undefined) await fallbackGlobal()
+        }
+      } else {
+        // 未登录：直接走全局公共开关
+        await fallbackGlobal()
+      }
+      setPlan(effectiveCachedPlan(await loadEntitlementCache(), Date.now()))
+    })()
+  }, [])
+
+  // 挂载时读本地偏好缓存应用到筛选（服务器偏好已在登录/启动预热时写入本地，服务器为准）
+  useEffect(() => {
+    void loadPrefsCache().then((p) => {
+      if (p) {
+        setLevel(p.curatedLevel)
+        setTags(p.curatedTags)
+      }
+      prefsReady.current = true
+    })
+  }, [])
+
+  // 偏好随账号同步（付费档）：本地变更防抖 1s 上传（先落本地缓存），失败静默
+  useEffect(() => {
+    if (!prefsReady.current) return
+    const t = setTimeout(() => {
+      void (async () => {
+        const s = authCache.session ?? (await loadSession())
+        if (!s) return
+        const ent = await loadEntitlementCache()
+        if (!isPaidPlan(effectiveCachedPlan(ent, Date.now()))) return
+        const prefs: CuratedPrefs = { curatedLevel: level, curatedTags: tags, updatedAt: Date.now() }
+        await savePrefsCache(prefs)
+        try {
+          await putPrefs(s.token, prefs)
+        } catch {
+          /* 上传失败静默，本地已存 */
+        }
+      })()
+    }, 1000)
+    return () => clearTimeout(t)
+  }, [level, tags])
 
   const filtered = useMemo(
     () =>
@@ -49,9 +151,11 @@ export default function CuratedScreen({ onOpenVideo }: Props): React.JSX.Element
       }),
     [videos, creator, level, tags]
   )
+  // 敏感话题过滤在 rankCurated 之前套：免费档"前 3 部"的锁定序号按过滤后的列表算
+  const visible = useMemo(() => filterSensitiveVideos(filtered, filterOn), [filtered, filterOn])
   const ranked = useMemo(
-    () => rankCurated(filtered, { level, tags }, seenIds, new Date().toISOString().slice(0, 10)),
-    [filtered, level, tags, seenIds]
+    () => rankCurated(visible, { level, tags }, seenIds, new Date().toISOString().slice(0, 10)),
+    [visible, level, tags, seenIds]
   )
   const pageCount = Math.max(1, Math.ceil(ranked.length / PAGE_SIZE))
   const cur = Math.min(page, pageCount - 1)
@@ -60,9 +164,18 @@ export default function CuratedScreen({ onOpenVideo }: Props): React.JSX.Element
   const creators = useMemo(() => [...new Set(videos.map((v) => v.channel).filter(Boolean))], [videos])
   const allTags = useMemo(() => [...new Set(videos.flatMap((v) => v.tags))], [videos])
 
-  /** 打开精选视频：字幕优先快照内嵌的，没有则从 R2 按需取后写本地缓存 */
+  /** 打开精选视频：字幕优先快照内嵌的；pro+ 走服务端秒出；再空则从公共 R2 按需取后写本地缓存 */
   const openVideo = async (v: CuratedVideo): Promise<void> => {
     let cues = v.cues
+    if ((!cues || cues.length === 0) && authCache.session && plan === 'pro_plus') {
+      // C2 pro+ 字幕秒出：D4-B 切换后免费/pro 走 innertube 自抓、pro+ 走服务端，本分支即 pro+ 服务端通道
+      try {
+        const proCues = await fetchProCues(authCache.session.token, v.videoId)
+        if (proCues.length > 0) cues = proCues
+      } catch {
+        /* 静默回退公共 R2 / 在线抓取链路 */
+      }
+    }
     if ((!cues || cues.length === 0) && CURATED_CUES_URL_BASE) {
       try {
         const r = await fetch(`${CURATED_CUES_URL_BASE}${v.videoId}.json`)
@@ -126,21 +239,35 @@ export default function CuratedScreen({ onOpenVideo }: Props): React.JSX.Element
         ListEmptyComponent={
           <Text style={styles.empty}>{videos.length === 0 ? '内容库加载中或为空（稍后再试）' : '没有匹配的精选，放宽筛选试试'}</Text>
         }
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.card} activeOpacity={0.8} onPress={() => void openVideo(item)}>
-            <View>
-              <Image source={{ uri: item.thumbnail }} style={styles.thumb} />
-              {item.level && <Text style={styles.badgeLv}>{item.level}</Text>}
-              <Text style={styles.badgeDur}>{fmtDuration(item.duration)}</Text>
-            </View>
-            <Text style={styles.title} numberOfLines={2}>
-              {item.title}
-            </Text>
-            <Text style={styles.channel} numberOfLines={1}>
-              {item.channel}
-            </Text>
-          </TouchableOpacity>
-        )}
+        renderItem={({ item, index }) => {
+          // 免费档锁定判定：按 rankCurated 排序后的全局序号，前 FREE_DAILY_QUOTA 部正常，第 4 部起锁定
+          const locked = !paid && cur * PAGE_SIZE + index >= FREE_DAILY_QUOTA
+          return (
+            <TouchableOpacity
+              style={styles.card}
+              activeOpacity={0.8}
+              onPress={() => (locked ? setPaywallOpen(true) : void openVideo(item))}
+            >
+              <View>
+                <Image source={{ uri: item.thumbnail }} style={styles.thumb} />
+                {item.level && <Text style={styles.badgeLv}>{item.level}</Text>}
+                <Text style={styles.badgeDur}>{fmtDuration(item.duration)}</Text>
+              </View>
+              <Text style={styles.title} numberOfLines={2}>
+                {item.title}
+              </Text>
+              <Text style={styles.channel} numberOfLines={1}>
+                {item.channel}
+              </Text>
+              {locked && (
+                <View style={styles.lockMask}>
+                  <LockIcon size={22} color="#fff" />
+                  <Text style={styles.lockText}>升级解锁全部精选</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )
+        }}
         ListFooterComponent={
           pageCount > 1 ? (
             <View style={styles.pager}>
@@ -156,6 +283,14 @@ export default function CuratedScreen({ onOpenVideo }: Props): React.JSX.Element
             </View>
           ) : null
         }
+      />
+      <PaywallSheet
+        visible={paywallOpen}
+        onClose={() => setPaywallOpen(false)}
+        onGoMy={() => {
+          setPaywallOpen(false)
+          onGoMy()
+        }}
       />
     </View>
   )
@@ -197,6 +332,18 @@ const makeStyles = (c: ThemeColors, dark: boolean) =>
   },
   title: { color: c.text, fontSize: 12, lineHeight: 17, paddingHorizontal: 8, paddingTop: 6 },
   channel: { color: c.subtext, fontSize: 11, paddingHorizontal: 8, paddingBottom: 8, paddingTop: 2 },
+  lockMask: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6
+  },
+  lockText: { color: '#fff', fontSize: 12 },
   pager: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 24, paddingVertical: 14 },
   pagerBtn: { color: c.accent, fontSize: 14 },
   pagerOff: { color: c.subtext, fontSize: 14 },
