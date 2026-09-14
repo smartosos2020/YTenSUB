@@ -10,3 +10,4 @@ docs-internal/
 .env.*
 !.env.example
 .dev.vars
+.wrangler/
