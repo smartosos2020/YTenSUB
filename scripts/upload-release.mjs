@@ -50,14 +50,22 @@ async function main() {
     process.exitCode = 1
     return
   }
-  const binaries = fs.readdirSync(dist).filter((f) => /\.(exe|blockmap)$/i.test(f))
-  if (binaries.length === 0) {
-    console.error('dist/ 下没有 .exe/.blockmap 产物——先 npm run dist 打包')
+  // 版本号以 latest.yml 为准，只传当前版本的产物（dist/ 里有历史版本的旧 exe，不能乱入）
+  const localVersion = parseVersion(fs.readFileSync(ymlPath, 'utf8'))
+  if (!localVersion) {
+    console.error('latest.yml 里解析不到版本号')
     process.exitCode = 1
     return
   }
-  const installer = binaries.find((f) => /\.exe$/i.test(f) && /setup/i.test(f))
-  const localVersion = parseVersion(fs.readFileSync(ymlPath, 'utf8'))
+  const installer = `YTenSUB Setup ${localVersion}.exe`
+  const binaries = [installer, `${installer}.blockmap`].filter((f) =>
+    fs.existsSync(path.join(dist, f))
+  )
+  if (!fs.existsSync(path.join(dist, installer))) {
+    console.error(`dist/${installer} 不存在——先 npm run dist 打包`)
+    process.exitCode = 1
+    return
+  }
 
   // 校验全部通过才建客户端、碰网络
   const require2 = createRequire(import.meta.url)
@@ -82,20 +90,13 @@ async function main() {
   for (const f of binaries) {
     await put(`${PREFIX}/${f}`, path.join(dist, f), 'public, max-age=86400')
   }
-  if (installer) {
-    await put(`${PREFIX}/${FIXED_NAME}`, path.join(dist, installer), 'no-cache')
-  } else {
-    console.log('未找到 *Setup*.exe，跳过固定名副本')
-  }
+  await put(`${PREFIX}/${FIXED_NAME}`, path.join(dist, installer), 'no-cache')
 
   // 回读校验：公开地址应立刻能拿到刚传的 latest.yml，且版本与本地一致
   const res = await fetch(`${PUBLIC_BASE}/${PREFIX}/latest.yml`, { cache: 'no-store' })
   if (!res.ok) throw new Error(`回读 latest.yml 失败：HTTP ${res.status}`)
   const remoteVersion = parseVersion(await res.text())
-  console.log(
-    `已上传 releases/：latest.yml + ${binaries.length} 个产物` +
-      (installer ? ` + 固定名副本 ${FIXED_NAME}` : '')
-  )
+  console.log(`已上传 releases/：latest.yml + ${binaries.length} 个产物 + 固定名副本 ${FIXED_NAME}（源：${installer}）`)
   console.log(
     `回读校验：${PUBLIC_BASE}/${PREFIX}/latest.yml → version ${remoteVersion}` +
       `（本地 ${localVersion}）${remoteVersion === localVersion ? '，一致' : '，不一致！'}`
