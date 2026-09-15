@@ -1,5 +1,6 @@
 import type { AuthSession } from './auth-api'
 import type { CachedEntitlement } from './entitlement'
+import { CuratedFeedback, emptyFeedback } from './curated-feedback'
 
 export interface Folder {
   id: string
@@ -201,6 +202,8 @@ export interface AppData {
   auth: AuthSession | null
   /** 权益本地缓存（含 verifiedAt；离线按 graceDays 宽限，fail closed） */
   entitlement: CachedEntitlement | null
+  /** 精选推荐反馈（⑨：不感兴趣/已看完名单，本地存储不上云） */
+  curatedFeedback: CuratedFeedback
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -237,6 +240,7 @@ export function defaultData(): AppData {
     shadowing: {},
     stats: {},
     auth: null,
-    entitlement: null
+    entitlement: null,
+    curatedFeedback: emptyFeedback()
   }
 }

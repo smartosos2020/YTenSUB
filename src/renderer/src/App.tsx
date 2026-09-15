@@ -168,13 +168,13 @@ export default function App(): JSX.Element {
                     updateState === 'downloaded'
                       ? '更新已就绪，点击重启安装'
                       : updateState === 'error'
-                        ? '更新失败，点击打开发布页手动下载'
-                        : `正在下载更新… ${updatePct}%（点击打开发布页手动下载）`
+                        ? '更新失败，点击重试（也可到设置页手动检查）'
+                        : `正在下载更新… ${updatePct}%`
                   }
                   onClick={() => {
-                    // 已下载 → 重启安装；其余状态（含失败）→ 打开发布页手动下载（网络临时方案）
+                    // 已下载 → 重启安装；失败 → 重试检查；下载中不可点。任何状态都不打开浏览器
                     if (updateState === 'downloaded') api.updateInstall()
-                    else api.updateOpenReleases()
+                    else if (updateState === 'error') void manualCheck()
                   }}
                 >
                   <UpdateIcon />

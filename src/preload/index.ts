@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import { Favorite, Settings, VocabItem } from '../shared/types'
 import type { AuthSession } from '../shared/auth-api'
 import type { CachedEntitlement } from '../shared/entitlement'
+import type { CuratedFeedback } from '../shared/curated-feedback'
 import type { CaptionCacheEntry } from '../main/captions-cache'
 
 const api = {
@@ -37,6 +38,9 @@ const api = {
 
   entitlementGet: (): Promise<CachedEntitlement | null> => ipcRenderer.invoke('entitlement:get'),
   entitlementSet: (e: CachedEntitlement | null) => ipcRenderer.invoke('entitlement:set', e),
+
+  curatedFeedbackGet: (): Promise<CuratedFeedback> => ipcRenderer.invoke('curatedFeedback:get'),
+  curatedFeedbackSet: (fb: CuratedFeedback) => ipcRenderer.invoke('curatedFeedback:set', fb),
 
   vocabReview: (id: string, level: number) => ipcRenderer.invoke('vocab:review', id, level),
   saveTextFile: (opts: { defaultName: string; content: string; filterName: string; ext: string }) =>

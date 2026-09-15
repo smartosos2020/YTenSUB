@@ -6,6 +6,7 @@ export const SETTINGS_CHANGED_EVENT = 'ytensub:settings-changed'
 export const FAVS_CHANGED_EVENT = 'ytensub:favs-changed'
 export const VOCAB_CHANGED_EVENT = 'ytensub:vocab-changed'
 export const AUTH_CHANGED_EVENT = 'ytensub:auth-changed'
+export const CURATED_FEEDBACK_CHANGED_EVENT = 'ytensub:curated-feedback-changed'
 
 export const api: YTenSubApi = {
   ...raw,
@@ -42,6 +43,12 @@ export const api: YTenSubApi = {
   entitlementSet: async (e) => {
     const r = await raw.entitlementSet(e)
     window.dispatchEvent(new Event(AUTH_CHANGED_EVENT))
+    return r
+  },
+  // 精选反馈目前由 CuratedPage 自己触发并更新本地 state；事件留给跨页/后台刷新用
+  curatedFeedbackSet: async (fb) => {
+    const r = await raw.curatedFeedbackSet(fb)
+    window.dispatchEvent(new Event(CURATED_FEEDBACK_CHANGED_EVENT))
     return r
   },
   // 收藏增删后广播事件，让浏览页左侧收藏列表即时刷新

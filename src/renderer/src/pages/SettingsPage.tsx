@@ -100,6 +100,26 @@ export default function SettingsPage(): JSX.Element {
   const [stats, setStats] = useState<Record<string, { reviewed: number; known: number }>>({})
   // 手机同步服务地址（开启后显示，如 http://192.168.0.10:47832）
   const [syncAddr, setSyncAddr] = useState('')
+  // 应用更新：手动检查入口与状态文案（失败只给文案，绝不自动打开浏览器）
+  const [appVersion, setAppVersion] = useState('')
+  const [updateMsg, setUpdateMsg] = useState('')
+  const [updateChecking, setUpdateChecking] = useState(false)
+
+  /** 手动检查更新：available 时后台自动下载，就绪后由侧栏图标触发安装 */
+  const checkUpdate = async (): Promise<void> => {
+    if (updateChecking) return
+    setUpdateChecking(true)
+    setUpdateMsg('检查中…')
+    const r = await api.updateCheck()
+    setUpdateChecking(false)
+    setUpdateMsg(
+      r === 'available'
+        ? '发现新版本，正在后台下载；就绪后点侧栏图标重启安装'
+        : r === 'latest'
+          ? '已是最新版本'
+          : '检查失败：网络异常。可在「网络代理」配置代理后重试'
+    )
+  }
 
   /** 开启局域网同步服务，失败提示 */
   const startSync = async (): Promise<void> => {
@@ -130,6 +150,7 @@ export default function SettingsPage(): JSX.Element {
     api.favList().then((l: unknown[]) => setFavCount(l.length)).catch(() => {})
     api.captionsCacheSize().then(setCaptionCacheCount).catch(() => {})
     api.statsGet().then(setStats).catch(() => {})
+    api.appVersion().then((v) => setAppVersion(String(v))).catch(() => {})
   }, [])
 
   if (!settings) return <div className="page">加载中…</div>
@@ -753,6 +774,24 @@ export default function SettingsPage(): JSX.Element {
                     </Button>
                   </>
                 )}
+              </div>
+              {/* 应用更新：手动检查入口；失败只给文案不自动跳浏览器，发布页链接需用户显式点击 */}
+              <div className="data-row">
+                <Button
+                  variant="default"
+                  loading={updateChecking}
+                  onClick={() => void checkUpdate()}
+                >
+                  检查更新{appVersion ? `（当前 v${appVersion}）` : ''}
+                </Button>
+                {updateMsg && <span className="saved-hint">{updateMsg}</span>}
+                <Button
+                  variant="subtle"
+                  title="用浏览器手动下载最新安装包"
+                  onClick={() => api.updateOpenReleases()}
+                >
+                  发布页手动下载
+                </Button>
               </div>
               {/* 危险操作：原地两段确认，不弹系统对话框 */}
               <div className="data-row danger-zone">

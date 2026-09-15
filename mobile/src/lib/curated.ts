@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import type { CuratedFeedback } from './curated-feedback'
 
 /** 精选内容快照公开地址（元数据全量引导，与桌面端 src/shared/curated-config.ts 同步） */
 export const CURATED_SNAPSHOT_URL =
@@ -119,12 +120,13 @@ export async function loadCurated(): Promise<CuratedVideo[]> {
   return []
 }
 
-/** 与桌面端 rankCurated 同规则的简化版：难度贴近 + 标签命中 + 已收藏沉底 + 日期种子打散 */
+/** 与桌面端 rankCurated 同规则的简化版：难度贴近 + 标签命中 + 已收藏/已看完沉底 + 不感兴趣频道沉底 + 日期种子打散；feedback（⑨）：不感兴趣的视频直接隐藏 */
 export function rankCurated(
   videos: CuratedVideo[],
   prefs: { level: string | null; tags: string[] },
   seenIds: Set<string>,
-  dateSeed: string
+  dateSeed: string,
+  feedback?: CuratedFeedback
 ): CuratedVideo[] {
   const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
   const lvIdx = (l: string | null): number => (l ? LEVELS.indexOf(l) : -1)
@@ -134,7 +136,11 @@ export function rankCurated(
     for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0
     return h
   }
-  return videos
+  const hidden = new Set(feedback?.notInterestedVideos ?? [])
+  const sinkChannels = new Set(feedback?.notInterestedChannels ?? [])
+  const watched = new Set(feedback?.watchedVideos ?? [])
+  const pool = hidden.size ? videos.filter((v) => !hidden.has(v.videoId)) : videos
+  return pool
     .map((v) => {
       let score = 0
       const vi = lvIdx(v.level)
@@ -143,7 +149,8 @@ export function rankCurated(
         score += d === 0 ? 3 : d === 1 ? 2 : d === 2 ? 1 : 0.2
       } else score += 1
       if (prefs.tags.length > 0 && v.tags.some((t) => prefs.tags.includes(t))) score += 2
-      if (seenIds.has(v.videoId)) score -= 2
+      if (seenIds.has(v.videoId) || watched.has(v.videoId)) score -= 2
+      if (sinkChannels.has(v.channelId)) score -= 4
       return { v, score, tie: hash(dateSeed + v.videoId) }
     })
     .sort((a, b) => b.score - a.score || a.tie - b.tie)

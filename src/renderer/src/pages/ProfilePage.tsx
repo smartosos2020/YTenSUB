@@ -3,8 +3,10 @@ import { Button, TextInput } from '@mantine/core'
 import { api } from '../api'
 import { AuthSession, Entitlement, Plan, fetchAnnounce, fetchEntitlement, login, redeemCard, requestCode, submitChannel } from '../../../shared/auth-api'
 import { cacheEntitlement, effectiveCachedPlan, isPaidPlan } from '../../../shared/entitlement'
-import { pullPrefsToSettings } from '../lib/account-sync'
+import { pullPrefsToSettings, schedulePrefsPush } from '../lib/account-sync'
+import { CefrLevel } from '../../../shared/types'
 import PageShell from '../components/PageShell'
+import LevelTestModal from '../components/LevelTestModal'
 
 /** 权益档位展示文案 */
 const PLAN_LABEL: Record<Plan, string> = { free: '免费', pro: 'pro', pro_plus: 'pro+' }
@@ -34,6 +36,8 @@ export default function ProfilePage(): JSX.Element {
   const [channelMsg, setChannelMsg] = useState<{ ok: boolean; text: string } | null>(null)
   // 服务端公告（购买卡密指引等，作者管理页可改）：空串 = 不显示
   const [announce, setAnnounce] = useState('')
+  // 词汇量定级向导（⑩）弹层开关
+  const [levelTestOpen, setLevelTestOpen] = useState(false)
 
   useEffect(() => {
     api.entitlementGet()
@@ -184,6 +188,15 @@ export default function ProfilePage(): JSX.Element {
     }
   }
 
+  /** 定级结果应用到精选推荐：写本地设置；登录且付费档时防抖上云（复用 account-sync 现有逻辑） */
+  const applyLevel = async (lv: CefrLevel): Promise<void> => {
+    const s = await api.settingsGet()
+    await api.settingsSet({ curatedLevel: lv })
+    schedulePrefsPush(lv, s.curatedTags ?? [])
+    setLevelTestOpen(false)
+    setAuthMsg({ ok: true, text: `已应用到精选推荐：${lv}` })
+  }
+
   return (
     <PageShell title="我的" desc="账号登录、会员权益与订阅管理">
       <div className="settings-group">
@@ -286,6 +299,22 @@ export default function ProfilePage(): JSX.Element {
         </section>
       </div>
 
+      {/* ⑩ 词汇量定级向导：24 词估出 CEFR 等级，应用到精选推荐 */}
+      <div className="settings-group" style={{ marginTop: 16 }}>
+        <div className="group-head">
+          <span className="group-title">英语水平</span>
+          <span className="card-note">词汇量定级</span>
+        </div>
+        <section className="settings-card">
+        <div className="engine-hint">24 个词估出你的 CEFR 等级，用于精选推荐</div>
+        <div style={{ marginTop: 10 }}>
+          <Button variant="light" onClick={() => setLevelTestOpen(true)}>
+            开始测试
+          </Button>
+        </div>
+        </section>
+      </div>
+
       {/* C1 自定义频道订阅（pro 起）：审核通过后随下次内容更新进入精选推荐 */}
       <div className="settings-group" style={{ marginTop: 16 }}>
         <div className="group-head">
@@ -329,6 +358,9 @@ export default function ProfilePage(): JSX.Element {
 
       {/* 服务端公告（页面最下方）：空串不渲染，文案原样输出支持换行 */}
       {announce && <div className="profile-announce">{announce}</div>}
+      {levelTestOpen && (
+        <LevelTestModal onApply={(lv) => void applyLevel(lv)} onClose={() => setLevelTestOpen(false)} />
+      )}
     </PageShell>
   )
 }

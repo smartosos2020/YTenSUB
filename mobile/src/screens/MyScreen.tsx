@@ -1,14 +1,17 @@
 import React, { useMemo, useState } from 'react'
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import {
   authCache,
   AuthSession,
+  CuratedPrefs,
   Entitlement,
   fetchAnnounce,
   fetchEntitlement,
+  loadPrefsCache,
   login,
   Plan,
   pullPrefs,
+  putPrefs,
   redeemCard,
   requestCode,
   savePrefsCache,
@@ -23,6 +26,7 @@ import {
   saveEntitlementCache
 } from '../lib/entitlement'
 import { ThemeColors, useTheme } from '../lib/theme'
+import { estimateLevelFromAnswers, LevelAnswer, LEVEL_TEST_WORDS } from '../lib/level-test'
 
 /** 档位显示名 */
 const PLAN_LABEL: Record<Entitlement['plan'], string> = { free: '免费', pro: 'pro', pro_plus: 'pro+' }
@@ -56,6 +60,10 @@ export default function MyScreen(): React.JSX.Element {
   const [channelMsg, setChannelMsg] = useState<{ text: string; ok: boolean } | null>(null)
   // 服务端公告（空串 = 不显示）
   const [announce, setAnnounce] = useState('')
+  // 词汇量定级向导（⑩）
+  const [testOpen, setTestOpen] = useState(false)
+  const [testIdx, setTestIdx] = useState(0)
+  const [answers, setAnswers] = useState<LevelAnswer[]>([])
 
   // 挂载时按本地缓存+宽限期定档位
   React.useEffect(() => {
@@ -177,6 +185,49 @@ export default function MyScreen(): React.JSX.Element {
       } finally {
         setChannelBusy(false)
       }
+    })()
+  }
+
+  /* ---- ⑩ 词汇量定级向导 ---- */
+  const TEST_TOTAL = LEVEL_TEST_WORDS.length
+  const testFinished = testIdx >= TEST_TOTAL
+  // 答完 24 词即估级（不满一半返回 null，正常流程不会发生）
+  const testResult = useMemo(
+    () => (testFinished ? estimateLevelFromAnswers(answers) : null),
+    [testFinished, answers]
+  )
+
+  /** 开始/重新测：重置答题进度并打开向导 */
+  const startTest = (): void => {
+    setTestIdx(0)
+    setAnswers([])
+    setTestOpen(true)
+  }
+
+  const answer = (known: boolean): void => {
+    const w = LEVEL_TEST_WORDS[testIdx]
+    if (!w) return
+    setAnswers((a) => [...a, { w: w.w, known }])
+    setTestIdx((i) => i + 1)
+  }
+
+  /** 应用到精选推荐：写本地偏好缓存（保留已选标签）；已登录且付费档时 putPrefs 上云，失败静默 */
+  const onApplyLevel = (): void => {
+    if (!testResult) return
+    const r = testResult
+    void (async () => {
+      const prev = await loadPrefsCache()
+      const prefs: CuratedPrefs = { curatedLevel: r, curatedTags: prev?.curatedTags ?? [], updatedAt: Date.now() }
+      await savePrefsCache(prefs)
+      if (session && isPaidPlan(plan)) {
+        try {
+          await putPrefs(session.token, prefs)
+        } catch {
+          /* 上云失败静默，本地已存 */
+        }
+      }
+      setTestOpen(false)
+      setMsg({ text: `已应用：精选推荐按 ${r} 难度优先`, ok: true })
     })()
   }
 
@@ -310,6 +361,14 @@ export default function MyScreen(): React.JSX.Element {
             <Text style={[styles.msg, !channelMsg.ok && styles.msgErr]}>{channelMsg.text}</Text>
           ) : null}
         </View>
+        {/* ⑩ 词汇量定级向导 */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>测一测你的英语水平</Text>
+          <Text style={styles.hint}>24 个词快速估计 CEFR 等级，结果可一键应用到精选推荐难度</Text>
+          <TouchableOpacity style={styles.btn} onPress={startTest}>
+            <Text style={styles.btnText}>开始测试</Text>
+          </TouchableOpacity>
+        </View>
         {/* 后续订阅/付费区块挂在账号卡下方 */}
         {/* 服务端公告胶囊块：空串不渲染，文案原样输出 */}
         {announce ? (
@@ -318,6 +377,52 @@ export default function MyScreen(): React.JSX.Element {
           </View>
         ) : null}
       </ScrollView>
+      {/* 定级向导：一次一词大号居中，认识/不认识；答完出结果可应用到精选推荐 */}
+      <Modal visible={testOpen} animationType="slide" onRequestClose={() => setTestOpen(false)}>
+        <View style={styles.testWrap}>
+          <Text style={styles.testProgress}>
+            {Math.min(testIdx + 1, TEST_TOTAL)}/{TEST_TOTAL}
+          </Text>
+          <View style={styles.testCenter}>
+            {testFinished ? (
+              <>
+                <Text style={styles.testResult}>
+                  {testResult ? `你的水平约为 ${testResult}` : '答题不足，无法估计'}
+                </Text>
+                <TouchableOpacity
+                  style={[styles.btn, styles.testBtnPrimary, !testResult && styles.btnDisabled]}
+                  disabled={!testResult}
+                  onPress={onApplyLevel}
+                >
+                  <Text style={styles.testBtnPrimaryText}>应用到精选推荐</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.btn} onPress={startTest}>
+                  <Text style={styles.btnText}>重新测</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.hint}>这个词你认识吗？</Text>
+                <Text style={styles.testWord}>{LEVEL_TEST_WORDS[testIdx].w}</Text>
+                <View style={styles.testBtnRow}>
+                  <TouchableOpacity style={[styles.btn, styles.testBtn]} onPress={() => answer(false)}>
+                    <Text style={styles.btnText}>不认识</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.btn, styles.testBtn, styles.testBtnPrimary]}
+                    onPress={() => answer(true)}
+                  >
+                    <Text style={styles.testBtnPrimaryText}>认识</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+          <TouchableOpacity style={styles.testClose} onPress={() => setTestOpen(false)}>
+            <Text style={styles.btnText}>关闭</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -366,5 +471,15 @@ const makeStyles = (c: ThemeColors, dark: boolean) =>
     paddingHorizontal: 14,
     paddingVertical: 10
   },
-  announceText: { color: c.text, fontSize: 13, lineHeight: 19 }
+  announceText: { color: c.text, fontSize: 13, lineHeight: 19 },
+  testWrap: { flex: 1, backgroundColor: c.bg, padding: 20, paddingTop: 40 },
+  testProgress: { color: c.subtext, fontSize: 13, textAlign: 'center' },
+  testCenter: { flex: 1, justifyContent: 'center' },
+  testWord: { color: c.text, fontSize: 34, fontWeight: '700', marginTop: 12, textAlign: 'center' },
+  testResult: { color: c.text, fontSize: 22, fontWeight: '600', textAlign: 'center', marginBottom: 8 },
+  testBtnRow: { flexDirection: 'row', gap: 12, marginTop: 32 },
+  testBtn: { flex: 1, marginTop: 0 },
+  testBtnPrimary: { backgroundColor: c.accent },
+  testBtnPrimaryText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  testClose: { paddingVertical: 12, alignItems: 'center' }
 })

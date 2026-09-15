@@ -1,6 +1,9 @@
 import { CefrLevel, CEFR_LEVELS } from './types'
+import { CuratedFeedback } from './curated-feedback'
 
-/** 精选库视频条目（与 content-db.json 同构） */
+/**
+ * 精选库视频条目（与 content-db.json 同构）
+ */
 export interface CuratedVideo {
   videoId: string
   title: string
@@ -38,15 +41,21 @@ const levelIdx = (l: string | null): number => (l ? CEFR_LEVELS.indexOf(l as Cef
 /**
  * 推荐排序：难度贴近优先（精确 > 相邻 > 跨两级 > 未评估），标签命中加分，
  * 已收藏/看过的沉底；同分按 日期种子+videoId 哈希打散（当天稳定、明日换新）。
+ * feedback（⑨）：不感兴趣的视频直接隐藏、其频道沉底（-4），已看完沉底（-2）。
  */
 export function rankCurated(
   videos: CuratedVideo[],
   prefs: CuratedPrefs,
   seenIds: Set<string>,
-  dateSeed: string
+  dateSeed: string,
+  feedback?: CuratedFeedback
 ): CuratedVideo[] {
+  const hidden = new Set(feedback?.notInterestedVideos ?? [])
+  const sinkChannels = new Set(feedback?.notInterestedChannels ?? [])
+  const watched = new Set(feedback?.watchedVideos ?? [])
+  const pool = hidden.size ? videos.filter((v) => !hidden.has(v.videoId)) : videos
   const prefLv = prefs.level ? levelIdx(prefs.level) : -1
-  const scored = videos.map((v) => {
+  const scored = pool.map((v) => {
     let score = 0
     const vi = levelIdx(v.level)
     if (prefLv >= 0 && vi >= 0) {
@@ -56,7 +65,8 @@ export function rankCurated(
       score += 1 // 未设水平或视频未评估：中性
     }
     if (prefs.tags.length > 0 && v.tags.some((t) => prefs.tags.includes(t))) score += 2
-    if (seenIds.has(v.videoId)) score -= 2
+    if (seenIds.has(v.videoId) || watched.has(v.videoId)) score -= 2
+    if (sinkChannels.has(v.channelId)) score -= 4
     return { v, score, tie: hashStr(dateSeed + v.videoId) }
   })
   return scored.sort((a, b) => b.score - a.score || a.tie - b.tie).map((s) => s.v)

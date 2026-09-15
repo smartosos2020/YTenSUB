@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Alert, FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { CuratedVideo, CURATED_CUES_URL_BASE, loadCurated, rankCurated } from '../lib/curated'
 import { capcachePut } from '../lib/capcache'
 import { favList } from '../lib/storage'
@@ -27,6 +27,15 @@ import {
 import { LockIcon } from '../components/icons'
 import PaywallSheet from '../components/PaywallSheet'
 import { filterSensitiveVideos } from '../lib/sensitive'
+import {
+  CuratedFeedback,
+  emptyFeedback,
+  loadFeedback,
+  markNotInterestedChannel,
+  markNotInterestedVideo,
+  markWatched,
+  saveFeedback
+} from '../lib/curated-feedback'
 
 const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 const PAGE_SIZE = 20
@@ -60,6 +69,8 @@ export default function CuratedScreen({ onOpenVideo, onGoMy }: Props): React.JSX
   const [paywallOpen, setPaywallOpen] = useState(false)
   // 敏感过滤开关：用户级（权益字段，服务端解析：用户覆盖 > 全局）> 全局公共开关；默认开
   const [filterOn, setFilterOn] = useState(true)
+  // 推荐反馈（⑨）：不感兴趣隐藏/频道沉底/已看完沉底；挂载时读本地，操作即写
+  const [feedback, setFeedback] = useState<CuratedFeedback>(emptyFeedback())
   // 偏好缓存加载完成后才允许变更防抖上传（避免把初始空值传上去）
   const prefsReady = useRef(false)
   const paid = isPaidPlan(plan)
@@ -69,6 +80,10 @@ export default function CuratedScreen({ onOpenVideo, onGoMy }: Props): React.JSX
   }, [])
   useEffect(() => {
     void favList().then((list) => setSeenIds(new Set(list.map((f) => f.videoId))))
+  }, [])
+  // 挂载时读推荐反馈（本地持久化，不上云）
+  useEffect(() => {
+    void loadFeedback().then(setFeedback)
   }, [])
   useEffect(() => setPage(0), [level, tags, creator])
 
@@ -154,8 +169,8 @@ export default function CuratedScreen({ onOpenVideo, onGoMy }: Props): React.JSX
   // 敏感话题过滤在 rankCurated 之前套：免费档"前 3 部"的锁定序号按过滤后的列表算
   const visible = useMemo(() => filterSensitiveVideos(filtered, filterOn), [filtered, filterOn])
   const ranked = useMemo(
-    () => rankCurated(visible, { level, tags }, seenIds, new Date().toISOString().slice(0, 10)),
-    [visible, level, tags, seenIds]
+    () => rankCurated(visible, { level, tags }, seenIds, new Date().toISOString().slice(0, 10), feedback),
+    [visible, level, tags, seenIds, feedback]
   )
   const pageCount = Math.max(1, Math.ceil(ranked.length / PAGE_SIZE))
   const cur = Math.min(page, pageCount - 1)
@@ -188,6 +203,25 @@ export default function CuratedScreen({ onOpenVideo, onGoMy }: Props): React.JSX
       void capcachePut(v.videoId, { title: v.title, en: cues, zh: null }).catch(() => {})
     }
     onOpenVideo(v.videoId)
+  }
+
+  /** 应用一条反馈：函数式更新 state 重排 + 写本地存储 */
+  const applyFeedback = (fn: (fb: CuratedFeedback) => CuratedFeedback): void => {
+    setFeedback((cur) => {
+      const next = fn(cur)
+      void saveFeedback(next)
+      return next
+    })
+  }
+
+  /** 长按卡片的反馈菜单：不感兴趣隐藏 / 频道沉底 / 已看完沉底 */
+  const showFeedbackMenu = (v: CuratedVideo): void => {
+    Alert.alert(v.title || v.videoId, undefined, [
+      { text: '不感兴趣这个视频', onPress: () => applyFeedback((fb) => markNotInterestedVideo(fb, v.videoId)) },
+      { text: '不再推荐此频道', onPress: () => applyFeedback((fb) => markNotInterestedChannel(fb, v.channelId)) },
+      { text: '标记已看完', onPress: () => applyFeedback((fb) => markWatched(fb, v.videoId)) },
+      { text: '取消', style: 'cancel' }
+    ])
   }
 
   return (
@@ -247,6 +281,7 @@ export default function CuratedScreen({ onOpenVideo, onGoMy }: Props): React.JSX
               style={styles.card}
               activeOpacity={0.8}
               onPress={() => (locked ? setPaywallOpen(true) : void openVideo(item))}
+              onLongPress={() => (locked ? setPaywallOpen(true) : showFeedbackMenu(item))}
             >
               <View>
                 <Image source={{ uri: item.thumbnail }} style={styles.thumb} />

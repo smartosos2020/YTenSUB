@@ -1,6 +1,8 @@
 /**
- * 与桌面端 src/shared/captions.ts 同源（MVP 先拷贝，后续抽公共包）。
+ * 与桌面端 src/shared/captions.ts 同源（同步拷贝，后续抽公共包）。
  * 解析 YouTube timedtext 字幕：json3 / srv XML 自动判别。
+ * 注：桌面端的 SRT 导出相关函数（toBilingualSrt / alignCuesToEn / srtTime）为桌面专属，
+ * 手机端无使用处，按最小化原则不拷贝。
  */
 export interface Cue {
   start: number
@@ -8,15 +10,15 @@ export interface Cue {
   text: string
 }
 
-/** HTML/XML 实体解码（字幕里常见的几个） */
 function decodeXmlEntities(s: string): string {
   return s
-    .replace(/&amp;/g, '&')
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
 }
 
 /** 解析 YouTube timedtext json3 格式为字幕数组 */
@@ -24,9 +26,13 @@ export function parseJson3Captions(data: unknown): Cue[] {
   const events = (data as { events?: unknown[] })?.events
   if (!Array.isArray(events)) return []
   const cues: Cue[] = []
-  for (const ev of events) {
-    const e = ev as { tStartMs?: number; dDurationMs?: number; segs?: { utf8?: string }[] }
-    if (!e.segs || e.tStartMs === undefined) continue
+  for (const raw of events) {
+    const e = raw as {
+      tStartMs?: number
+      dDurationMs?: number
+      segs?: { utf8?: string }[]
+    }
+    if (!e.segs) continue
     const text = e.segs
       .map((s) => s.utf8 ?? '')
       .join('')
@@ -35,9 +41,9 @@ export function parseJson3Captions(data: unknown): Cue[] {
       .trim()
     if (!text) continue
     cues.push({
-      start: e.tStartMs / 1000,
+      start: (e.tStartMs ?? 0) / 1000,
       dur: (e.dDurationMs ?? 0) / 1000,
-      text: decodeXmlEntities(text)
+      text
     })
   }
   return cues
@@ -81,6 +87,7 @@ export function parseCaptionText(text: string | null | undefined): Cue[] {
 
 /** 找到当前播放时间对应的字幕下标，没有则返回 -1 */
 export function findActiveCueIndex(cues: Cue[], time: number): number {
+  // 字幕按 start 升序；取最后一个 start <= time 且未明显过期的 cue
   let lo = 0
   let hi = cues.length - 1
   let ans = -1
@@ -93,7 +100,8 @@ export function findActiveCueIndex(cues: Cue[], time: number): number {
       hi = mid - 1
     }
   }
-  // 防字幕已过期太久（大段无字幕空白时不残留显示）
-  if (ans >= 0 && time - (cues[ans].start + cues[ans].dur) > 5) return -1
-  return ans
+  if (ans === -1) return -1
+  const cue = cues[ans]
+  // 允许 0.5s 的尾部宽限，避免两句之间闪烁
+  return time <= cue.start + Math.max(cue.dur, 0) + 0.5 ? ans : -1
 }

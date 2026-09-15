@@ -13,6 +13,7 @@ import {
 } from '../shared/types'
 import type { AuthSession } from '../shared/auth-api'
 import type { CachedEntitlement } from '../shared/entitlement'
+import { CuratedFeedback, normalizeFeedback } from '../shared/curated-feedback'
 
 /**
  * 单 JSON 文件存储，防抖 + 原子写入 + .bak 备份。
@@ -246,6 +247,18 @@ export class Store {
 
   setEntitlement(e: CachedEntitlement | null): void {
     this.data.entitlement = e
+    this.scheduleSave()
+  }
+
+  // ---------- curated feedback ----------
+  /** 精选推荐反馈（⑨：不感兴趣/已看完名单） */
+  getCuratedFeedback(): CuratedFeedback {
+    return this.data.curatedFeedback
+  }
+
+  /** 写入时过 normalizeFeedback：去重、限长、过滤非字符串，防坏数据撑大存储 */
+  setCuratedFeedback(fb: CuratedFeedback): void {
+    this.data.curatedFeedback = normalizeFeedback(fb)
     this.scheduleSave()
   }
 }

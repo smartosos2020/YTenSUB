@@ -6,12 +6,20 @@ import { CEFR_LEVELS, CefrLevel, FAV_TAG_PRESETS, Favorite } from '../../../shar
 import { AuthSession, Plan, fetchFilterSensitive, fetchProCues } from '../../../shared/auth-api'
 import { effectiveCachedPlan, FREE_DAILY_QUOTA } from '../../../shared/entitlement'
 import { filterSensitiveVideos } from '../../../shared/sensitive'
+import {
+  CuratedFeedback,
+  emptyFeedback,
+  markNotInterestedChannel,
+  markNotInterestedVideo,
+  markWatched
+} from '../../../shared/curated-feedback'
 import { schedulePrefsPush, syncEntitlementCache } from '../lib/account-sync'
 import PageShell from '../components/PageShell'
 import Pagination from '../components/Pagination'
 import PaywallModal from '../components/PaywallModal'
 import StarOutlineIcon from '../components/icons/StarOutlineIcon'
 import LockIcon from '../components/icons/LockIcon'
+import DotsIcon from '../components/icons/DotsIcon'
 import RocketIcon from '../components/icons/RocketIcon'
 import { CURATED_CUES_URL_BASE } from '../../../shared/curated-config'
 import { fmtDuration, hueOf } from '../lib/format'
@@ -34,10 +42,16 @@ export default function CuratedPage(): JSX.Element {
   // ② 未登录或在线求证失败 → 公共全局开关 /config/filter-sensitive
   // ③ 都失败 → true（合规优先）
   const [filterSensitive, setFilterSensitive] = useState(true)
+  // 推荐反馈（⑨）：不感兴趣隐藏/频道沉底/已看完沉底；fbMenuFor = 当前打开反馈菜单的 videoId
+  const [feedback, setFeedback] = useState<CuratedFeedback>(emptyFeedback())
+  const [fbMenuFor, setFbMenuFor] = useState<string | null>(null)
 
   useEffect(() => {
     void api.curatedList().then((l) => setVideos(l as CuratedVideo[]))
     void api.favList().then((l) => setFavs(l as Favorite[]))
+    api.curatedFeedbackGet()
+      .then(setFeedback)
+      .catch(() => {})
     void api.settingsGet().then((s) => {
       setLevel(s.curatedLevel ?? null)
       setTags(s.curatedTags ?? [])
@@ -114,8 +128,9 @@ export default function CuratedPage(): JSX.Element {
       return true
     })
     // 敏感话题过滤在排序前套用：免费档"前 N 部"额度作用于过滤后的列表
-    return rankCurated(filterSensitiveVideos(pool, filterSensitive), { level, tags }, seenIds, dateSeed)
-  }, [videos, creatorFilter, level, tags, filterSensitive, seenIds, dateSeed])
+    // feedback（⑨）：不感兴趣的视频在 rankCurated 内隐藏、其频道与已看完的沉底
+    return rankCurated(filterSensitiveVideos(pool, filterSensitive), { level, tags }, seenIds, dateSeed, feedback)
+  }, [videos, creatorFilter, level, tags, filterSensitive, feedback, seenIds, dateSeed])
   const PAGE_SIZE = 24
   const pageCount = Math.max(1, Math.ceil(ranked.length / PAGE_SIZE))
   const cur = Math.min(page, pageCount - 1)
@@ -126,6 +141,13 @@ export default function CuratedPage(): JSX.Element {
     () => [...new Set([...FAV_TAG_PRESETS, ...videos.flatMap((v) => v.tags)])],
     [videos]
   )
+
+  /** 推荐反馈（⑨）：即时生效——写库 + 更新 state 触发重排，菜单收起 */
+  const applyFeedback = (fb: CuratedFeedback): void => {
+    setFeedback(fb)
+    setFbMenuFor(null)
+    void api.curatedFeedbackSet(fb)
+  }
 
   const fav = async (v: CuratedVideo): Promise<void> => {
     await api.favAdd({
@@ -282,6 +304,33 @@ export default function CuratedPage(): JSX.Element {
                 />
                 {v.level && <span className="thumb-badge thumb-badge-left">{v.level}</span>}
                 <span className="thumb-badge thumb-badge-right">{fmtDuration(v.duration)}</span>
+                {/* 推荐反馈入口（⑨）：悬停卡片显现，点开三项小菜单 */}
+                <button
+                  className="fb-menu-btn"
+                  title="推荐反馈"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setFbMenuFor(fbMenuFor === v.videoId ? null : v.videoId)
+                  }}
+                >
+                  <DotsIcon />
+                </button>
+                {fbMenuFor === v.videoId && (
+                  <>
+                    <div className="fb-menu-backdrop" onClick={() => setFbMenuFor(null)} />
+                    <div className="fb-menu">
+                      <button onClick={() => applyFeedback(markNotInterestedVideo(feedback, v.videoId))}>
+                        不感兴趣这个视频
+                      </button>
+                      <button onClick={() => applyFeedback(markNotInterestedChannel(feedback, v.channelId))}>
+                        不再推荐此频道
+                      </button>
+                      <button onClick={() => applyFeedback(markWatched(feedback, v.videoId))}>
+                        标记已看完
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
               <div className="fav-info">
                 <div

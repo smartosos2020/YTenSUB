@@ -11,6 +11,7 @@ import { buildShadowingMessages, fetchEnglishCues, mergeCuesToSentences, parseSh
 import { Favorite, Settings, ShadowingScript, TranslateSource, VocabItem, CefrLevel, CEFR_LEVELS, FAV_TAG_PRESETS, mapYtCategoryToTag, defaultData } from '../shared/types'
 import type { AuthSession } from '../shared/auth-api'
 import type { CachedEntitlement } from '../shared/entitlement'
+import type { CuratedFeedback } from '../shared/curated-feedback'
 import { estimateLevelByFreq } from './cefr'
 import { CURATED_SNAPSHOT_URL } from '../shared/curated-config'
 
@@ -225,10 +226,18 @@ const dict = new Dict(dictPath)
 
 const TRANSLATOR_ORDER: TranslateSource[] = ['local', 'google', 'llm']
 
-/** 应用代理设置：defaultSession 覆盖渲染进程与 webview guest（YouTube 页面也走代理） */
+// electron-updater 的更新请求走独立分区会话（其内部常量 NET_SESSION_NAME），不继承 defaultSession 的代理
+const UPDATER_SESSION_PARTITION = 'electron-updater'
+
+/** 应用代理设置：defaultSession 覆盖渲染进程与 webview guest（YouTube 页面也走代理）；
+ *  updater 分区会话必须单独设，否则用户配了代理更新检查仍直连更新服务器（国内表现为挂死/超时） */
 function applyProxy(proxy: string): void {
   const p = proxy.trim()
-  void session.defaultSession.setProxy(p ? { proxyRules: p } : { mode: 'system' })
+  const config: { proxyRules: string } | { mode: 'system' } = p
+    ? { proxyRules: p }
+    : { mode: 'system' }
+  void session.defaultSession.setProxy(config)
+  void session.fromPartition(UPDATER_SESSION_PARTITION, { cache: false }).setProxy(config)
 }
 
 function registerIpc(): void {
@@ -353,6 +362,12 @@ function registerIpc(): void {
   ipcMain.handle('entitlement:get', () => store.getEntitlement())
   ipcMain.handle('entitlement:set', (_e, e: CachedEntitlement | null) => store.setEntitlement(e))
 
+  // 精选推荐反馈（⑨）：本地存储不上云
+  ipcMain.handle('curatedFeedback:get', () => store.getCuratedFeedback())
+  ipcMain.handle('curatedFeedback:set', (_e, fb: CuratedFeedback) =>
+    store.setCuratedFeedback(fb)
+  )
+
   // 自定义标题栏（frame: false）的窗口控制
   ipcMain.on('window:minimize', () => mainWin?.minimize())
   ipcMain.on('window:toggle-maximize', () => {
@@ -367,17 +382,20 @@ function registerIpc(): void {
   ipcMain.on('update:install', () => autoUpdater.quitAndInstall())
   // 手动检查更新（点侧栏版本号触发）：返回结果供渲染进程给瞬时反馈
   ipcMain.handle('update:check', async (): Promise<'available' | 'latest' | 'error'> => {
+    if (!app.isPackaged) return 'error' // dev 环境无更新源（app-update.yml），检查必然失败
     try {
-      const r = await autoUpdater.checkForUpdates()
+      const r = await checkForUpdatesWithTimeout(() => autoUpdater.checkForUpdates())
       const latest = r?.updateInfo?.version
       return latest && latest !== app.getVersion() ? 'available' : 'latest'
     } catch {
       return 'error'
     }
   })
-  // 自动更新不可用时的临时方案：打开 GitHub 发布页手动下载
+  // 自动更新不可用时的兜底：浏览器打开 R2 固定名安装包直接下载
   ipcMain.on('update:open-releases', () => {
-    void shell.openExternal('https://github.com/smartosos2020/YTenSUB/releases/latest')
+    void shell.openExternal(
+      'https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/releases/YTenSUB-Setup-latest.exe'
+    )
   })
 
   // 字幕正文抓取：webview 里不带 cookie 的 timedtext 请求会被 YouTube 拖进慢车道（实测 35s+），
@@ -682,26 +700,56 @@ app.whenReady().then(() => {
   createWindow()
   // 代理设置（启动时从存储加载；目标用户需要自备网络环境时配）
   applyProxy(store.getSettings().proxy ?? '')
-  // 自动更新（GitHub Releases）：静默检查，下载完成后提示重启安装；dev 环境静默跳过
-  // updater 全事件写日志到 userData/updater.log（更新失败时排查用）
-  const updaterLogFile = path.join(app.getPath('userData'), 'updater.log')
-  const logUpdater = (msg: string): void => {
-    const line = `${new Date().toISOString()} ${msg}\n`
-    try {
-      fs.appendFileSync(updaterLogFile, line)
-    } catch {
-      /* 日志失败不影响主流程 */
-    }
+  // 自动更新：dev 环境跳过（无 app-update.yml，检查了也必然失败）
+  if (app.isPackaged) setupAutoUpdater()
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
+
+// updater 全事件写日志到 userData/updater.log（更新失败时排查用）
+function logUpdater(msg: string): void {
+  const line = `${new Date().toISOString()} ${msg}\n`
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'updater.log'), line)
+  } catch {
+    /* 日志失败不影响主流程 */
   }
+}
+
+// electron-updater 用 Electron net 栈发请求，其内部的 socket 超时只对 Node http 生效：
+// 网络挂死时检查 promise 永不 settle；且 checkForUpdatesPromise 去重
+// 会让后续所有检查复用同一个挂死 promise，表现为"检查更新永远没反应"。包一层超时兜底，
+// 超时后重置内部去重 promise，下次检查才能重新发起。
+const UPDATE_CHECK_TIMEOUT_MS = 20_000
+
+function checkForUpdatesWithTimeout<T>(check: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      ;(autoUpdater as unknown as { checkForUpdatesPromise: unknown }).checkForUpdatesPromise = null
+      reject(new Error(`update check timed out after ${UPDATE_CHECK_TIMEOUT_MS / 1000}s`))
+    }, UPDATE_CHECK_TIMEOUT_MS)
+    timer.unref()
+  })
+  return Promise.race([check(), timeout]).finally(() => clearTimeout(timer))
+}
+
+// 自动更新（R2 generic provider，releases/latest.yml）：静默检查，下载完成后提示重启安装；安装只由用户点按钮触发，退出时不自动装
+function setupAutoUpdater(): void {
   logUpdater(`checkForUpdatesAndNotify (app v${app.getVersion()})`)
-  // 发现新版本即自动下载（侧栏按钮出灌水进度）；安装只由用户点按钮触发，退出时不自动装
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = false
-  autoUpdater.checkForUpdatesAndNotify().catch((e) => logUpdater(`check error: ${String(e)}`))
-  // 定时重查（4 小时）：启动时若撞上 GitHub CDN 缓存拿到"无更新"，运行中也能自愈
+  checkForUpdatesWithTimeout(() => autoUpdater.checkForUpdatesAndNotify()).catch((e) =>
+    logUpdater(`check error: ${String(e)}`)
+  )
+  // 定时重查（4 小时）：启动时若撞上边缘缓存拿到"无更新"，运行中也能自愈
   const timer = setInterval(() => {
     logUpdater('periodic re-check')
-    autoUpdater.checkForUpdates().catch((e) => logUpdater(`periodic check error: ${String(e)}`))
+    checkForUpdatesWithTimeout(() => autoUpdater.checkForUpdates()).catch((e) =>
+      logUpdater(`periodic check error: ${String(e)}`)
+    )
   }, 4 * 3600 * 1000)
   timer.unref()
   // 更新状态推给渲染进程：侧栏版本号旁的下载图标据此显示进度
@@ -725,11 +773,7 @@ app.whenReady().then(() => {
     logUpdater(`error: ${String(e)}`)
     mainWin?.webContents.send('update:error', String(e))
   })
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
-})
+}
 
 app.on('window-all-closed', () => {
   store.flush()

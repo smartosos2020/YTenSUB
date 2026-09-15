@@ -13,6 +13,7 @@
     "build:dict": "node scripts/build-dict.mjs",
     "build:icon": "node scripts/build-icon.mjs",
     "dist": "electron-vite build && electron-builder",
+    "release": "npm run dist && node scripts/upload-release.mjs",
     "pipeline": "node scripts/content-pipeline.mjs"
   },
   "dependencies": {
@@ -53,10 +54,9 @@
     ],
     "publish": [
       {
-        "provider": "github",
-        "owner": "smartosos2020",
-        "repo": "YTenSUB",
-        "releaseType": "release"
+        "provider": "generic",
+        "url": "https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/releases",
+        "channel": "latest"
       }
     ],
     "win": {

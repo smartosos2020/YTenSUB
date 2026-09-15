@@ -14,6 +14,8 @@ export function setLemmatizeErrorSink(sink: (msg: string) => void): void {
  * 词形还原（词元化）：running→run、ran→run、geese→goose、better→good。
  * 还原顺序：动词 → 名词 → 形容词，都不变则原样返回（小写）。
  * 任何输入都不许抛异常：词元化只是高亮辅助，失败按原样返回。
+ * 注：桌面 renderer 版另有 toKnownLemmas / findSavedByLemma 两个导出（服务桌面生词高亮），
+ * 手机端无使用处，按最小化原则不拷贝。
  */
 export function lemmatize(word: string): string {
   const w = word.trim().toLowerCase()

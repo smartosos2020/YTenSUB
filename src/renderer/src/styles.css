@@ -2131,6 +2131,106 @@ button.lock-mask svg {
   height: 22px;
 }
 
+/* 精选卡片推荐反馈（⑨）：右上角小按钮悬停显现，点开三项小菜单。
+   选择器带 button 前缀，与全局 button:not([class*='mantine']) 同特异性并靠后覆盖 */
+button.fb-menu-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 4;
+  padding: 4px;
+  border-color: transparent;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #ffffff;
+  display: inline-flex;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.fav-card:hover button.fb-menu-btn {
+  opacity: 1;
+}
+
+button.fb-menu-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+button.fb-menu-btn svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+/* 菜单打开时的全屏透明背板：点任意处收菜单 */
+.fb-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+}
+
+.fb-menu {
+  position: absolute;
+  top: 32px;
+  right: 6px;
+  z-index: 4;
+  min-width: 150px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-hi);
+  border-radius: 8px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.fb-menu button {
+  border-color: transparent;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  text-align: left;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* 词汇量定级向导（⑩）：弹层结构复用 paywall-overlay/paywall-card/paywall-close */
+.lt-card {
+  text-align: center;
+}
+
+.lt-progress {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-bottom: 20px;
+}
+
+.lt-word {
+  font-family: var(--mono);
+  font-size: 34px;
+  color: var(--text-strong);
+  min-height: 46px;
+  margin-bottom: 24px;
+}
+
+.lt-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.lt-result {
+  color: var(--text-strong);
+  font-size: 20px;
+  margin: 10px 0 6px;
+}
+
+.lt-result-sub {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
 /* ---------- Vocabulary ---------- */
 
 /* 删除等次级操作：悬停卡片才显现，保持列表干净 */

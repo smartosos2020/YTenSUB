@@ -14,7 +14,7 @@
 
 ## 安装
 
-- **Windows**：从 [GitHub Releases](https://github.com/smartosos2020/YTenSUB/releases) 下载安装包，安装后自动检查更新
+- **Windows**：[下载安装包](https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/releases/YTenSUB-Setup-latest.exe)，安装后自动检查更新
 - **Android**：本地构建安装（见下文开发）
 
 ## 开发
