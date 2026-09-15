@@ -191,7 +191,13 @@ async function handleRedeem(env: Env, req: Request): Promise<Response> {
   if (!isValidCardCode(code)) return json({ error: 'bad code format' }, 400)
   const card = (await env.YTENSUB_KV.get(`card:${code}`, 'json')) as CardRecord | null
   if (!card) return json({ error: 'card not found' }, 404)
-  if (card.usedAt) return json({ error: 'card already used' }, 409)
+  // 幂等：同一用户重复兑同一张卡按成功处理（网络丢响应重试的场景，防"卡被吞"）
+  if (card.usedAt) {
+    if (card.usedBy === user.email) {
+      return json({ entitlement: toEntitlement(user, Date.now(), await graceDays(env), await globalFilterSensitive(env)), alreadyRedeemed: true })
+    }
+    return json({ error: 'card already used' }, 409)
+  }
 
   const now = Date.now()
   const updated = applyCard(user, card, now)

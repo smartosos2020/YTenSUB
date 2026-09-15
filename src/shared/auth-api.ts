@@ -33,9 +33,13 @@ async function call<T>(
   token?: string
 ): Promise<T> {
   let r: Response
+  // 不用 AbortSignal.timeout（RN/Hermes 支持不完整）：AbortController + setTimeout 手工超时
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 15_000)
   try {
     r = await fetchFn(AUTH_API_URL + path, {
       method,
+      signal: ctrl.signal,
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {})
@@ -44,6 +48,8 @@ async function call<T>(
     })
   } catch {
     throw new Error('网络异常，请检查网络/代理后重试')
+  } finally {
+    clearTimeout(timer)
   }
   const data = (await r.json().catch(() => ({}))) as Record<string, unknown>
   if (!r.ok) throw new Error(typeof data.error === 'string' ? data.error : `请求失败（${r.status}）`)

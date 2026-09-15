@@ -1,5 +1,5 @@
 import React from 'react'
-import Svg, { Circle, Path, Polygon, Rect } from 'react-native-svg'
+import Svg, { Circle, Path, Polygon, Polyline, Rect } from 'react-native-svg'
 
 interface IconProps {
   size?: number
@@ -115,6 +115,26 @@ export function LockIcon({ size = 18, color }: IconProps): React.JSX.Element {
     >
       <Rect x={3} y={11} width={18} height={11} rx={2} ry={2} />
       <Path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </Svg>
+  )
+}
+
+/** feather refresh-cw：刷新（「我的」页会员到期旁的圆形小图标按钮用） */
+export function RefreshIcon({ size = 16, color }: IconProps): React.JSX.Element {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.9}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Polyline points="23 4 23 10 17 10" />
+      <Polyline points="1 20 1 14 7 14" />
+      <Path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
     </Svg>
   )
 }

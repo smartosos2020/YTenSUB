@@ -27,6 +27,7 @@ import {
 } from '../lib/entitlement'
 import { ThemeColors, useTheme } from '../lib/theme'
 import { estimateLevelFromAnswers, LevelAnswer, LEVEL_TEST_WORDS } from '../lib/level-test'
+import { RefreshIcon } from '../components/icons'
 
 /** 档位显示名 */
 const PLAN_LABEL: Record<Entitlement['plan'], string> = { free: '免费', pro: 'pro', pro_plus: 'pro+' }
@@ -79,6 +80,15 @@ export default function MyScreen(): React.JSX.Element {
 
   /** 自定义频道订阅可用：已登录且 pro 及以上 */
   const canSubmitChannel = session !== null && isPaidPlan(plan)
+
+  /** 档位徽章色调（仅夜间叠加药丸样式用）：pro+ 绿 / pro 蓝 / 免费灰 */
+  const planBadgeTone = !entitlement
+    ? null
+    : entitlement.plan === 'pro_plus'
+      ? styles.badgeProPlus
+      : entitlement.plan === 'pro'
+        ? styles.badgePro
+        : styles.badgeFree
 
   // 发送验证码后的 60s 倒计时
   React.useEffect(() => {
@@ -252,46 +262,62 @@ export default function MyScreen(): React.JSX.Element {
     <View style={styles.container}>
       <Text style={styles.header}>我的</Text>
       <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
-        {/* 账号卡 */}
+        {/* 账号卡（设计稿布局：已登录为 当前账号+徽章 / 到期子卡 / 卡密兑换行；未登录为登录表单） */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>账号</Text>
+          {session ? null : <Text style={styles.cardTitle}>账号</Text>}
           {session ? (
             <>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>邮箱</Text>
-                <Text style={styles.infoValue}>{session.email}</Text>
+              {/* 第一行：左"当前账号"小字 + 邮箱大字；右上角档位药丸（pro+ 金 / pro 蓝 / 免费灰） */}
+              <View style={styles.acctTopRow}>
+                <View style={styles.acctTopLeft}>
+                  <Text style={styles.acctLabel}>当前账号</Text>
+                  <Text style={styles.acctEmail}>{session.email}</Text>
+                </View>
+                {entitlement ? (
+                  <Text style={[styles.planBadge, planBadgeTone]}>
+                    {entitlement.plan === 'pro_plus' ? '★ ' : ''}
+                    {PLAN_LABEL[entitlement.plan]}
+                  </Text>
+                ) : null}
               </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>档位</Text>
-                <Text style={styles.infoValue}>{entitlement ? PLAN_LABEL[entitlement.plan] : '—'}</Text>
+              {/* 内嵌子卡：会员到期时间 + 圆形玻璃刷新图标按钮 */}
+              <View style={styles.subCard}>
+                <View style={styles.subCardRow}>
+                  <View>
+                    <Text style={styles.acctLabel}>会员到期时间</Text>
+                    <Text style={styles.subCardTime}>
+                      {entitlement ? fmtExpires(entitlement.expiresAt) : '—'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.refreshBtn, busy && styles.btnDisabled]}
+                    disabled={busy}
+                    onPress={onRefresh}
+                    hitSlop={6}
+                  >
+                    <RefreshIcon size={15} color={dark ? '#f5f5f7' : colors.subtext} />
+                  </TouchableOpacity>
+                </View>
               </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>到期时间</Text>
-                <Text style={styles.infoValue}>{entitlement ? fmtExpires(entitlement.expiresAt) : '—'}</Text>
+              {/* 卡密兑换：输入框与蓝色胶囊按钮同一行 */}
+              <View style={styles.inlineRow}>
+                <TextInput
+                  style={[styles.input, styles.inputInline]}
+                  value={cardCode}
+                  onChangeText={setCardCode}
+                  placeholder="请输入卡密兑换码"
+                  placeholderTextColor={colors.subtext}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity
+                  style={[styles.btn, styles.btnPrimary, styles.btnInline, busy && styles.btnDisabled]}
+                  disabled={busy}
+                  onPress={onRedeem}
+                >
+                  <Text style={[styles.btnText, styles.btnPrimaryText]}>兑换</Text>
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={[styles.btn, busy && styles.btnDisabled]}
-                disabled={busy}
-                onPress={onRefresh}
-              >
-                <Text style={styles.btnText}>刷新权益</Text>
-              </TouchableOpacity>
-              <TextInput
-                style={styles.input}
-                value={cardCode}
-                onChangeText={setCardCode}
-                placeholder="卡密兑换码"
-                placeholderTextColor={colors.subtext}
-                autoCapitalize="characters"
-                autoCorrect={false}
-              />
-              <TouchableOpacity
-                style={[styles.btn, busy && styles.btnDisabled]}
-                disabled={busy}
-                onPress={onRedeem}
-              >
-                <Text style={styles.btnText}>兑换</Text>
-              </TouchableOpacity>
             </>
           ) : (
             <>
@@ -307,11 +333,13 @@ export default function MyScreen(): React.JSX.Element {
                 keyboardType="email-address"
               />
               <TouchableOpacity
-                style={[styles.btn, (busy || countdown > 0) && styles.btnDisabled]}
+                style={[styles.btn, styles.btnPrimary, (busy || countdown > 0) && styles.btnDisabled]}
                 disabled={busy || countdown > 0}
                 onPress={onSendCode}
               >
-                <Text style={styles.btnText}>{countdown > 0 ? `重新发送（${countdown}s）` : '发送验证码'}</Text>
+                <Text style={[styles.btnText, styles.btnPrimaryText]}>
+                  {countdown > 0 ? `重新发送（${countdown}s）` : '发送验证码'}
+                </Text>
               </TouchableOpacity>
               <TextInput
                 style={styles.input}
@@ -323,52 +351,69 @@ export default function MyScreen(): React.JSX.Element {
                 autoCorrect={false}
                 keyboardType="number-pad"
               />
-              <TouchableOpacity style={[styles.btn, busy && styles.btnDisabled]} disabled={busy} onPress={onLogin}>
-                <Text style={styles.btnText}>登录</Text>
+              <TouchableOpacity
+                style={[styles.btn, styles.btnPrimary, busy && styles.btnDisabled]}
+                disabled={busy}
+                onPress={onLogin}
+              >
+                <Text style={[styles.btnText, styles.btnPrimaryText]}>登录</Text>
               </TouchableOpacity>
             </>
           )}
           {msg ? <Text style={[styles.msg, !msg.ok && styles.msgErr]}>{msg.text}</Text> : null}
-          {session ? (
-            <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
-              <Text style={styles.logoutText}>登出</Text>
-            </TouchableOpacity>
-          ) : null}
         </View>
         {/* C1 自定义频道订阅（pro 起；审核通过后随下次内容更新进精选） */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>自定义频道订阅</Text>
+          <View style={styles.cardTitleRow}>
+            <View style={styles.cardTitleLeft}>
+              <View style={styles.accentBar} />
+              <Text style={styles.cardTitle}>自定义频道订阅</Text>
+            </View>
+            <Text style={styles.sideLabel}>次日更新精选推荐</Text>
+          </View>
           <Text style={styles.hint}>提交你想看的 YouTube 频道，审核通过后随下次内容更新进入精选推荐</Text>
-          <TextInput
-            style={[styles.input, !canSubmitChannel && styles.inputDisabled]}
-            value={channel}
-            onChangeText={setChannel}
-            placeholder="@频道名 或频道链接"
-            placeholderTextColor={colors.subtext}
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={canSubmitChannel && !channelBusy}
-          />
-          <TouchableOpacity
-            style={[styles.btn, (channelBusy || !canSubmitChannel) && styles.btnDisabled]}
-            disabled={channelBusy || !canSubmitChannel}
-            onPress={onSubmitChannel}
-          >
-            <Text style={styles.btnText}>提交</Text>
-          </TouchableOpacity>
+          <View style={styles.inlineRow}>
+            <TextInput
+              style={[styles.input, styles.inputInline, !canSubmitChannel && styles.inputDisabled]}
+              value={channel}
+              onChangeText={setChannel}
+              placeholder="@频道名 或频道链接"
+              placeholderTextColor={colors.subtext}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={canSubmitChannel && !channelBusy}
+            />
+            <TouchableOpacity
+              style={[styles.btn, styles.btnPrimary, styles.btnInline, (channelBusy || !canSubmitChannel) && styles.btnDisabled]}
+              disabled={channelBusy || !canSubmitChannel}
+              onPress={onSubmitChannel}
+            >
+              <Text style={[styles.btnText, styles.btnPrimaryText]}>提交</Text>
+            </TouchableOpacity>
+          </View>
           {canSubmitChannel ? null : <Text style={styles.hint}>pro 及以上可用</Text>}
           {channelMsg ? (
             <Text style={[styles.msg, !channelMsg.ok && styles.msgErr]}>{channelMsg.text}</Text>
           ) : null}
         </View>
-        {/* ⑩ 词汇量定级向导 */}
+        {/* ⑩ 词汇量定级向导：左标题+说明，右侧开始测试胶囊 */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>测一测你的英语水平</Text>
-          <Text style={styles.hint}>24 个词快速估计 CEFR 等级，结果可一键应用到精选推荐难度</Text>
-          <TouchableOpacity style={styles.btn} onPress={startTest}>
-            <Text style={styles.btnText}>开始测试</Text>
-          </TouchableOpacity>
+          <View style={styles.testRow}>
+            <View style={styles.testRowText}>
+              <Text style={styles.cardTitle}>测一测你的英语水平</Text>
+              <Text style={styles.hint}>24 个词快速估计 CEFR 等级，结果可一键应用到精选推荐难度</Text>
+            </View>
+            <TouchableOpacity style={[styles.btn, styles.btnPrimary, styles.btnInline]} onPress={startTest}>
+              <Text style={[styles.btnText, styles.btnPrimaryText]}>开始测试</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+        {/* 退出登录：全宽红字、透明底+玻璃细描边（设计稿无卡片容器） */}
+        {session ? (
+          <TouchableOpacity style={styles.logoutBig} onPress={onLogout}>
+            <Text style={styles.logoutBigText}>退出当前登录</Text>
+          </TouchableOpacity>
+        ) : null}
         {/* 后续订阅/付费区块挂在账号卡下方 */}
         {/* 服务端公告胶囊块：空串不渲染，文案原样输出 */}
         {announce ? (
@@ -427,59 +472,174 @@ export default function MyScreen(): React.JSX.Element {
   )
 }
 
+// 夜间按设计稿 Apple Midnight Glass（docs-internal/DESIGN-apple-midnight-glass.md）：
+// 近黑底 #0c0d10；玻璃卡 = 半透明底 rgba(28,30,36,0.72) + 0.5~1px 细描边模拟（RN 不支持
+// backdrop-filter 模糊，且不加 expo-blur 原生依赖）；主按钮 accent 胶囊。日间逐项沿用旧版样式值。
 const makeStyles = (c: ThemeColors, dark: boolean) =>
   StyleSheet.create({
-  container: { flex: 1, backgroundColor: c.bg },
-  header: { color: c.text, fontSize: 18, fontWeight: '600', padding: 14, paddingBottom: 4 },
-  body: { flex: 1, paddingHorizontal: 12 },
-  card: { backgroundColor: c.card, borderRadius: 8, padding: 14, marginTop: 8 },
-  cardTitle: { color: c.text, fontSize: 16, fontWeight: '600' },
-  hint: { color: c.subtext, fontSize: 12, marginTop: 6, lineHeight: 18 },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  infoLabel: { color: c.subtext, fontSize: 14 },
-  infoValue: { color: c.text, fontSize: 14 },
+  container: { flex: 1, backgroundColor: dark ? '#0c0d10' : c.bg },
+  header: {
+    color: dark ? '#f5f5f7' : c.text,
+    fontSize: dark ? 24 : 18,
+    fontWeight: dark ? '700' : '600',
+    letterSpacing: dark ? -0.48 : 0, // 设计稿 -0.02em × 24px
+    padding: 14,
+    paddingBottom: 4
+  },
+  body: { flex: 1, paddingHorizontal: dark ? 14 : 12 },
+  card: {
+    backgroundColor: dark ? 'rgba(28,30,36,0.72)' : c.card,
+    borderRadius: dark ? 16 : 8,
+    borderWidth: dark ? 1 : 0,
+    borderColor: 'rgba(255,255,255,0.08)',
+    padding: 14,
+    marginTop: dark ? 12 : 8 // 设计稿 gutter 12px
+  },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  cardTitleLeft: { flexDirection: 'row', alignItems: 'center' },
+  accentBar: {
+    width: 3,
+    height: 12,
+    borderRadius: 2,
+    backgroundColor: dark ? '#0a84ff' : c.accent,
+    marginRight: 6
+  },
+  sideLabel: { color: dark ? '#8e8e93' : c.subtext, fontSize: 11 },
+  cardTitle: {
+    color: dark ? '#f5f5f7' : c.text,
+    fontSize: dark ? 13 : 16,
+    fontWeight: '600',
+    letterSpacing: dark ? -0.13 : 0
+  },
+  hint: {
+    color: dark ? '#8e8e93' : c.subtext,
+    fontSize: dark ? 11 : 12,
+    marginTop: 6,
+    lineHeight: dark ? 14 : 18
+  },
+  // 账号卡第一行：左侧"当前账号"小字 + 邮箱大字，右上角档位药丸
+  acctTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  acctTopLeft: { flex: 1, paddingRight: 10 },
+  acctLabel: { color: dark ? '#8e8e93' : c.subtext, fontSize: 11 },
+  acctEmail: { color: dark ? '#f5f5f7' : c.text, fontSize: dark ? 16 : 15, fontWeight: '600', marginTop: 3 },
+  // 档位徽章（药丸）：pro+ 金 / pro 蓝 / 免费灰
+  planBadge: {
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 14,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    overflow: 'hidden'
+  },
+  badgeFree: dark
+    ? { color: '#8e8e93', backgroundColor: 'rgba(255,255,255,0.08)' }
+    : { color: '#64748B', backgroundColor: 'rgba(0,0,0,0.06)' },
+  badgePro: dark
+    ? { color: '#0a84ff', backgroundColor: 'rgba(10,132,255,0.15)' }
+    : { color: '#007AFF', backgroundColor: 'rgba(0,122,255,0.10)' },
+  badgeProPlus: dark
+    ? { color: '#ffd60a', backgroundColor: 'rgba(255,214,10,0.15)' }
+    : { color: '#8a6d00', backgroundColor: 'rgba(255,214,10,0.30)' },
+  // 内嵌子卡（更深半透底）：会员到期时间 + 圆形玻璃刷新图标按钮
+  subCard: {
+    marginTop: 12,
+    borderRadius: dark ? 12 : 8,
+    borderWidth: dark ? 0.5 : 0,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: dark ? 'rgba(0,0,0,0.28)' : 'rgba(0,0,0,0.04)',
+    paddingHorizontal: 12,
+    paddingVertical: 10
+  },
+  subCardRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  subCardTime: { color: dark ? '#f5f5f7' : c.text, fontSize: dark ? 13 : 14, marginTop: 3 },
+  refreshBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+    borderWidth: dark ? 0.5 : 0,
+    borderColor: 'rgba(255,255,255,0.12)'
+  },
+  // 输入框与蓝色胶囊按钮同一行（输入框 flex:1，按钮在右）
+  inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
+  inputInline: { flex: 1, marginTop: 0 },
+  btnInline: { marginTop: 0, paddingHorizontal: 18 },
   input: {
-    backgroundColor: dark ? '#262626' : 'rgba(0,0,0,0.06)',
-    color: c.text,
-    borderRadius: 8,
+    backgroundColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+    borderWidth: dark ? 0.5 : 0,
+    borderColor: 'rgba(255,255,255,0.08)',
+    color: dark ? '#f5f5f7' : c.text,
+    borderRadius: dark ? 12 : 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    fontSize: 14,
+    fontSize: dark ? 13 : 14,
     marginTop: 12
   },
+  // 次级按钮：夜间玻璃胶囊；主按钮叠 btnPrimary 变 accent 蓝
   btn: {
-    backgroundColor: dark ? '#2c2c2e' : 'rgba(0,0,0,0.06)',
-    borderRadius: 8,
-    paddingVertical: 10,
+    backgroundColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+    borderWidth: dark ? 0.5 : 0,
+    borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: dark ? 999 : 8,
+    paddingVertical: dark ? 11 : 10,
     alignItems: 'center',
     marginTop: 12
   },
+  btnPrimary: dark ? { backgroundColor: '#0a84ff', borderWidth: 0 } : {},
+  btnPrimaryText: dark ? { color: '#fff', fontWeight: '600' } : {},
   btnDisabled: { opacity: 0.4 },
   inputDisabled: { opacity: 0.5 },
-  btnText: { color: c.text, fontSize: 15 },
-  msg: { color: '#3ecf8e', fontSize: 13, marginTop: 12 },
-  msgErr: { color: '#ff6b6b' },
-  logoutBtn: { marginTop: 8, paddingVertical: 10, alignItems: 'center' },
-  logoutText: { color: '#ff6b6b', fontSize: 15 },
+  btnText: { color: dark ? '#f5f5f7' : c.text, fontSize: dark ? 13 : 15 },
+  msg: { color: dark ? '#30d158' : '#3ecf8e', fontSize: 13, marginTop: 12 },
+  msgErr: { color: dark ? '#ff453a' : '#ff6b6b' },
+  // 定级卡：左标题+说明，右侧开始测试按钮
+  testRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  testRowText: { flex: 1 },
+  // 退出当前登录：页级全宽大按钮，红字、透明底 + 玻璃细描边
+  logoutBig: {
+    marginTop: dark ? 12 : 8,
+    borderRadius: dark ? 999 : 8,
+    borderWidth: dark ? 0.5 : 1,
+    borderColor: dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.15)',
+    backgroundColor: dark ? 'rgba(255,255,255,0.05)' : 'transparent',
+    paddingVertical: dark ? 12 : 10,
+    alignItems: 'center'
+  },
+  logoutBigText: { color: dark ? '#ff453a' : '#ff6b6b', fontSize: dark ? 13 : 15, fontWeight: '600' },
   announce: {
     marginTop: 12,
     marginBottom: 16,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: c.accent,
-    backgroundColor: dark ? 'rgba(10,132,255,0.15)' : 'rgba(0,122,255,0.08)',
+    borderRadius: dark ? 16 : 18,
+    borderWidth: dark ? 0.5 : 1,
+    borderColor: dark ? 'rgba(255,255,255,0.12)' : c.accent,
+    backgroundColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,122,255,0.08)',
     paddingHorizontal: 14,
     paddingVertical: 10
   },
-  announceText: { color: c.text, fontSize: 13, lineHeight: 19 },
-  testWrap: { flex: 1, backgroundColor: c.bg, padding: 20, paddingTop: 40 },
-  testProgress: { color: c.subtext, fontSize: 13, textAlign: 'center' },
+  announceText: { color: dark ? '#e3e2e7' : c.text, fontSize: 13, lineHeight: dark ? 18 : 19 },
+  testWrap: { flex: 1, backgroundColor: dark ? '#0c0d10' : c.bg, padding: 20, paddingTop: 40 },
+  testProgress: { color: dark ? '#8e8e93' : c.subtext, fontSize: dark ? 11 : 13, textAlign: 'center' },
   testCenter: { flex: 1, justifyContent: 'center' },
-  testWord: { color: c.text, fontSize: 34, fontWeight: '700', marginTop: 12, textAlign: 'center' },
-  testResult: { color: c.text, fontSize: 22, fontWeight: '600', textAlign: 'center', marginBottom: 8 },
+  testWord: {
+    color: dark ? '#f5f5f7' : c.text,
+    fontSize: 34,
+    fontWeight: '700',
+    marginTop: 12,
+    textAlign: 'center'
+  },
+  testResult: {
+    color: dark ? '#f5f5f7' : c.text,
+    fontSize: 22,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 8
+  },
   testBtnRow: { flexDirection: 'row', gap: 12, marginTop: 32 },
   testBtn: { flex: 1, marginTop: 0 },
-  testBtnPrimary: { backgroundColor: c.accent },
-  testBtnPrimaryText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  testBtnPrimary: { backgroundColor: c.accent, borderWidth: 0 },
+  testBtnPrimaryText: { color: '#fff', fontSize: dark ? 13 : 15, fontWeight: '600' },
   testClose: { paddingVertical: 12, alignItems: 'center' }
 })
