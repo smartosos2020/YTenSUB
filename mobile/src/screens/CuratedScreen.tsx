@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import { CuratedVideo, CURATED_CUES_URL_BASE, loadCurated, rankCurated } from '../lib/curated'
+import { ActivityIndicator, Alert, FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { CuratedVideo, CURATED_CUES_URL_BASE, loadCurated, rankCurated, refreshCurated } from '../lib/curated'
 import { capcachePut } from '../lib/capcache'
 import { favList } from '../lib/storage'
 import { ThemeColors, useTheme } from '../lib/theme'
@@ -24,7 +24,7 @@ import {
   loadEntitlementCache,
   saveEntitlementCache
 } from '../lib/entitlement'
-import { LockIcon } from '../components/icons'
+import { LockIcon, RefreshIcon } from '../components/icons'
 import PaywallSheet from '../components/PaywallSheet'
 import { filterSensitiveVideos } from '../lib/sensitive'
 import {
@@ -47,6 +47,8 @@ function fmtDuration(s: number): string {
 }
 
 interface Props {
+  /** 是否正在显示，用于切回精选时刷新权益等轻量状态 */
+  isActive: boolean
   /** 点卡片去浏览页播放该视频 */
   onOpenVideo: (videoId: string) => void
   /** 付费墙主按钮：切到「我的」tab */
@@ -54,17 +56,18 @@ interface Props {
 }
 
 /** 精选页：按水平/标签/创作者筛选远端内容库，点开去浏览页播放；免费档每天前 3 部，第 4 部起锁定出付费墙 */
-export default function CuratedScreen({ onOpenVideo, onGoMy }: Props): React.JSX.Element {
+export default function CuratedScreen({ isActive, onOpenVideo, onGoMy }: Props): React.JSX.Element {
   const { dark, colors } = useTheme()
   const styles = useMemo(() => makeStyles(colors, dark), [colors, dark])
   const [videos, setVideos] = useState<CuratedVideo[]>([])
+  const [refreshing, setRefreshing] = useState(false)
   const [level, setLevel] = useState<string | null>(null)
   const [tags, setTags] = useState<string[]>([])
   const [creator, setCreator] = useState<string | null>(null)
   const [page, setPage] = useState(0)
-  // 已收藏视频 id：排序时沉底（挂载时加载一次）
+  // 已收藏视频 id：排序时沉底（进入精选页时刷新）
   const [seenIds, setSeenIds] = useState<Set<string>>(new Set())
-  // 当前档位：默认 free（fail closed），挂载时在线求证后按缓存+宽限期重定
+  // 当前档位：默认 free（fail closed），进入精选页时在线求证后按缓存+宽限期重定
   const [plan, setPlan] = useState<Plan>('free')
   const [paywallOpen, setPaywallOpen] = useState(false)
   // 敏感过滤开关：用户级（权益字段，服务端解析：用户覆盖 > 全局）> 全局公共开关；默认开
@@ -76,21 +79,53 @@ export default function CuratedScreen({ onOpenVideo, onGoMy }: Props): React.JSX
   const paid = isPaidPlan(plan)
 
   useEffect(() => {
-    void loadCurated().then(setVideos)
+    let active = true
+    void loadCurated((cached) => {
+      if (active) setVideos(cached)
+    }).then((loaded) => {
+      if (active) setVideos(loaded)
+    })
+    return () => {
+      active = false
+    }
   }, [])
   useEffect(() => {
-    void favList().then((list) => setSeenIds(new Set(list.map((f) => f.videoId))))
-  }, [])
-  // 挂载时读推荐反馈（本地持久化，不上云）
+    if (!isActive) return
+    let active = true
+    void favList().then((list) => {
+      if (active) setSeenIds(new Set(list.map((f) => f.videoId)))
+    })
+    return () => {
+      active = false
+    }
+  }, [isActive])
+  // 读推荐反馈（本地持久化，不上云）
   useEffect(() => {
     void loadFeedback().then(setFeedback)
   }, [])
   useEffect(() => setPage(0), [level, tags, creator])
 
+  const refreshList = async (): Promise<void> => {
+    if (refreshing) return
+    setRefreshing(true)
+    try {
+      const result = await refreshCurated((cached) => setVideos(cached))
+      setVideos(result.videos)
+      if (!result.updated) {
+        Alert.alert('刷新失败', '网络暂不可用，已保留本地精选内容。')
+      }
+    } catch {
+      Alert.alert('刷新失败', '已保留当前精选内容，请检查网络后重试。')
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   // 进入精选页：有会话先在线拉权益（成功写缓存），再按缓存+宽限期定档位（D5）；失败静默走缓存
   // 敏感过滤开关三级解析（复用本次 fetchEntitlement，不多发请求）：
   // 本地权益缓存的用户级字段（离线宽限期内直接用）→ 在线求证覆盖 → 未登录/失败回退全局公共开关 → 都失败按开
   useEffect(() => {
+    if (!isActive) return
     void (async () => {
       const s = authCache.session ?? (await loadSession())
       const cached = await loadEntitlementCache()
@@ -122,10 +157,12 @@ export default function CuratedScreen({ onOpenVideo, onGoMy }: Props): React.JSX
       }
       setPlan(effectiveCachedPlan(await loadEntitlementCache(), Date.now()))
     })()
-  }, [])
+  }, [isActive])
 
-  // 挂载时读本地偏好缓存应用到筛选（服务器偏好已在登录/启动预热时写入本地，服务器为准）
+  // 进入精选页时读本地偏好缓存应用到筛选（服务器偏好已在登录/启动预热时写入本地，服务器为准）
   useEffect(() => {
+    if (!isActive) return
+    prefsReady.current = false
     void loadPrefsCache().then((p) => {
       if (p) {
         setLevel(p.curatedLevel)
@@ -133,7 +170,7 @@ export default function CuratedScreen({ onOpenVideo, onGoMy }: Props): React.JSX
       }
       prefsReady.current = true
     })
-  }, [])
+  }, [isActive])
 
   // 偏好随账号同步（付费档）：本地变更防抖 1s 上传（先落本地缓存），失败静默
   useEffect(() => {
@@ -255,6 +292,16 @@ export default function CuratedScreen({ onOpenVideo, onGoMy }: Props): React.JSX
         <TouchableOpacity style={creator === null ? styles.segOn : styles.seg} onPress={() => setCreator(null)}>
           <Text style={styles.segText}>全部频道</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.refreshBtn, refreshing && styles.refreshDisabled]}
+          onPress={() => void refreshList()}
+          disabled={refreshing}
+          accessibilityRole="button"
+          accessibilityLabel="刷新精选内容"
+          hitSlop={8}
+        >
+          {refreshing ? <ActivityIndicator size="small" color={colors.accent} /> : <RefreshIcon color={colors.subtext} />}
+        </TouchableOpacity>
         {creators.map((c) => (
           <TouchableOpacity key={c} style={creator === c ? styles.segOn : styles.seg} onPress={() => setCreator(c)}>
             <Text style={styles.segText} numberOfLines={1}>
@@ -345,6 +392,15 @@ const makeStyles = (c: ThemeColors, dark: boolean) =>
     marginHorizontal: 2
   },
   segText: { color: c.text, fontSize: 12 },
+  refreshBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 4
+  },
+  refreshDisabled: { opacity: 0.6 },
   empty: { color: c.subtext, textAlign: 'center', marginTop: 40, fontSize: 13 },
   row: { paddingHorizontal: 12, gap: 8 },
   card: {

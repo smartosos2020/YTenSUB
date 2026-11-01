@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, session, shell } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { Store } from './store'
@@ -16,6 +17,20 @@ import { estimateLevelByFreq } from './cefr'
 import { CURATED_SNAPSHOT_URL } from '../shared/curated-config'
 
 const dataFile = path.join(app.getPath('userData'), 'ytensub-data.json')
+const syncTokenFile = path.join(app.getPath('userData'), 'sync-pair-token')
+
+function loadOrCreateSyncToken(): string {
+  try {
+    const token = fs.readFileSync(syncTokenFile, 'utf8').trim()
+    if (/^[A-Za-z0-9_-]{40,}$/.test(token)) return token
+  } catch {
+    // First pairing creates a local token below.
+  }
+  const token = randomBytes(32).toString('base64url')
+  fs.mkdirSync(path.dirname(syncTokenFile), { recursive: true })
+  fs.writeFileSync(syncTokenFile, token, { encoding: 'utf8', mode: 0o600 })
+  return token
+}
 
 // 项目更名为 YTenSUB：把旧 EngLearn 的数据文件迁移过来（新文件已存在则跳过）
 function migrateLegacyData(): void {
@@ -78,6 +93,17 @@ async function loadCuratedDb(): Promise<unknown[]> {
   // 非采集端：复用 in-flight Promise，并发调用共享同一次增量同步，完成后会话内直接复用结果
   if (!curatedInflight) curatedInflight = syncCuratedDb()
   return curatedInflight
+}
+
+/** 手动刷新远端精选：等当前同步结束后重新检查索引，更新磁盘缓存与会话缓存。 */
+async function refreshCuratedDb(): Promise<unknown[]> {
+  const localDb = path.join(app.getPath('userData'), 'content-db.json')
+  if (fs.existsSync(localDb)) return loadCuratedDb()
+
+  const previous = curatedInflight
+  const refreshed = (previous ?? Promise.resolve([])).then(() => syncCuratedDb())
+  curatedInflight = refreshed
+  return refreshed
 }
 
 /** 增量索引同步（缓存文件 curated-cache.json = { db, appliedTs }），失败回退本地缓存 */
@@ -428,12 +454,13 @@ function registerIpc(): void {
   // 精选内容库：采集端直接读本地产物；其余端走 index.json 增量同步（远端快照 + 增量包），
   // 会话内只加载一次（in-flight Promise 缓存），失败回退本地缓存
   ipcMain.handle('curated:list', () => loadCuratedDb())
+  ipcMain.handle('curated:refresh', () => refreshCuratedDb())
 
   // 局域网同步：手机端拉取/推送（生词本 + 跟读脚本）
   ipcMain.handle('sync:start', async () => {
-    if (syncServer) return { ip: syncServer.ip, port: syncServer.port }
-    syncServer = await startSyncServer(store)
-    return syncServer ? { ip: syncServer.ip, port: syncServer.port } : null
+    if (syncServer) return { ip: syncServer.ip, port: syncServer.port, token: syncServer.token }
+    syncServer = await startSyncServer(store, loadOrCreateSyncToken())
+    return syncServer ? { ip: syncServer.ip, port: syncServer.port, token: syncServer.token } : null
   })
   ipcMain.handle('sync:stop', () => {
     syncServer?.close()

@@ -39,6 +39,7 @@ type Tab = DockTab
 
 function Main(): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('browse')
+  const [hasVisitedCurated, setHasVisitedCurated] = useState(false)
   const [vocab, setVocab] = useState<VocabItem[]>([])
   // 精选页点卡片 → 带视频切到浏览页
   const [pendingVideo, setPendingVideo] = useState<string | null>(null)
@@ -69,9 +70,10 @@ function Main(): React.JSX.Element {
           onVideoHandled={() => setPendingVideo(null)}
         />
       </View>
-      {tab === 'curated' && (
-        <View style={{ flex: 1 }}>
+      {hasVisitedCurated && (
+        <View style={{ flex: 1, display: tab === 'curated' ? 'flex' : 'none' }}>
           <CuratedScreen
+            isActive={tab === 'curated'}
             onOpenVideo={(id) => {
               setPendingVideo(id)
               setTab('browse')
@@ -110,7 +112,13 @@ function Main(): React.JSX.Element {
           <MyScreen />
         </View>
       )}
-      <BottomDock active={tab} onChange={setTab} />
+      <BottomDock
+        active={tab}
+        onChange={(next) => {
+          if (next === 'curated') setHasVisitedCurated(true)
+          setTab(next)
+        }}
+      />
     </View>
   )
 }

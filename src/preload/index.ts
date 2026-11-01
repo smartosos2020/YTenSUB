@@ -62,9 +62,11 @@ const api = {
     ipcRenderer.invoke('captions:put-cache', videoId, entry),
   captionsCacheSize: (): Promise<number> => ipcRenderer.invoke('captions:cache-size'),
   captionsClearCache: () => ipcRenderer.invoke('captions:clear-cache'),
-  syncStart: (): Promise<{ ip: string; port: number } | null> => ipcRenderer.invoke('sync:start'),
+  syncStart: (): Promise<{ ip: string; port: number; token: string } | null> =>
+    ipcRenderer.invoke('sync:start'),
   syncStop: () => ipcRenderer.invoke('sync:stop'),
   curatedList: (): Promise<unknown[]> => ipcRenderer.invoke('curated:list'),
+  curatedRefresh: (): Promise<unknown[]> => ipcRenderer.invoke('curated:refresh'),
   statsGet: (): Promise<Record<string, { reviewed: number; known: number }>> =>
     ipcRenderer.invoke('stats:get'),
   appVersion: () => ipcRenderer.invoke('app:version'),

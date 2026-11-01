@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import QRCode from 'qrcode'
 import {
   ActionIcon,
   Button,
@@ -100,6 +101,7 @@ export default function SettingsPage(): JSX.Element {
   const [stats, setStats] = useState<Record<string, { reviewed: number; known: number }>>({})
   // 手机同步服务地址（开启后显示，如 http://192.168.0.10:47832）
   const [syncAddr, setSyncAddr] = useState('')
+  const [syncQr, setSyncQr] = useState('')
   // 应用更新：手动检查入口与状态文案（失败只给文案，绝不自动打开浏览器）
   const [appVersion, setAppVersion] = useState('')
   const [updateMsg, setUpdateMsg] = useState('')
@@ -124,8 +126,22 @@ export default function SettingsPage(): JSX.Element {
   /** 开启局域网同步服务，失败提示 */
   const startSync = async (): Promise<void> => {
     const r = await api.syncStart()
-    if (r) setSyncAddr(`http://${r.ip}:${r.port}`)
-    else setDataMsg('同步服务启动失败（端口被占用或无局域网）')
+    if (!r) {
+      setDataMsg('同步服务启动失败（端口被占用或无局域网）')
+      return
+    }
+    const baseUrl = `http://${r.ip}:${r.port}`
+    setSyncAddr(baseUrl)
+    try {
+      setSyncQr(
+        await QRCode.toDataURL(JSON.stringify({ type: 'ytensub-sync', version: 1, baseUrl, token: r.token }), {
+          margin: 1,
+          width: 220
+        })
+      )
+    } catch {
+      setDataMsg('配对码生成失败，请重试')
+    }
   }
   // 预览舞台取词弹窗
   const [selection, setSelection] = useState<WordSelection | null>(null)
@@ -754,20 +770,25 @@ export default function SettingsPage(): JSX.Element {
                 </Button>
                 {dataMsg && <span className="saved-hint">{dataMsg}</span>}
               </div>
-              {/* 手机同步：局域网 HTTP 服务，手机端输入地址拉取/推送生词本与跟读脚本 */}
+              {/* 手机同步：局域网服务 + 一次性配对码；保存的配对信息可跨重启复用 */}
               <div className="data-row">
                 {!syncAddr ? (
                   <Button variant="default" onClick={() => void startSync()}>
-                    开启手机同步
+                    显示手机配对码
                   </Button>
                 ) : (
                   <>
-                    <span className="saved-hint">手机端输入：{syncAddr}</span>
+                    <div className="saved-hint">
+                      手机打开「与电脑同步」→「扫码配对」，并确保两台设备在同一 WiFi。
+                      <div><code>{syncAddr}</code></div>
+                      {syncQr && <img src={syncQr} alt="手机同步配对码" width={180} height={180} />}
+                    </div>
                     <Button
                       variant="subtle"
                       onClick={() => {
                         void api.syncStop()
                         setSyncAddr('')
+                        setSyncQr('')
                       }}
                     >
                       关闭

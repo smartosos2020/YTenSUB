@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import type { CuratedFeedback } from './curated-feedback'
+import { rankCurated as rankCuratedShared, type CuratedVideo as SharedCuratedVideo } from '../../../src/shared/curated'
+import type { CuratedFeedback } from '../../../src/shared/curated-feedback'
 
 /** 精选内容快照公开地址（元数据全量引导，与桌面端 src/shared/curated-config.ts 同步） */
 export const CURATED_SNAPSHOT_URL =
@@ -18,6 +19,7 @@ const CACHE_KEY = 'ytensub:curated-cache-v2'
 
 // 会话级缓存：App 启动后第一次打开精选页才同步，之后整个会话直接用内存数据
 let sessionCache: CuratedVideo[] | null = null
+let lastSyncSucceeded = false
 
 export interface CuratedVideo {
   videoId: string
@@ -67,8 +69,11 @@ async function fetchJson<T>(url: string): Promise<T | null> {
  * 本次会话首次：拉 index.json（几百字节）→ 落后就引导全量或补增量，本地合并；
  * 之后整个会话直接用内存数据。网络失败回退本地缓存。
  */
-export async function loadCurated(): Promise<CuratedVideo[]> {
-  if (sessionCache) return sessionCache
+export async function loadCurated(onCached?: (videos: CuratedVideo[]) => void): Promise<CuratedVideo[]> {
+  if (sessionCache) {
+    onCached?.(sessionCache)
+    return sessionCache
+  }
 
   let cache: LocalCache | null = null
   try {
@@ -78,8 +83,16 @@ export async function loadCurated(): Promise<CuratedVideo[]> {
     cache = null
   }
 
+  // 先把持久化快照交给界面显示，再在后台请求索引和增量，避免进精选页时空等网络。
+  if (cache?.db && typeof cache.db === 'object') {
+    sessionCache = Object.values(cache.db)
+    onCached?.(sessionCache)
+  }
+
   const index = await fetchJson<CuratedIndex>(CURATED_INDEX_URL)
+  lastSyncSucceeded = false
   if (index && Array.isArray(index.increments)) {
+    lastSyncSucceeded = true
     const oldestTs = index.increments.length > 0 ? index.increments[0].ts : 0
     // appliedTs 落后于索引最早增量时回退全量引导
     const needBootstrap = !cache || cache.appliedTs < oldestTs
@@ -90,6 +103,8 @@ export async function loadCurated(): Promise<CuratedVideo[]> {
       if (full) {
         cache = { db: full, appliedTs: index.latest }
         curatedLogSink?.(`curated: bootstrap ${Object.keys(full).length}`)
+      } else {
+        lastSyncSucceeded = false
       }
     } else if (cache && cache.appliedTs < index.latest) {
       // 补增量
@@ -97,7 +112,10 @@ export async function loadCurated(): Promise<CuratedVideo[]> {
       let applied = 0
       for (const inc of pending) {
         const entries = await fetchJson<Record<string, CuratedVideo>>(CURATED_INC_URL_BASE + inc.file)
-        if (!entries) break // 某个增量拉不到就先停在这（下次接着补）
+        if (!entries) {
+          lastSyncSucceeded = false
+          break // 某个增量拉不到就先停在这（下次接着补）
+        }
         Object.assign(cache.db, entries)
         cache.appliedTs = inc.ts
         applied += inc.count
@@ -107,7 +125,7 @@ export async function loadCurated(): Promise<CuratedVideo[]> {
       curatedLogSink?.('curated: 已是最新，零下载')
     }
 
-    await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cache))
+    if (cache?.db) await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cache))
   } else if (!index) {
     curatedLogSink?.('curated: index 拉取失败，用本地缓存')
   }
@@ -120,7 +138,17 @@ export async function loadCurated(): Promise<CuratedVideo[]> {
   return []
 }
 
-/** 与桌面端 rankCurated 同规则的简化版：难度贴近 + 标签命中 + 已收藏/已看完沉底 + 不感兴趣频道沉底 + 日期种子打散；feedback（⑨）：不感兴趣的视频直接隐藏 */
+/** 手动刷新精选：重用本地快照作增量基线，网络失败时继续展示缓存。 */
+export async function refreshCurated(
+  onCached?: (videos: CuratedVideo[]) => void
+): Promise<{ videos: CuratedVideo[]; updated: boolean }> {
+  sessionCache = null
+  lastSyncSucceeded = false
+  const videos = await loadCurated(onCached)
+  return { videos, updated: lastSyncSucceeded }
+}
+
+// 精选排序的唯一实现与桌面端共享，保持手机旧调用签名兼容。
 export function rankCurated(
   videos: CuratedVideo[],
   prefs: { level: string | null; tags: string[] },
@@ -128,31 +156,11 @@ export function rankCurated(
   dateSeed: string,
   feedback?: CuratedFeedback
 ): CuratedVideo[] {
-  const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
-  const lvIdx = (l: string | null): number => (l ? LEVELS.indexOf(l) : -1)
-  const pref = lvIdx(prefs.level)
-  const hash = (s: string): number => {
-    let h = 5381
-    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0
-    return h
-  }
-  const hidden = new Set(feedback?.notInterestedVideos ?? [])
-  const sinkChannels = new Set(feedback?.notInterestedChannels ?? [])
-  const watched = new Set(feedback?.watchedVideos ?? [])
-  const pool = hidden.size ? videos.filter((v) => !hidden.has(v.videoId)) : videos
-  return pool
-    .map((v) => {
-      let score = 0
-      const vi = lvIdx(v.level)
-      if (pref >= 0 && vi >= 0) {
-        const d = Math.abs(vi - pref)
-        score += d === 0 ? 3 : d === 1 ? 2 : d === 2 ? 1 : 0.2
-      } else score += 1
-      if (prefs.tags.length > 0 && v.tags.some((t) => prefs.tags.includes(t))) score += 2
-      if (seenIds.has(v.videoId) || watched.has(v.videoId)) score -= 2
-      if (sinkChannels.has(v.channelId)) score -= 4
-      return { v, score, tie: hash(dateSeed + v.videoId) }
-    })
-    .sort((a, b) => b.score - a.score || a.tie - b.tie)
-    .map((s) => s.v)
+  return rankCuratedShared(
+    videos as SharedCuratedVideo[],
+    { ...prefs, level: prefs.level as import('../../../src/shared/types').CefrLevel | null },
+    seenIds,
+    dateSeed,
+    feedback
+  ) as CuratedVideo[]
 }

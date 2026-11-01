@@ -21,11 +21,16 @@ import StarOutlineIcon from '../components/icons/StarOutlineIcon'
 import LockIcon from '../components/icons/LockIcon'
 import DotsIcon from '../components/icons/DotsIcon'
 import RocketIcon from '../components/icons/RocketIcon'
+import RefreshIcon from '../components/icons/RefreshIcon'
 import { CURATED_CUES_URL_BASE } from '../../../shared/curated-config'
 import { fmtDuration, hueOf } from '../lib/format'
 
 /** 精选页：按自评水平 + 兴趣标签从本地内容库推荐视频；免费档每日前 FREE_DAILY_QUOTA 部，付费档不限 */
-export default function CuratedPage(): JSX.Element {
+interface Props {
+  isActive: boolean
+}
+
+export default function CuratedPage({ isActive }: Props): JSX.Element {
   const navigate = useNavigate()
   const [videos, setVideos] = useState<CuratedVideo[]>([])
   const [favs, setFavs] = useState<Favorite[]>([])
@@ -45,9 +50,14 @@ export default function CuratedPage(): JSX.Element {
   // 推荐反馈（⑨）：不感兴趣隐藏/频道沉底/已看完沉底；fbMenuFor = 当前打开反馈菜单的 videoId
   const [feedback, setFeedback] = useState<CuratedFeedback>(emptyFeedback())
   const [fbMenuFor, setFbMenuFor] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     void api.curatedList().then((l) => setVideos(l as CuratedVideo[]))
+  }, [])
+
+  useEffect(() => {
+    if (!isActive) return
     void api.favList().then((l) => setFavs(l as Favorite[]))
     api.curatedFeedbackGet()
       .then(setFeedback)
@@ -82,7 +92,20 @@ export default function CuratedPage(): JSX.Element {
         fallBackToGlobal()
       }
     })()
-  }, [])
+  }, [isActive])
+
+  const refreshCurated = async (): Promise<void> => {
+    if (refreshing) return
+    setRefreshing(true)
+    try {
+      const l = await api.curatedRefresh()
+      setVideos(l as CuratedVideo[])
+    } catch {
+      window.alert('精选刷新失败，请检查网络后重试。当前内容仍保留。')
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   const savePrefs = useCallback((lv: CefrLevel | null, tg: string[]): void => {
     void api.settingsSet({ curatedLevel: lv, curatedTags: tg })
@@ -206,10 +229,21 @@ export default function CuratedPage(): JSX.Element {
           ref={creatorBarRef}
           onScroll={(e) => setShowTop(e.currentTarget.scrollTop > 200)}
         >
-          <button className={creatorFilter === null ? 'selected' : ''} onClick={() => setCreatorFilter(null)}>
-            全部
-            <span className="folder-count">{creatorCount(null)}</span>
-          </button>
+          <div className="creator-all-row">
+            <button className={creatorFilter === null ? 'selected' : ''} onClick={() => setCreatorFilter(null)}>
+              全部
+              <span className="folder-count">{creatorCount(null)}</span>
+            </button>
+            <button
+              className={`creator-refresh${refreshing ? ' refreshing' : ''}`}
+              title={refreshing ? '正在刷新精选' : '刷新精选'}
+              aria-label="刷新精选"
+              disabled={refreshing}
+              onClick={() => void refreshCurated()}
+            >
+              <RefreshIcon />
+            </button>
+          </div>
           <input
             className="creator-search"
             type="text"

@@ -32,8 +32,14 @@ export function normalizeAddr(input: string): string | null {
 }
 
 /** 从电脑拉取：本地与远端合并后写回（生词双向合并，跟读脚本取新） */
-export async function pullFromDesktop(base: string): Promise<{ vocab: number; shadowing: number }> {
-  const r = await fetch(base + '/export', { signal: AbortSignal.timeout(10_000) })
+export async function pullFromDesktop(
+  base: string,
+  token: string | null
+): Promise<{ vocab: number; shadowing: number }> {
+  const r = await fetch(base + '/export', {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    signal: AbortSignal.timeout(10_000)
+  })
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
   const payload = (await r.json()) as SyncPayload
   const merged = mergeVocab(await vocabList(), payload.vocab ?? [])
@@ -43,7 +49,10 @@ export async function pullFromDesktop(base: string): Promise<{ vocab: number; sh
 }
 
 /** 推送到电脑：发本地全量，电脑端合并（返回合并后的总数） */
-export async function pushToDesktop(base: string): Promise<{ vocab: number; shadowing: number }> {
+export async function pushToDesktop(
+  base: string,
+  token: string | null
+): Promise<{ vocab: number; shadowing: number }> {
   const payload: SyncPayload = {
     version: 1,
     exportedAt: Date.now(),
@@ -52,7 +61,10 @@ export async function pushToDesktop(base: string): Promise<{ vocab: number; shad
   }
   const r = await fetch(base + '/import', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(10_000)
   })

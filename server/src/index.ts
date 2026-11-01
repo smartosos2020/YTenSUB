@@ -22,6 +22,7 @@ import {
   toEntitlement
 } from './logic'
 import { ADMIN_PAGE } from './admin-page'
+import { readSession, writeSession } from './session'
 
 /**
  * YTenSUB 账号/权益 API（Cloudflare Workers + 单 KV 命名空间，键全带前缀）。
@@ -29,7 +30,7 @@ import { ADMIN_PAGE } from './admin-page'
  * KV 键布局：
  *   code:<email>      登录验证码 {code}，TTL 10 分钟
  *   rl:code:<email>   发码限流，TTL 60 秒
- *   token:<token>     会话 → email，TTL 30 天（每次用续期，活跃不掉线）
+ *   token:<token>     会话 → email，metadata.expiresAt；有效期 30 天，剩余 ≤7 天时续期
  *   user:<email>      UserRecord（档位/到期）
  *   pref:<email>      CuratedPrefs（精选偏好随账号同步，PUT 需付费档）
  *   card:<code>       CardRecord
@@ -45,14 +46,16 @@ export interface Env {
   SENDGRID_API_KEY?: string
   EMAIL_FROM?: string
   ADMIN_TOKEN?: string
+  /** Optional production token override for local admin saves; defaults to ADMIN_TOKEN. */
+  PRODUCTION_ADMIN_TOKEN?: string
   DEV_MODE?: string
   /** C2 字幕源地址前缀；缺省用公共 R2，D4-B 桶私有化后改走 binding 时可留空 */
   CUES_BASE_URL?: string
 }
 
 const CODE_TTL_S = 600
-const TOKEN_TTL_S = 30 * 86_400
 const DEFAULT_GRACE_DAYS = 7
+const PRODUCTION_API_URL = 'https://ytensub-api.smartosos2020.workers.dev'
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -97,13 +100,12 @@ async function getUser(env: Env, email: string): Promise<UserRecord | null> {
   return (await env.YTENSUB_KV.get(`user:${email}`, 'json')) as UserRecord | null
 }
 
-/** Bearer token → 用户记录；命中即滑动续期 30 天 */
+/** Bearer token → 用户记录；临近到期时续期，普通读取不写 KV。 */
 async function authUser(env: Env, req: Request): Promise<UserRecord | null> {
   const token = bearer(req)
   if (!token) return null
-  const email = await env.YTENSUB_KV.get(`token:${token}`)
+  const email = await readSession(env.YTENSUB_KV, token)
   if (!email) return null
-  await env.YTENSUB_KV.put(`token:${token}`, email, { expirationTtl: TOKEN_TTL_S })
   return getUser(env, email)
 }
 
@@ -179,7 +181,7 @@ async function handleLogin(env: Env, req: Request): Promise<Response> {
     await env.YTENSUB_KV.put(`user:${email}`, JSON.stringify(user))
   }
   const token = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '')
-  await env.YTENSUB_KV.put(`token:${token}`, email, { expirationTtl: TOKEN_TTL_S })
+  await writeSession(env.YTENSUB_KV, token, email, now)
   return json({ token, entitlement: toEntitlement(user, now, await graceDays(env), await globalFilterSensitive(env)) })
 }
 
@@ -266,6 +268,44 @@ async function handleAdminChannelsList(env: Env, req: Request): Promise<Response
   return json({ channels })
 }
 
+interface ContentPipelineStatus {
+  state: 'running' | 'success' | 'failed'
+  startedAt: number
+  updatedAt: number
+  finishedAt?: number
+  added?: number
+  total?: number
+  published?: boolean
+  message?: string
+}
+
+async function handleAdminContentStatusGet(env: Env): Promise<Response> {
+  const status = await env.YTENSUB_KV.get('content:pipeline-status', 'json')
+  return json({ status })
+}
+
+async function handleAdminContentStatusSet(env: Env, req: Request): Promise<Response> {
+  const body = await readJson<Partial<ContentPipelineStatus>>(req)
+  if (!body || !['running', 'success', 'failed'].includes(body.state ?? '')) {
+    return json({ error: 'bad pipeline status' }, 400)
+  }
+  if (!Number.isFinite(body.startedAt) || (body.startedAt ?? 0) <= 0) {
+    return json({ error: 'bad startedAt' }, 400)
+  }
+  const status: ContentPipelineStatus = {
+    state: body.state as ContentPipelineStatus['state'],
+    startedAt: body.startedAt!,
+    updatedAt: Date.now(),
+    ...(Number.isFinite(body.finishedAt) ? { finishedAt: body.finishedAt } : {}),
+    ...(Number.isFinite(body.added) ? { added: Math.max(0, Math.floor(body.added!)) } : {}),
+    ...(Number.isFinite(body.total) ? { total: Math.max(0, Math.floor(body.total!)) } : {}),
+    ...(typeof body.published === 'boolean' ? { published: body.published } : {}),
+    ...(typeof body.message === 'string' ? { message: body.message.slice(0, 500) } : {})
+  }
+  await env.YTENSUB_KV.put('content:pipeline-status', JSON.stringify(status))
+  return json({ ok: true, status })
+}
+
 async function handleAdminChannelDecide(env: Env, req: Request): Promise<Response> {
   const body = await readJson<{ handle?: string; status?: string }>(req)
   const handle = normalizeChannelHandle(body?.handle ?? '')
@@ -309,11 +349,76 @@ async function handleFilterSensitiveGet(env: Env): Promise<Response> {
   return json({ on: v !== '0' })
 }
 
+type CloudflareSyncResult =
+  | { attempted: false }
+  | { attempted: true; synced: true }
+  | { attempted: true; synced: false; error: string }
+
+/** Local admin saves must mirror configuration/user overrides into production KV. */
+async function syncLocalAdminChangeToCloudflare(
+  env: Env,
+  req: Request,
+  path: string,
+  body: unknown,
+  verify: (response: Record<string, unknown>) => boolean
+): Promise<CloudflareSyncResult> {
+  // Only Wrangler localhost requests proxy. A deployed Worker writes directly to
+  // its bound production KV and must never call itself recursively.
+  const hostname = new URL(req.url).hostname.replace(/^\[|\]$/g, '')
+  const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+  if (!isLocal) return { attempted: false }
+
+  const token = env.PRODUCTION_ADMIN_TOKEN || env.ADMIN_TOKEN
+  if (!token) {
+    return {
+      attempted: true,
+      synced: false,
+      error: 'missing PRODUCTION_ADMIN_TOKEN or ADMIN_TOKEN'
+    }
+  }
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 10_000)
+  try {
+    const upstream = await fetch(`${PRODUCTION_API_URL}${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    })
+    if (!upstream.ok) {
+      const error = upstream.status === 401
+        ? 'production rejected the admin token; set PRODUCTION_ADMIN_TOKEN in server/.dev.vars'
+        : `production API returned HTTP ${upstream.status}`
+      return { attempted: true, synced: false, error }
+    }
+    const result = await upstream.json() as Record<string, unknown>
+    if (!verify(result)) {
+      return { attempted: true, synced: false, error: 'Cloudflare sync could not be verified' }
+    }
+    return { attempted: true, synced: true }
+  } catch {
+    return { attempted: true, synced: false, error: 'network error or timeout' }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function handleAdminFilterSensitiveSet(env: Env, req: Request): Promise<Response> {
   const body = await readJson<{ on?: unknown }>(req)
   if (typeof body?.on !== 'boolean') return json({ error: 'bad request' }, 400)
   await env.YTENSUB_KV.put('config:filter-sensitive', body.on ? '1' : '0')
-  return json({ ok: true, on: body.on })
+  const sync = await syncLocalAdminChangeToCloudflare(
+    env, req, '/admin/filter-sensitive', { on: body.on },
+    (result) => result.on === body.on
+  )
+  if (sync.attempted && !sync.synced) {
+    return json({ error: `saved locally, but Cloudflare sync failed: ${sync.error}` }, 502)
+  }
+  return json({ ok: true, on: body.on, ...(sync.attempted ? { cloudflareSynced: true } : {}) })
 }
 
 async function handleAdminAnnounceSet(env: Env, req: Request): Promise<Response> {
@@ -380,7 +485,18 @@ async function handleAdminUserFilterSet(env: Env, req: Request): Promise<Respons
   user.filterSensitive = mode === 'inherit' ? null : mode === 'on'
   user.updatedAt = Date.now()
   await env.YTENSUB_KV.put(`user:${email}`, JSON.stringify(user))
-  return json({ ok: true, filterSensitive: user.filterSensitive })
+  const sync = await syncLocalAdminChangeToCloudflare(
+    env, req, '/admin/user/filter', { email, mode },
+    (result) => result.filterSensitive === user.filterSensitive
+  )
+  if (sync.attempted && !sync.synced) {
+    return json({ error: `saved locally, but Cloudflare sync failed: ${sync.error}` }, 502)
+  }
+  return json({
+    ok: true,
+    filterSensitive: user.filterSensitive,
+    ...(sync.attempted ? { cloudflareSynced: true } : {})
+  })
 }
 
 /** 会员列表（会员管理模块）：KV 前缀扫描 + 逐条解析生效权益 */
@@ -500,6 +616,14 @@ export default {
       if (pathname === '/admin/channels' && req.method === 'GET') {
         if (!adminOk(env, req)) return json({ error: 'unauthorized' }, 401)
         return await handleAdminChannelsList(env, req)
+      }
+      if (pathname === '/admin/content-status' && req.method === 'GET') {
+        if (!adminOk(env, req)) return json({ error: 'unauthorized' }, 401)
+        return await handleAdminContentStatusGet(env)
+      }
+      if (pathname === '/admin/content-status' && req.method === 'POST') {
+        if (!adminOk(env, req)) return json({ error: 'unauthorized' }, 401)
+        return await handleAdminContentStatusSet(env, req)
       }
       if (pathname === '/admin/channels/decide' && req.method === 'POST') {
         if (!adminOk(env, req)) return json({ error: 'unauthorized' }, 401)

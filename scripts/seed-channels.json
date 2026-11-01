@@ -278,21 +278,25 @@
   {
     "name": "Pick Up Limes",
     "handle": "@PickUpLimes",
-    "topic": "生活/健康"
+    "topic": "生活/健康",
+    "channelId": "UCq2E1mIwUKMWzCA4liA_XGQ"
   },
   {
     "name": "Matt D'Avella",
     "handle": "@mattdavella",
-    "topic": "生活/习惯"
+    "topic": "生活/习惯",
+    "channelId": "UCJ24N4O0bP7LGLBDvye7oCA"
   },
   {
     "name": "Ali Abdaal",
     "handle": "@aliabdaal",
-    "topic": "效率/生活"
+    "topic": "效率/生活",
+    "channelId": "UCoOae5nYA7VqaXzerajD0lg"
   },
   {
     "name": "ColdFusion",
     "handle": "@ColdFusion",
-    "topic": "科技/商业"
+    "topic": "科技/商业",
+    "channelId": "UC4QZ_LsYcvcq7qOsOhpAX4A"
   }
 ]

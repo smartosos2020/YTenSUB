@@ -459,6 +459,12 @@ button.update-btn.error {
   border-top-left-radius: 8px;
 }
 
+.curated-holder {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 .page {
   padding: 20px;
   overflow-y: auto;
@@ -1748,6 +1754,66 @@ button.popup-ctx-btn:hover {
 
 .folder-bar::-webkit-scrollbar {
   display: none;
+}
+
+.creator-all-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.creator-all-row > button:first-child {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  text-align: left;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text-dim);
+}
+
+.creator-all-row > button:first-child:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.creator-all-row > button:first-child.selected {
+  background: var(--hover-bg);
+  color: var(--text-strong);
+}
+
+button.creator-refresh {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-dim);
+  background: transparent;
+  cursor: pointer;
+}
+
+button.creator-refresh:hover:not(:disabled) {
+  color: var(--text-strong);
+  background: var(--hover-bg);
+}
+
+button.creator-refresh svg {
+  width: 16px;
+  height: 16px;
+}
+
+button.creator-refresh.refreshing svg {
+  animation: curated-refresh-spin 0.8s linear infinite;
+}
+
+@keyframes curated-refresh-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* 左栏创作者搜索框（全部按钮下方） */

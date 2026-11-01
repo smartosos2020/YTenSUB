@@ -25,7 +25,7 @@ export async function runCuratedPipeline(opts: {
   onLog: (m: string) => void
   /** 额外种子（如已审核用户频道），与文件种子一起采集但不回写种子文件 */
   extraSeeds?: SeedChannel[]
-}): Promise<void> {
+}): Promise<{ added: number; total: number }> {
   const log = opts.onLog
   const pipe = new CuratedPipeline({ apiKey: opts.apiKey, fetchFn: opts.fetchFn, onLog: log })
   const fileSeeds = JSON.parse(fs.readFileSync(opts.seedPath, 'utf8')) as SeedChannel[]
@@ -172,4 +172,5 @@ export async function runCuratedPipeline(opts: {
   fs.writeFileSync(tmp, JSON.stringify(db, null, 2), 'utf8')
   fs.renameSync(tmp, opts.dbPath)
   log(`完成：新增 ${added} 部，库共 ${Object.keys(db).length} 部`)
+  return { added, total: Object.keys(db).length }
 }

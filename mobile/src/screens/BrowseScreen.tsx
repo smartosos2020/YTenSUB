@@ -307,7 +307,11 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
         return false
       }
       if (!isGoogleAuth && ua === GOOGLE_UA && new URL(req.url).hostname.endsWith('youtube.com')) {
-        setUa(DESKTOP_UA) // 回到 YouTube：恢复桌面 UA（会触发当前页重载，仅登录后一次）
+        // Google 登录完成回到 YouTube 时同步受控 source；否则切换 UA 可能重新加载旧的
+        // accounts.google.com 地址，表现为验证完成后又跳回登录页。
+        setUrl(req.url)
+        setUa(DESKTOP_UA)
+        return false
       }
       return true
     },
@@ -331,6 +335,7 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
           ref={wvRef}
           source={{ uri: url }}
           userAgent={ua}
+          thirdPartyCookiesEnabled
           onShouldStartLoadWithRequest={onShouldStart}
           injectedJavaScriptBeforeContentLoaded={VISIBILITY_SPOOF}
           injectedJavaScript={PROBE_SCRIPT}

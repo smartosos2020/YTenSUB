@@ -25,7 +25,7 @@ if (!apiKey) {
   process.exit(1)
 }
 // C1 用户频道合并（可选）：缺任一键就当纯种子跑，不报错
-const apiUrl = /AUTH_API_URL=(\S+)/.exec(envText)?.[1]
+const apiUrl = /AUTH_API_URL=(\S+)/.exec(envText)?.[1] ?? 'https://ytensub-api.smartosos2020.workers.dev'
 const adminToken = /ADMIN_TOKEN=(\S+)/.exec(envText)?.[1]
 
 const seedPath = path.join(root, 'scripts', 'seed-channels.json')
@@ -72,9 +72,45 @@ esbuild.buildSync({
 })
 
 const { runCuratedPipeline } = require2(outFile)
-const dbPath = path.join(process.env.APPDATA || os.homedir(), 'YTenSUB', 'content-db.json')
+const contentDir = path.join(process.env.APPDATA || os.homedir(), 'YTenSUB')
+const dbPath = path.join(contentDir, 'content-db.json')
+const statusPath = path.join(contentDir, 'pipeline-status.json')
+const startedAt = Date.now()
+let lastStatusReportAt = 0
+let pipelineState = {
+  state: 'running',
+  startedAt,
+  updatedAt: startedAt,
+  message: '准备采集频道'
+}
 
-loadUserSeeds()
+async function reportStatus(state, patch = {}, force = false) {
+  pipelineState = { ...pipelineState, ...patch, state, updatedAt: Date.now() }
+  try {
+    fs.mkdirSync(contentDir, { recursive: true })
+    const tempPath = statusPath + '.tmp'
+    fs.writeFileSync(tempPath, JSON.stringify(pipelineState, null, 2), 'utf8')
+    fs.renameSync(tempPath, statusPath)
+  } catch (e) {
+    console.warn('本地管线状态写入失败：', String(e))
+  }
+  if (!adminToken || (!force && Date.now() - lastStatusReportAt < 30_000)) return
+  lastStatusReportAt = Date.now()
+  try {
+    const response = await fetch(`${apiUrl.replace(/\/$/, '')}/admin/content-status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify(pipelineState),
+      signal: AbortSignal.timeout(10_000)
+    })
+    if (!response.ok) console.warn(`Cloudflare 管线状态同步失败：HTTP ${response.status}`)
+  } catch (e) {
+    console.warn('Cloudflare 管线状态同步失败：', String(e))
+  }
+}
+
+reportStatus('running', {}, true)
+  .then(() => loadUserSeeds())
   .then((extraSeeds) =>
     runCuratedPipeline({
       apiKey,
@@ -83,15 +119,25 @@ loadUserSeeds()
       dictPath,
       extraSeeds,
       fetchFn: (u, i) => fetch(u, i),
-      onLog: (m) => console.log(m)
+      onLog: (m) => {
+        console.log(m)
+        void reportStatus('running', { message: m })
+      }
     })
   )
-  .then(async () => {
+  .then(async (summary) => {
     // 管线成功后上传快照到 R2（未配置 R2_* 时静默跳过）
     const { uploadSnapshot } = await import('./upload-snapshot.mjs')
-    await uploadSnapshot(dbPath, (m) => console.log(m))
+    const published = await uploadSnapshot(dbPath, (m) => console.log(m))
+    await reportStatus('success', {
+      ...summary,
+      published,
+      finishedAt: Date.now(),
+      message: `完成：新增 ${summary.added} 部，库共 ${summary.total} 部；R2${published ? '已发布' : '未发布'}`
+    }, true)
   })
   .catch((e) => {
     console.error('管线失败：', e)
+    void reportStatus('failed', { finishedAt: Date.now(), message: String(e).slice(0, 500) }, true)
     process.exitCode = 1
   })

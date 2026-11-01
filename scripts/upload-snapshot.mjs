@@ -35,11 +35,11 @@ export async function uploadSnapshot(dbPath, onLog) {
   const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET } = env
   if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET) {
     onLog('R2 未配置（.env 缺 R2_*），跳过上传')
-    return
+    return false
   }
   if (!fs.existsSync(dbPath)) {
     onLog('content-db.json 不存在，跳过上传')
-    return
+    return false
   }
   const require2 = createRequire(import.meta.url)
   const { S3Client, PutObjectCommand, GetObjectCommand, NoSuchKey } = require2('@aws-sdk/client-s3')
@@ -119,6 +119,7 @@ export async function uploadSnapshot(dbPath, onLog) {
   onLog(
     `已上传 R2：全量 ${(JSON.stringify(meta).length / 1024).toFixed(0)}KB；增量 ${Object.keys(changed).length} 条（索引 ${index.increments.length} 个）；字幕 ${cueCount} 个`
   )
+  return true
 }
 
 // 直接运行：node scripts/upload-snapshot.mjs

@@ -39,6 +39,11 @@ const NAV_ITEMS: { to: string; label: string; icon: JSX.Element }[] = [
 function MainArea(): JSX.Element {
   const location = useLocation()
   const onBrowse = location.pathname === '/' || location.pathname === '/browse'
+  const onCurated = location.pathname === '/curated'
+  const [hasVisitedCurated, setHasVisitedCurated] = useState(onCurated)
+  useEffect(() => {
+    if (onCurated) setHasVisitedCurated(true)
+  }, [onCurated])
   const browseKeyRef = useRef(onBrowse ? location.search : '')
   if (onBrowse && location.search && location.search !== browseKeyRef.current) {
     browseKeyRef.current = location.search
@@ -49,10 +54,14 @@ function MainArea(): JSX.Element {
       <div className="browse-holder" style={{ display: onBrowse ? 'flex' : 'none' }}>
         <BrowsePage key={browseKeyRef.current} />
       </div>
-      {!onBrowse && (
+      {(hasVisitedCurated || onCurated) && (
+        <div className="curated-holder" style={{ display: onCurated ? 'flex' : 'none' }}>
+          <CuratedPage isActive={onCurated} />
+        </div>
+      )}
+      {!onBrowse && !onCurated && (
         <Routes>
           <Route path="/favorites" element={<FavoritesPage />} />
-          <Route path="/curated" element={<CuratedPage />} />
           <Route path="/vocabulary" element={<VocabularyPage />} />
           <Route path="/review" element={<ReviewPage />} />
           <Route path="/shadowing" element={<ShadowingPage />} />

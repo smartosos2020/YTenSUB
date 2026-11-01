@@ -117,7 +117,7 @@ export const ADMIN_PAGE = `<!doctype html>
   <div id="chActions"></div>
 
   <h2>内容库概况</h2>
-  <div class="row"><button onclick="loadContentStats()">加载统计</button></div>
+  <div class="row"><button onclick="loadContentStats()">刷新内容统计与管线状态</button></div>
   <pre id="contentOut">—</pre>
 </section>
 
@@ -294,7 +294,7 @@ async function saveUserFilter() {
       method: 'POST',
       body: JSON.stringify({ email: selectedEmail, mode: document.getElementById('ufMode').value })
     })
-    flash('ufMsg', '已保存（' + (d.filterSensitive === null ? '跟随全局' : d.filterSensitive ? '强制开' : '强制关') + '）', false)
+    flash('ufMsg', (d.cloudflareSynced ? '已同步到 Cloudflare；' : '') + '已保存（' + (d.filterSensitive === null ? '跟随全局' : d.filterSensitive ? '强制开' : '强制关') + '）', false)
   } catch (e) { flash('ufMsg', String(e), true) }
 }
 
@@ -404,7 +404,10 @@ async function decide(handle, status) {
 }
 async function loadContentStats() {
   try {
-    const r = await fetch('https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/content-db.json')
+    const [r, pipelineResult] = await Promise.all([
+      fetch('https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/content-db.json'),
+      api('/admin/content-status')
+    ])
     if (!r.ok) throw new Error(r.status + ' ' + r.statusText)
     const db = await r.json()
     const videos = Object.values(db.videos ?? db)
@@ -422,7 +425,19 @@ async function loadContentStats() {
     const top = Object.keys(tagCount).sort(function (a, b) { return tagCount[b] - tagCount[a] }).slice(0, 10)
     const tagLines = {}
     top.forEach(function (t) { tagLines[t] = tagCount[t] })
+    const pipeline = pipelineResult.status
+    const stateNames = { running: '运行中', success: '成功', failed: '失败' }
     show('contentOut', {
+      最近管线: pipeline ? {
+        状态: stateNames[pipeline.state] || pipeline.state,
+        开始时间: pipeline.startedAt ? new Date(pipeline.startedAt).toLocaleString() : '—',
+        更新时间: pipeline.updatedAt ? new Date(pipeline.updatedAt).toLocaleString() : '—',
+        完成时间: pipeline.finishedAt ? new Date(pipeline.finishedAt).toLocaleString() : '运行中/未完成',
+        新增条目: pipeline.added ?? '—',
+        库总量: pipeline.total ?? '—',
+        R2发布: typeof pipeline.published === 'boolean' ? (pipeline.published ? '已发布' : '未发布') : '—',
+        进度: pipeline.message || '—'
+      } : '尚无运行记录（需配置管线 ADMIN_TOKEN 并至少运行一次）',
       总条目: videos.length,
       按level分布: {
         A1: levels.A1, A2: levels.A2, B1: levels.B1, B2: levels.B2, C1: levels.C1, C2: levels.C2,
@@ -463,11 +478,11 @@ async function saveAnnounce() {
 }
 async function saveFilterSensitive() {
   try {
-    await api('/admin/filter-sensitive', {
+    const d = await api('/admin/filter-sensitive', {
       method: 'POST',
       body: JSON.stringify({ on: document.getElementById('fsOn').checked })
     })
-    flash('fsMsg', '已保存', false)
+    flash('fsMsg', d.cloudflareSynced ? '已保存并同步到 Cloudflare' : '已保存', false)
   } catch (e) { flash('fsMsg', String(e), true) }
 }
 loadSettings()

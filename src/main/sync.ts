@@ -2,6 +2,9 @@ import http from 'node:http'
 import os from 'node:os'
 import { Store } from './store'
 import { ShadowingScript, VocabItem } from '../shared/types'
+import { mergeShadowing, mergeVocab } from '../shared/sync-merge'
+
+export { mergeShadowing, mergeVocab } from '../shared/sync-merge'
 
 /** 同步载荷：生词本 + 跟读脚本（设置/字幕缓存不同步，前者各端独立，后者可重建） */
 export interface SyncPayload {
@@ -23,45 +26,10 @@ export function lanAddress(): string | null {
   return null
 }
 
-/** 生词合并：按词（小写）去重——掌握等级取高者，其余字段取较新（addedAt 大）者 */
-export function mergeVocab(local: VocabItem[], incoming: VocabItem[]): VocabItem[] {
-  const byText = new Map<string, VocabItem>()
-  for (const v of [...local, ...incoming]) {
-    const key = v.text.trim().toLowerCase()
-    const cur = byText.get(key)
-    if (!cur) {
-      byText.set(key, v)
-      continue
-    }
-    const newer = v.addedAt > cur.addedAt ? v : cur
-    const older = newer === v ? cur : v
-    const level = Math.max(newer.reviewLevel ?? 0, older.reviewLevel ?? 0)
-    byText.set(key, {
-      ...newer,
-      reviewLevel: level,
-      // 到期时间取等级对应的那一份（等级来自谁就用谁的 due，避免错配）
-      reviewDue: level === (newer.reviewLevel ?? 0) ? newer.reviewDue : older.reviewDue
-    })
-  }
-  return [...byText.values()]
-}
-
-/** 跟读脚本合并：按 videoId，generatedAt 新者胜 */
-export function mergeShadowing(
-  local: ShadowingScript[],
-  incoming: ShadowingScript[]
-): ShadowingScript[] {
-  const byId = new Map<string, ShadowingScript>()
-  for (const s of [...local, ...incoming]) {
-    const cur = byId.get(s.videoId)
-    if (!cur || s.generatedAt > cur.generatedAt) byId.set(s.videoId, s)
-  }
-  return [...byId.values()]
-}
-
 export interface SyncServer {
   ip: string
   port: number
+  token: string
   close: () => void
 }
 
@@ -69,14 +37,19 @@ export interface SyncServer {
  * 局域网同步服务：开启后手机端可拉取（GET /export）/推送（POST /import）。
  * 仅监听局域网，数据不加密（家庭网络场景）；服务随关闭动作/退出应用停止。
  */
-export function startSyncServer(store: Store): Promise<SyncServer | null> {
+export function startSyncServer(store: Store, token: string): Promise<SyncServer | null> {
   const server = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
     if (req.method === 'OPTIONS') {
       res.writeHead(204)
       res.end()
+      return
+    }
+    if (req.headers.authorization !== `Bearer ${token}`) {
+      res.writeHead(401, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'pairing required' }))
       return
     }
     if (req.method === 'GET' && req.url === '/export') {
@@ -149,7 +122,7 @@ export function startSyncServer(store: Store): Promise<SyncServer | null> {
         resolve(null)
         return
       }
-      resolve({ ip, port: SYNC_PORT, close: () => server.close() })
+      resolve({ ip, port: SYNC_PORT, token, close: () => server.close() })
     })
   })
 }

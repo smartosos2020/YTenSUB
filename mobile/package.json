@@ -1,11 +1,12 @@
 {
   "name": "mobile",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "index.ts",
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~57.0.18",
     "expo-build-properties": "~57.0.16",
+    "expo-camera": "~57.0.6",
     "expo-dev-client": "~57.0.19",
     "expo-keep-awake": "~57.0.1",
     "expo-modules-core": "~57.0.14",
@@ -28,6 +29,7 @@
   "scripts": {
     "test": "vitest run",
     "start": "expo start",
+    "dev:android": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/dev-android.ps1",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",

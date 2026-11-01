@@ -1,4 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { mergeShadowing, mergeVocab } from '../../../src/shared/sync-merge'
+
+export { mergeVocab }
 
 /** 生词条目（与桌面端 VocabItem 对齐，便于将来互通导入） */
 export interface VocabItem {
@@ -74,28 +77,6 @@ export async function vocabRemove(id: string): Promise<void> {
   await saveAll(list.filter((v) => v.id !== id))
 }
 
-/** 生词合并（与桌面端 sync.ts 同规则）：按词去重，掌握等级取高，其余取新 */
-export function mergeVocab(local: VocabItem[], incoming: VocabItem[]): VocabItem[] {
-  const byText = new Map<string, VocabItem>()
-  for (const v of [...local, ...incoming]) {
-    const key = v.text.trim().toLowerCase()
-    const cur = byText.get(key)
-    if (!cur) {
-      byText.set(key, v)
-      continue
-    }
-    const newer = v.addedAt > cur.addedAt ? v : cur
-    const older = newer === v ? cur : v
-    const level = Math.max(newer.reviewLevel ?? 0, older.reviewLevel ?? 0)
-    byText.set(key, {
-      ...newer,
-      reviewLevel: level,
-      reviewDue: level === (newer.reviewLevel ?? 0) ? newer.reviewDue : older.reviewDue
-    })
-  }
-  return [...byText.values()]
-}
-
 /** 覆盖式写入整个生词本（同步拉取后用） */
 export async function vocabReplaceAll(list: VocabItem[]): Promise<void> {
   await saveAll(list)
@@ -133,12 +114,11 @@ export async function shadowingList(): Promise<ShadowingScript[]> {
 /** 跟读脚本合并：按 videoId，generatedAt 新者胜 */
 export async function shadowingMerge(incoming: ShadowingScript[]): Promise<void> {
   const local = await shadowingList()
-  const byId = new Map<string, ShadowingScript>()
-  for (const s of [...local, ...incoming]) {
-    const cur = byId.get(s.videoId)
-    if (!cur || s.generatedAt > cur.generatedAt) byId.set(s.videoId, s)
-  }
-  await AsyncStorage.setItem(SHADOWING_KEY, JSON.stringify(Object.fromEntries(byId)))
+  const merged = mergeShadowing(local, incoming)
+  await AsyncStorage.setItem(
+    SHADOWING_KEY,
+    JSON.stringify(Object.fromEntries(merged.map((script) => [script.videoId, script])))
+  )
 }
 
 // ---------- 收藏视频 ----------
