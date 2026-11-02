@@ -4,7 +4,9 @@ import type { WebviewTag } from 'electron'
 import { api, SETTINGS_CHANGED_EVENT, VOCAB_CHANGED_EVENT } from '../api'
 import { Cue, findActiveCueIndex, parseCaptionText, toBilingualSrt } from '../../../shared/captions'
 import { EXTRACT_SCRIPT } from '../../../shared/extract'
-import { CaptionTexture, Folder, Theme, VocabItem } from '../../../shared/types'
+import { fetchProCues } from '../../../shared/auth-api'
+import { loadAvailableCaptions } from '../../../shared/caption-loader'
+import { CaptionTexture, Favorite, Folder, Theme, VocabItem } from '../../../shared/types'
 import { toKnownLemmas, findSavedByLemma } from '../lemma'
 import { captionFontCss } from '../caption-fonts'
 import { registerGuestAudio } from '../guest-audio'
@@ -266,70 +268,100 @@ export default function BrowsePage(): JSX.Element {
 
   // 提取任务序号：快速连切视频时作废旧请求，旧结果不得覆盖新视频状态
   const extractJobRef = useRef(0)
+  useEffect(() => () => { extractJobRef.current++ }, [])
 
   const extract = useCallback(
     async (wv: WebviewTag, videoId: string): Promise<void> => {
       const job = ++extractJobRef.current
-      // 先查本地字幕缓存：命中即秒出（锚点在主进程侧已刷新），未命中才走在线抓取
-      const cached = await api.captionsGetCache(videoId).catch(() => null)
+      const isCurrent = (): boolean => extractJobRef.current === job
+      // The player owns subtitle loading, so favorites, curated cards and direct URLs behave alike.
+      const cached = await loadAvailableCaptions({
+        readCache: () => api.captionsGetCache(videoId),
+        readRemote: async () => {
+          const auth = await api.authGet()
+          if (!auth || !isCurrent()) return null
+          const en = await fetchProCues(auth.token, videoId)
+          if (!en.length || !isCurrent()) return null
+          const favorite = (await api.favList() as Favorite[]).find(item => item.videoId === videoId)
+          const entry = {
+            title: favorite?.title ?? '', channel: favorite?.channel ?? '', duration: favorite?.duration,
+            ytCategory: favorite?.ytCategory, en, zh: null, touchedAt: Date.now()
+          }
+          void api.captionsPutCache(videoId, entry).catch(() => {})
+          return entry
+        },
+        isCurrent
+      })
       if (extractJobRef.current !== job) return
       if (cached) {
+        const favorite = await api.favIs(videoId).catch(() => false)
+        if (!isCurrent()) return
         loadZhNative(cached.zh ?? [])
         setVideo({ videoId, title: cached.title, channel: cached.channel, duration: cached.duration, avatar: cached.avatar, category: cached.ytCategory })
         setHasCaptions(cached.en.length > 0)
         setCues(cached.en)
-        setIsFav(await api.favIs(videoId).catch(() => false))
+        setIsFav(favorite)
         return
       }
-      try {
-        const res = await wv.executeJavaScript(EXTRACT_SCRIPT)
-        if (extractJobRef.current !== job) return
-        if (res?.ok && res.videoId) {
-          // 字幕正文走主进程抓取（guest 里会被 YouTube 拖慢 35s+），英中两路并行
-          let zhUrl: string | null = res.zhBaseUrl ?? null
-          if (!zhUrl && res.enBaseUrl) {
-            const u = new URL(res.enBaseUrl)
-            u.searchParams.set('tlang', 'zh-Hans') // 无自带中文轨时用 YouTube 机翻轨
-            zhUrl = u.toString()
-          }
-          const [enText, zhText] = await Promise.all([
-            res.enBaseUrl ? api.captionsFetchText(res.enBaseUrl) : Promise.resolve(null),
-            zhUrl ? api.captionsFetchText(zhUrl) : Promise.resolve(null)
-          ])
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 1200 * attempt))
+        if (!isCurrent()) return
+        try {
+          const res = await wv.executeJavaScript(EXTRACT_SCRIPT)
           if (extractJobRef.current !== job) return
-          const parsed = parseCaptionText(enText)
-          if (res.hasCaptions && parsed.length === 0) {
-            console.warn('[ytensub] 字幕解析为空')
+          if (res?.ok && res.videoId === videoId) {
+            // 字幕正文走主进程抓取（guest 里会被 YouTube 拖慢 35s+），英中两路并行
+            let zhUrl: string | null = res.zhBaseUrl ?? null
+            if (!zhUrl && res.enBaseUrl) {
+              const u = new URL(res.enBaseUrl)
+              u.searchParams.set('tlang', 'zh-Hans') // 无自带中文轨时用 YouTube 机翻轨
+              zhUrl = u.toString()
+            }
+            const [enText, zhText] = await Promise.all([
+              res.enBaseUrl ? api.captionsFetchText(res.enBaseUrl) : Promise.resolve(null),
+              zhUrl ? api.captionsFetchText(zhUrl) : Promise.resolve(null)
+            ])
+            if (extractJobRef.current !== job) return
+            const parsed = parseCaptionText(enText)
+            if (!parsed.length && attempt < 2) continue
+            if (res.hasCaptions && parsed.length === 0) {
+              console.warn('[ytensub] 字幕解析为空')
+            }
+            const zhParsed = parseCaptionText(zhText)
+            loadZhNative(zhParsed)
+            setVideo({ videoId: res.videoId, title: res.title, channel: res.channel, duration: res.duration, avatar: res.channelAvatar, category: res.ytCategory })
+            setHasCaptions(res.hasCaptions)
+            setCues(parsed)
+            const favorite = await api.favIs(res.videoId).catch(() => false)
+            if (!isCurrent()) return
+            setIsFav(favorite)
+            // 写入本地缓存：下次打开同视频秒出（空字幕不写，留给下次重试）
+            void api
+              .captionsPutCache(res.videoId, {
+                title: res.title,
+                channel: res.channel,
+                duration: res.duration,
+                avatar: res.channelAvatar,
+                ytCategory: res.ytCategory,
+                en: parsed,
+                zh: zhParsed.length > 0 ? zhParsed : null
+              })
+              .catch(() => {})
+            return
+          } else {
+            if (extractJobRef.current !== job) return
+            if (attempt < 2) continue
+            setVideo(null)
+            setCues([])
+            resetZh()
           }
-          const zhParsed = parseCaptionText(zhText)
-          loadZhNative(zhParsed)
-          setVideo({ videoId: res.videoId, title: res.title, channel: res.channel, duration: res.duration, avatar: res.channelAvatar, category: res.ytCategory })
-          setHasCaptions(res.hasCaptions)
-          setCues(parsed)
-          setIsFav(await api.favIs(res.videoId).catch(() => false))
-          // 写入本地缓存：下次打开同视频秒出（空字幕不写，留给下次重试）
-          void api
-            .captionsPutCache(res.videoId, {
-              title: res.title,
-              channel: res.channel,
-              duration: res.duration,
-              avatar: res.channelAvatar,
-              ytCategory: res.ytCategory,
-              en: parsed,
-              zh: zhParsed.length > 0 ? zhParsed : null
-            })
-            .catch(() => {})
-        } else {
+        } catch {
           if (extractJobRef.current !== job) return
+          if (attempt < 2) continue
           setVideo(null)
           setCues([])
           resetZh()
         }
-      } catch {
-        if (extractJobRef.current !== job) return
-        setVideo(null)
-        setCues([])
-        resetZh()
       }
     },
     [resetZh, loadZhNative]

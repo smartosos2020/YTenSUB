@@ -424,17 +424,21 @@ function registerIpc(): void {
   // 字幕正文抓取：webview 里不带 cookie 的 timedtext 请求会被 YouTube 拖进慢车道（实测 35s+），
   // 主进程 net.fetch 无浏览器指纹，亚秒返回。仅放行 YouTube timedtext 地址，防 SSRF。
   ipcMain.handle('captions:fetch-text', async (_e, url: string) => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 10_000)
     try {
       const u = new URL(url)
       if (u.protocol !== 'https:') return null
       if (u.hostname !== 'www.youtube.com' || !u.pathname.startsWith('/api/timedtext')) return null
       // redirect:manual——不跟随 3xx，防重定向把请求拐到白名单外的地址（SSRF）
-      const r = await net.fetch(url, { redirect: 'manual' })
-      if (r.status >= 300 && r.status < 400) return null
+      const r = await net.fetch(url, { redirect: 'manual', signal: controller.signal })
+      if (!r.ok) return null
       const text = await r.text()
       return text || null
     } catch {
       return null
+    } finally {
+      clearTimeout(timer)
     }
   })
 

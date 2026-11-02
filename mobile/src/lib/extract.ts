@@ -100,15 +100,17 @@ const EXTRACT_BODY = `
 `
 
 /** 包装成可注入形态：执行 EXTRACT_BODY 并 postMessage 回传 { kind:'extract', payload } */
-export const EXTRACT_SCRIPT = `(async function() {
+export function extractScript(requestId: number): string {
+  return `(async function() {
   try {
     var payload = await (async function() { ${EXTRACT_BODY} })()
-    window.ReactNativeWebView.postMessage(JSON.stringify({ kind: 'extract', payload: payload }))
+    window.ReactNativeWebView.postMessage(JSON.stringify({ kind: 'extract', requestId: ${JSON.stringify(requestId)}, payload: payload }))
   } catch (e) {
-    window.ReactNativeWebView.postMessage(JSON.stringify({ kind: 'extract', payload: { ok: false, reason: String(e) } }))
+    window.ReactNativeWebView.postMessage(JSON.stringify({ kind: 'extract', requestId: ${JSON.stringify(requestId)}, payload: { ok: false, reason: String(e) } }))
   }
 })()
 `
+}
 
 /** 暂停 / 恢复播放（点词翻译时暂停，关闭弹窗恢复；带回执便于排查后台注入是否执行） */
 export const PAUSE_SCRIPT = `(function(){ var v = document.querySelector('video'); if (v) v.pause(); window.ReactNativeWebView.postMessage(JSON.stringify({ kind: 'dbg', msg: 'ack pause' })) })()`

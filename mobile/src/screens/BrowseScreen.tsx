@@ -6,7 +6,9 @@ import Svg, { Polygon, Polyline } from 'react-native-svg'
 import CaptionList, { alignZh } from '../components/CaptionList'
 import TranslateSheet from '../components/TranslateSheet'
 import { Cue, parseCaptionText } from '../lib/captions'
-import { EXTRACT_SCRIPT, PAUSE_SCRIPT, PLAY_DIAG_SCRIPT, PLAY_SCRIPT, PROBE_SCRIPT, QUALITY_LOW_SCRIPT, QUALITY_RESTORE_SCRIPT, seekScript, VISIBILITY_SPOOF } from '../lib/extract'
+import { extractScript, PAUSE_SCRIPT, PLAY_DIAG_SCRIPT, PLAY_SCRIPT, PROBE_SCRIPT, QUALITY_LOW_SCRIPT, QUALITY_RESTORE_SCRIPT, seekScript, VISIBILITY_SPOOF } from '../lib/extract'
+import { authCache, fetchProCues, loadSession } from '../lib/auth'
+import { loadAvailableCaptions } from '../../../src/shared/caption-loader'
 import { capcacheGet, capcachePut } from '../lib/capcache'
 import { lemmatize } from '../lib/lemma'
 import { favList, favToggle, VocabItem } from '../lib/storage'
@@ -40,6 +42,9 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
   // 精选页联动：外部带 videoId 进来时切到该视频
   React.useEffect(() => {
     if (!openVideoId) return
+    lastExtractRef.current = '' // Reopening the same favorite must retry a previous failed load.
+    captionJobRef.current++
+    if (captionTimer.current) clearTimeout(captionTimer.current)
     setUrl(`https://www.youtube.com/watch?v=${openVideoId}`)
     onVideoHandled?.()
   }, [openVideoId, onVideoHandled])
@@ -96,6 +101,32 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
     onPanResponderTerminationRequest: () => false
   }), [playerH])
   const lastExtractRef = useRef('')
+  const captionJobRef = useRef(0)
+  const extractRequestRef = useRef(0)
+  const captionAttempts = useRef(0)
+  const captionTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  React.useEffect(() => () => {
+    captionJobRef.current++
+    if (captionTimer.current) clearTimeout(captionTimer.current)
+  }, [])
+
+  const requestLiveCaptions = useCallback(function requestLiveCaptions(job: number): void {
+    if (captionJobRef.current !== job || !lastExtractRef.current || captionAttempts.current >= 3) return
+    if (captionTimer.current) clearTimeout(captionTimer.current)
+    captionAttempts.current++
+    const requestId = ++extractRequestRef.current
+    BgPlayer.log(`captions live attempt=${captionAttempts.current} video=${lastExtractRef.current}`)
+    wvRef.current?.injectJavaScript(extractScript(requestId))
+    // A not-yet-ready WebView may not deliver a response at all; do not leave the first attempt stuck.
+    captionTimer.current = setTimeout(() => requestLiveCaptions(job), 12_000)
+  }, [])
+
+  const retryLiveCaptions = useCallback((job: number): void => {
+    if (captionTimer.current) clearTimeout(captionTimer.current)
+    if (captionJobRef.current !== job || captionAttempts.current >= 3) return
+    captionTimer.current = setTimeout(() => requestLiveCaptions(job), 1200 * captionAttempts.current)
+  }, [requestLiveCaptions])
   // 后台续播状态：用户在前台主动暂停过则为 true；play 注入限流
   const userPausedRef = useRef(true)
   const lastPlayInjectRef = useRef(0)
@@ -227,12 +258,17 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
   /** 抓取字幕正文（RN 侧全局 fetch，无 cookie 无浏览器指纹），失败静默 */
   const fetchText = async (u: string | null): Promise<string | null> => {
     if (!u) return null
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 10_000)
     try {
-      const r = await fetch(u)
+      const r = await fetch(u, { signal: controller.signal })
+      if (!r.ok) return null
       const t = await r.text()
       return t || null
     } catch {
       return null
+    } finally {
+      clearTimeout(timer)
     }
   }
 
@@ -244,10 +280,16 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
     hasCaptions?: boolean
     enBaseUrl?: string | null
     zhBaseUrl?: string | null
-  }): Promise<void> => {
+  }, requestId: number): Promise<void> => {
+    const job = captionJobRef.current
+    if (requestId !== extractRequestRef.current) return
+    if (captionTimer.current) clearTimeout(captionTimer.current)
     if (!p.ok || !p.videoId) {
-      setCues([])
-      setZhLines(null)
+      retryLiveCaptions(job)
+      return
+    }
+    if (p.videoId !== lastExtractRef.current) {
+      retryLiveCaptions(job)
       return
     }
     let zhUrl = p.zhBaseUrl ?? null
@@ -257,23 +299,26 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
       zhUrl = u.toString()
     }
     const [enText, zhText] = await Promise.all([fetchText(p.enBaseUrl ?? null), fetchText(zhUrl)])
+    if (captionJobRef.current !== job || requestId !== extractRequestRef.current) return
     const en = parseCaptionText(enText)
     const zh = parseCaptionText(zhText)
     setCues(en)
     setZhLines(en.length && zh.length ? alignZh(en, zh) : null)
     setVideoTitle(p.title ?? '')
     setVideoChannel(p.channel ?? '')
+    BgPlayer.log(`captions live result=${en.length} video=${p.videoId}`)
+    if (!en.length) retryLiveCaptions(job)
     // 写入本地字幕缓存：下次打开同视频秒出（空字幕不写，留给下次重试）
     void capcachePut(p.videoId, {
       title: p.title ?? '',
       en,
       zh: zh.length > 0 ? zh : null
     }).catch(() => {})
-  }, [])
+  }, [retryLiveCaptions])
 
   const onMessage = useCallback(
     (e: WebViewMessageEvent): void => {
-      let msg: { kind?: string; videoId?: string; time?: number; duration?: number; paused?: boolean; payload?: Parameters<typeof handleExtract>[0] }
+      let msg: { kind?: string; requestId?: number; videoId?: string; time?: number; duration?: number; paused?: boolean; payload?: Parameters<typeof handleExtract>[0] }
       try {
         msg = JSON.parse(e.nativeEvent.data)
       } catch {
@@ -301,31 +346,52 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
         }
         const id = msg.videoId ?? ''
         setVideoId((prev) => (prev === id ? prev : id))
-        // 换视频时触发提取（同一视频只提一次）；先查本地字幕缓存，命中即秒出
-        if (id && id !== lastExtractRef.current) {
+        // 每次导航建立独立任务：缓存 → Worker → 可重试的在线提取。
+        if (id !== lastExtractRef.current) {
           lastExtractRef.current = id
+          const job = ++captionJobRef.current
+          extractRequestRef.current++
+          captionAttempts.current = 0
+          if (captionTimer.current) clearTimeout(captionTimer.current)
           setCues([])
           setZhLines(null)
           setVideoChannel('') // 新视频的频道名等提取回调回填
-          void capcacheGet(id).then((hit) => {
+          if (!id) return
+          const isCurrent = (): boolean => captionJobRef.current === job
+          void loadAvailableCaptions({
+            readCache: () => capcacheGet(id),
+            readRemote: async () => {
+              const session = authCache.session ?? await loadSession()
+              if (!session || !isCurrent()) return null
+              const en = await fetchProCues(session.token, id)
+              if (!en.length || !isCurrent()) return null
+              BgPlayer.log(`captions worker result=${en.length} video=${id}`)
+              const favorite = (await favList()).find(item => item.videoId === id)
+              const entry = { title: favorite?.title ?? '', en, zh: null, touchedAt: Date.now() }
+              void capcachePut(id, entry).catch(() => {})
+              return entry
+            },
+            isCurrent
+          }).then((hit) => {
+            if (!isCurrent()) return
             if (hit) {
               setCues(hit.en)
               setZhLines(hit.en.length && hit.zh?.length ? alignZh(hit.en, hit.zh) : null)
               setVideoTitle(hit.title)
             } else {
-              wvRef.current?.injectJavaScript(EXTRACT_SCRIPT)
+              requestLiveCaptions(job)
             }
           })
         }
-      } else if (msg.kind === 'extract' && msg.payload) {
-        void handleExtract(msg.payload)
+      } else if (msg.kind === 'extract' && msg.payload && typeof msg.requestId === 'number') {
+        void handleExtract(msg.payload, msg.requestId)
       } else if ((msg as { kind?: string }).kind === 'dbg') {
         const m = (msg as unknown as { msg?: string }).msg ?? ''
         console.log('[dbg]', m)
         BgPlayer.log('page ' + m) // 页面回执透传 logcat（release 排查用）
       }
     },
-    [handleExtract]
+    [handleExtract, requestLiveCaptions]
   )
 
   /** 登录 UA 切换：进入 Google 登录域用安卓 Chrome UA，回到 YouTube 恢复桌面 UA */
