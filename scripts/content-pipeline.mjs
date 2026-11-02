@@ -126,9 +126,12 @@ reportStatus('running', {}, true)
     })
   )
   .then(async (summary) => {
-    // 管线成功后上传快照到 R2（未配置 R2_* 时静默跳过）
+    // 管线完成后通过 Worker 发布内容；发布失败进入 failed 状态。
     const { uploadSnapshot } = await import('./upload-snapshot.mjs')
-    const published = await uploadSnapshot(dbPath, (m) => console.log(m))
+    const published = await uploadSnapshot(dbPath, (m) => {
+      console.log(m)
+      void reportStatus('running', { message: m })
+    })
     await reportStatus('success', {
       ...summary,
       published,

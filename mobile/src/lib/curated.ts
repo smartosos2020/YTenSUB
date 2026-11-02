@@ -2,18 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { rankCurated as rankCuratedShared, type CuratedVideo as SharedCuratedVideo } from '../../../src/shared/curated'
 import type { CuratedFeedback } from '../../../src/shared/curated-feedback'
 
-/** 精选内容快照公开地址（元数据全量引导，与桌面端 src/shared/curated-config.ts 同步） */
-export const CURATED_SNAPSHOT_URL =
-  'https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/content-db.json'
-/** 增量索引地址 */
-export const CURATED_INDEX_URL =
-  'https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/index.json'
-/** 增量文件地址前缀 */
-export const CURATED_INC_URL_BASE =
-  'https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/'
-/** 每视频字幕地址前缀：+ videoId + '.json'（R2 无限速，打开时按需取） */
-export const CURATED_CUES_URL_BASE =
-  'https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/cues/'
+import { CURATED_SNAPSHOT_URL, CURATED_INDEX_URL, CURATED_INC_URL_BASE } from '../../../src/shared/curated-config'
 
 const CACHE_KEY = 'ytensub:curated-cache-v2'
 

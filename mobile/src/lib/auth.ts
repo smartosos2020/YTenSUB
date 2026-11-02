@@ -25,7 +25,8 @@ export interface AuthSession {
 }
 
 /** 生产 API 地址。本地联调时临时改为 http://127.0.0.1:8787（需 adb reverse），别提交本地地址 */
-export const AUTH_API_URL = 'https://ytensub-api.smartosos2020.workers.dev'
+import { AUTH_API_URL } from '../../../src/shared/api-config'
+export { AUTH_API_URL } from '../../../src/shared/api-config'
 
 type FetchFn = (input: string, init?: RequestInit) => Promise<Response>
 

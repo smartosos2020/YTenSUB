@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, FlatList, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import { CuratedVideo, CURATED_CUES_URL_BASE, loadCurated, rankCurated, refreshCurated } from '../lib/curated'
+import { CuratedVideo, loadCurated, rankCurated, refreshCurated } from '../lib/curated'
 import { capcachePut } from '../lib/capcache'
 import { favList } from '../lib/storage'
 import { ThemeColors, useTheme } from '../lib/theme'
@@ -216,24 +216,15 @@ export default function CuratedScreen({ isActive, onOpenVideo, onGoMy }: Props):
   const creators = useMemo(() => [...new Set(videos.map((v) => v.channel).filter(Boolean))], [videos])
   const allTags = useMemo(() => [...new Set(videos.flatMap((v) => v.tags))], [videos])
 
-  /** 打开精选视频：字幕优先快照内嵌的；pro+ 走服务端秒出；再空则从公共 R2 按需取后写本地缓存 */
+  /** 优先使用本地字幕；pro+ 从 Worker 鉴权下载，其余情况走 YouTube 抓取。 */
   const openVideo = async (v: CuratedVideo): Promise<void> => {
     let cues = v.cues
     if ((!cues || cues.length === 0) && authCache.session && plan === 'pro_plus') {
-      // C2 pro+ 字幕秒出：D4-B 切换后免费/pro 走 innertube 自抓、pro+ 走服务端，本分支即 pro+ 服务端通道
       try {
         const proCues = await fetchProCues(authCache.session.token, v.videoId)
         if (proCues.length > 0) cues = proCues
       } catch {
-        /* 静默回退公共 R2 / 在线抓取链路 */
-      }
-    }
-    if ((!cues || cues.length === 0) && CURATED_CUES_URL_BASE) {
-      try {
-        const r = await fetch(`${CURATED_CUES_URL_BASE}${v.videoId}.json`)
-        if (r.ok) cues = (await r.json()) as CuratedVideo['cues']
-      } catch {
-        /* 取不到就走在线抓取链路 */
+        /* 在线字幕抓取由播放器继续处理。 */
       }
     }
     if (cues && cues.length > 0) {

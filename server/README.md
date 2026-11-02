@@ -1,6 +1,21 @@
 # ytensub-api
 
-账号 / 权益 / 卡密 API（Cloudflare Workers + KV）。接口契约见 `src/index.ts` 头注释，纯逻辑在 `src/logic.ts`（根仓库 `tests/server-logic.test.ts` 覆盖）。
+账号 / 权益 / 卡密 / 精选内容 API（Cloudflare Workers + KV + R2 binding）。接口契约见 `src/index.ts`，内容读写在 `src/content.ts`。
+
+## 精选内容入口
+
+本机采集 → Worker `/admin/content/<key>` → `CONTENT_BUCKET`；PC / Android → Worker `/content/<key>` 下载元数据，通过 `/cues/<videoId>` 下载字幕。新客户端和内容上传脚本均不使用 R2 公共地址或 S3 接口。
+
+- `GET/HEAD /content/content-db.json`、`/content/index.json`、`/content/increments/inc-<ts>.json`：公开元数据；不允许读取字幕或任意桶对象。
+- `GET /cues/<videoId>`：邮箱会话登录且 pro+，鉴权后从 binding 读取。客户端失败后继续走 YouTube 自抓，不回退公共 R2。
+- `PUT /admin/content/<key>`：`CONTENT_UPLOAD_TOKEN`（或 ADMIN_TOKEN）鉴权，允许上述元数据及 `cues/<videoId>.json`；仅 JSON，单对象上限 20 MiB，校验内容结构，禁止元数据夹带字幕。
+- `GET/HEAD /admin/content/<key>`：相同凭据读取，用于采集脚本读取发布索引和运维验证。
+
+在 `wrangler.toml` 配置 `CONTENT_BUCKET`，指向现有 `ytensub-curated` 桶。部署用 Cloudflare 登录态；运行管线只需根目录 `.env` 中 `AUTH_API_URL` 与 `CONTENT_UPLOAD_TOKEN`，不再需要 R2 账户/S3 密钥。用 `npx wrangler secret put CONTENT_UPLOAD_TOKEN` 配置同值的服务端密钥。该令牌仅授予内容接口权限，不能修改会员权益或管理配置。原有 PC 安装包分发继续使用 `releases/`。
+
+字幕、增量和快照先上传，索引最后发布，全部成功才更新本地 `.prev.json`；401/5xx/网络错误不会伪装成空索引。删除条目时重置增量历史，使旧客户端全量重建。元数据索引/快照使用 `no-cache` 配合 ETag，增量缓存 1 天；鉴权字幕使用私有缓存，条件请求仍先验证登录和权益。旧客户端所用的 R2 公共地址保留兼容，新版内容链路统一经过 Worker。
+
+验证：根目录 `npm test`、`node --test scripts/upload-snapshot.test.mjs`，以及本目录 `npm run typecheck`。
 
 登录会话有效期为 30 天，仅在剩余有效期不超过 7 天时续期到 30 天，普通鉴权不写 KV。旧会话保持可用，首次访问时补充到期 metadata 并续期一次。KV 为最终一致存储，跨节点或并发请求在续期附近仍可能产生少量重复写入。
 

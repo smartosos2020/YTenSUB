@@ -1,3 +1,4 @@
+import type { KVNamespace, R2Bucket } from '@cloudflare/workers-types'
 import {
   CardRecord,
   CuratedPrefs,
@@ -23,6 +24,7 @@ import {
 } from './logic'
 import { ADMIN_PAGE } from './admin-page'
 import { readSession, writeSession } from './session'
+import { isMetadataKey, readContent, writeContent } from './content'
 
 /**
  * YTenSUB 账号/权益 API（Cloudflare Workers + 单 KV 命名空间，键全带前缀）。
@@ -42,6 +44,8 @@ import { readSession, writeSession } from './session'
  */
 export interface Env {
   YTENSUB_KV: KVNamespace
+  CONTENT_BUCKET: R2Bucket
+  CONTENT_UPLOAD_TOKEN?: string
   RESEND_API_KEY?: string
   SENDGRID_API_KEY?: string
   EMAIL_FROM?: string
@@ -49,8 +53,6 @@ export interface Env {
   /** Optional production token override for local admin saves; defaults to ADMIN_TOKEN. */
   PRODUCTION_ADMIN_TOKEN?: string
   DEV_MODE?: string
-  /** C2 字幕源地址前缀；缺省用公共 R2，D4-B 桶私有化后改走 binding 时可留空 */
-  CUES_BASE_URL?: string
 }
 
 const CODE_TTL_S = 600
@@ -60,15 +62,16 @@ const PRODUCTION_API_URL = 'https://ytensub-api.smartosos2020.workers.dev'
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', ...cors() }
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...cors() }
   })
 }
 
 function cors(): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, If-None-Match',
+    'Access-Control-Expose-Headers': 'ETag, Last-Modified'
   }
 }
 
@@ -326,13 +329,7 @@ async function handleCues(env: Env, req: Request, videoId: string): Promise<Resp
   if (!user) return json({ error: 'unauthorized' }, 401)
   if (effectivePlan(user, Date.now()) !== 'pro_plus') return json({ error: 'pro_plus feature' }, 403)
   if (!isValidVideoId(videoId)) return json({ error: 'bad videoId' }, 400)
-  // 现状：cues 还在公共 R2，直接代理拉取；D4-B 切换（桶转私有）时改为 R2 binding 读，客户端无感
-  const base = env.CUES_BASE_URL ?? 'https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/cues/'
-  const upstream = await fetch(`${base}${videoId}.json`)
-  if (!upstream.ok) return json({ error: 'cues not found' }, 404)
-  return new Response(upstream.body, {
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, max-age=3600', ...cors() }
-  })
+  return readContent(env.CONTENT_BUCKET, req, `cues/${videoId}.json`, true)
 }
 
 // ---------- 公告文案（「我的」页底部胶囊块；公开读、管理页写） ----------
@@ -582,6 +579,21 @@ export default {
 
     try {
       if (pathname === '/health') return json({ ok: true })
+      if (pathname.startsWith('/content/') && (req.method === 'GET' || req.method === 'HEAD')) {
+        const key = pathname.slice('/content/'.length)
+        if (!isMetadataKey(key)) return json({ error: 'not found' }, 404)
+        return await readContent(env.CONTENT_BUCKET, req, key)
+      }
+      if (pathname.startsWith('/admin/content/')) {
+        const token = bearer(req)
+        if (!adminOk(env, req) && !(env.CONTENT_UPLOAD_TOKEN && token === env.CONTENT_UPLOAD_TOKEN)) {
+          return json({ error: 'unauthorized' }, 401)
+        }
+        const key = pathname.slice('/admin/content/'.length)
+        if (req.method === 'PUT') return await writeContent(env.CONTENT_BUCKET, req, key)
+        if (req.method === 'GET' || req.method === 'HEAD') return await readContent(env.CONTENT_BUCKET, req, key, true)
+        return json({ error: 'method not allowed' }, 405)
+      }
       if (pathname === '/announce' && req.method === 'GET') return await handleAnnounceGet(env)
       if (pathname === '/config/filter-sensitive' && req.method === 'GET') {
         return await handleFilterSensitiveGet(env)

@@ -14,7 +14,7 @@ import type { AuthSession } from '../shared/auth-api'
 import type { CachedEntitlement } from '../shared/entitlement'
 import type { CuratedFeedback } from '../shared/curated-feedback'
 import { estimateLevelByFreq } from './cefr'
-import { CURATED_SNAPSHOT_URL } from '../shared/curated-config'
+import { CURATED_SNAPSHOT_URL, CURATED_INDEX_URL, CURATED_INC_URL_BASE } from '../shared/curated-config'
 
 const dataFile = path.join(app.getPath('userData'), 'ytensub-data.json')
 const syncTokenFile = path.join(app.getPath('userData'), 'sync-pair-token')
@@ -76,9 +76,6 @@ interface CuratedIndex {
   latest: number
   increments: { ts: number; file: string; count: number }[]
 }
-
-const CURATED_INDEX_URL = CURATED_SNAPSHOT_URL.replace(/content-db\.json$/, 'index.json')
-const CURATED_INC_URL_BASE = CURATED_SNAPSHOT_URL.replace(/content-db\.json$/, '')
 
 async function loadCuratedDb(): Promise<unknown[]> {
   const p = path.join(app.getPath('userData'), 'content-db.json')

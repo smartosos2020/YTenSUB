@@ -22,7 +22,6 @@ import LockIcon from '../components/icons/LockIcon'
 import DotsIcon from '../components/icons/DotsIcon'
 import RocketIcon from '../components/icons/RocketIcon'
 import RefreshIcon from '../components/icons/RefreshIcon'
-import { CURATED_CUES_URL_BASE } from '../../../shared/curated-config'
 import { fmtDuration, hueOf } from '../lib/format'
 
 /** 精选页：按自评水平 + 兴趣标签从本地内容库推荐视频；免费档每日前 FREE_DAILY_QUOTA 部，付费档不限 */
@@ -186,25 +185,15 @@ export default function CuratedPage({ isActive }: Props): JSX.Element {
     void api.favList().then((l) => setFavs(l as Favorite[]))
   }
 
-  /** 打开精选视频：字幕优先用快照内嵌的，pro+ 走服务端秒出，否则从公共 R2 按需取（元数据快照不含字幕）写缓存 */
+  /** 优先使用本地字幕；pro+ 从 Worker 鉴权下载，其余情况走 YouTube 抓取。 */
   const openVideo = async (v: CuratedVideo): Promise<void> => {
     let cues = v.cues
-    // C2 字幕秒出（pro+ 专属服务端通道）：403/404/网络失败静默回退到下方公共 R2 路径。
-    // D4-B 切换（公共 cues 下线）后：免费/pro 走 innertube 自抓兜底，pro+ 走本分支——即双闸门的客户端半闸
     if ((!cues || cues.length === 0) && plan === 'pro_plus' && session) {
       try {
         const proCues = await fetchProCues(session.token, v.videoId)
         if (proCues.length > 0) cues = proCues
       } catch {
-        /* 静默回退公共 R2 */
-      }
-    }
-    if ((!cues || cues.length === 0) && CURATED_CUES_URL_BASE) {
-      try {
-        const r = await fetch(`${CURATED_CUES_URL_BASE}${v.videoId}.json`)
-        if (r.ok) cues = (await r.json()) as CuratedVideo['cues']
-      } catch {
-        /* 取不到就走在线抓取链路 */
+        /* 在线字幕抓取由播放器继续处理。 */
       }
     }
     if (cues && cues.length > 0) {
