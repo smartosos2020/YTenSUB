@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react'
-import { Animated, AppState, Easing, PermissionsAndroid, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Animated, AppState, Easing, PanResponder, PermissionsAndroid, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { WebView, WebViewMessageEvent } from 'react-native-webview'
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake'
 import Svg, { Polygon, Polyline } from 'react-native-svg'
@@ -60,10 +60,41 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
   const { dark, colors, toggle } = useTheme()
   // 扩缩箭头旋转动画（0=指下/展开，1=旋转180°/收起）
   const chevAnim = useRef(new Animated.Value(0)).current
-  // 字幕区扩缩：player 高度动画（展开 240，收起 = 总高 - 选项栏高）
+  // 展开时网页/字幕各保留至少 10%；收起仍允许网页占满，重新展开恢复拖动位置。
   const playerH = useRef(new Animated.Value(240)).current
   const rootH = useRef(0)
   const barH = useRef(0)
+  const expandedRatio = useRef<number | null>(null)
+  const collapsedRef = useRef(false)
+  const dragStartH = useRef(240)
+
+  const expandedHeight = (): number => {
+    const available = Math.max(0, rootH.current - barH.current)
+    return Math.min(available * 0.9, Math.max(available * 0.1, expandedRatio.current === null ? 240 : available * expandedRatio.current))
+  }
+  const resizeLayout = (): void => {
+    if (rootH.current <= 0 || barH.current <= 0) return
+    playerH.stopAnimation()
+    playerH.setValue(collapsedRef.current ? Math.max(0, rootH.current - barH.current) : expandedHeight())
+  }
+  const dividerPan = useMemo(() => PanResponder.create({
+    // Only the middle handle owns the drag; the arrow and option buttons retain their taps.
+    onMoveShouldSetPanResponder: (_, g) => rootH.current > barH.current && barH.current > 0 &&
+      Math.abs(g.dy) > 4 && Math.abs(g.dy) > Math.abs(g.dx),
+    onPanResponderGrant: () => {
+      playerH.stopAnimation(value => { dragStartH.current = value })
+      collapsedRef.current = false
+      setSubsCollapsed(false)
+    },
+    onPanResponderMove: (_, g) => {
+      const available = Math.max(0, rootH.current - barH.current)
+      if (!available) return
+      const height = Math.min(available * 0.9, Math.max(available * 0.1, dragStartH.current + g.dy))
+      expandedRatio.current = height / available
+      playerH.setValue(height)
+    },
+    onPanResponderTerminationRequest: () => false
+  }), [playerH])
   const lastExtractRef = useRef('')
   // 后台续播状态：用户在前台主动暂停过则为 true；play 注入限流
   const userPausedRef = useRef(true)
@@ -148,11 +179,12 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
 
   /** 字幕区扩缩：player 高度 250ms 缓出动画（开始快收尾慢）；布局未量到时不做动画 */
   const toggleSubs = (): void => {
-    const next = !subsCollapsed
+    const next = !collapsedRef.current
+    collapsedRef.current = next
     setSubsCollapsed(next)
     if (rootH.current > 0 && barH.current > 0) {
       Animated.timing(playerH, {
-        toValue: next ? rootH.current - barH.current : 240,
+        toValue: next ? Math.max(0, rootH.current - barH.current) : expandedHeight(),
         duration: 250,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false
@@ -327,6 +359,7 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
       style={[styles.container, { backgroundColor: colors.bg }]}
       onLayout={(e) => {
         rootH.current = e.nativeEvent.layout.height
+        resizeLayout()
       }}
     >
       {/* 顶部区域即 WebView（用 YouTube 自带播放控件）；高度由扩缩动画驱动，期间 WebView 持续 resize 属预期 */}
@@ -350,15 +383,23 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
         style={[styles.optBar, { backgroundColor: colors.bar, borderBottomColor: colors.border }]}
         onLayout={(e) => {
           barH.current = e.nativeEvent.layout.height
+          resizeLayout()
         }}
       >
-        <TouchableOpacity onPress={toggleSubs} activeOpacity={0.7} hitSlop={8} style={styles.chevBtn}>
+        <TouchableOpacity accessibilityLabel={subsCollapsed ? '展开字幕' : '收起字幕'} onPress={toggleSubs} activeOpacity={0.7} hitSlop={8} style={styles.chevBtn}>
           <Animated.View style={{ transform: [{ rotate: chevSpin }] }}>
             <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.subtext} strokeWidth={2}>
               <Polyline points="6 9 12 15 18 9" strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
           </Animated.View>
         </TouchableOpacity>
+        <View
+          {...dividerPan.panHandlers}
+          style={styles.dragHandle}
+          accessibilityLabel="上下拖动调整网页和字幕高度"
+        >
+          <View style={[styles.dragGrip, { backgroundColor: colors.subtext }]} />
+        </View>
         <View style={styles.optRight}>
           <TouchableOpacity
             onPress={toggle}
@@ -460,7 +501,7 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  player: { backgroundColor: '#000' },
+  player: { backgroundColor: '#000', flexShrink: 0 },
   subsArea: { flex: 1, overflow: 'hidden' },
   optBar: {
     flexDirection: 'row',
@@ -471,6 +512,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth
   },
   chevBtn: { padding: 4 },
+  dragHandle: { flex: 1, height: 26, alignItems: 'center', justifyContent: 'center', marginHorizontal: 12 },
+  dragGrip: { width: 36, height: 4, borderRadius: 2, opacity: 0.45 },
   optRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   themePill: {
     borderRadius: 999,
