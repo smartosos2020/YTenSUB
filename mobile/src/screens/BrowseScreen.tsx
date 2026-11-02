@@ -393,12 +393,14 @@ export default function BrowseScreen({ vocab, onVocabChanged, openVideoId, onVid
             </Svg>
           </Animated.View>
         </TouchableOpacity>
-        <View
-          {...dividerPan.panHandlers}
-          style={styles.dragHandle}
-          accessibilityLabel="上下拖动调整网页和字幕高度"
-        >
-          <View style={[styles.dragGrip, { backgroundColor: colors.subtext }]} />
+        <View pointerEvents="box-none" style={styles.dragHandleLayer}>
+          <View
+            {...dividerPan.panHandlers}
+            style={styles.dragHandle}
+            accessibilityLabel="上下拖动调整网页和字幕高度"
+          >
+            <View style={[styles.dragGrip, { backgroundColor: colors.subtext }]} />
+          </View>
         </View>
         <View style={styles.optRight}>
           <TouchableOpacity
@@ -511,10 +513,11 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderBottomWidth: StyleSheet.hairlineWidth
   },
-  chevBtn: { padding: 4 },
-  dragHandle: { flex: 1, height: 26, alignItems: 'center', justifyContent: 'center', marginHorizontal: 12 },
+  chevBtn: { padding: 4, zIndex: 1 },
+  dragHandleLayer: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  dragHandle: { width: 72, height: 26, alignItems: 'center', justifyContent: 'center' },
   dragGrip: { width: 36, height: 4, borderRadius: 2, opacity: 0.45 },
-  optRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  optRight: { flexDirection: 'row', alignItems: 'center', gap: 8, zIndex: 1 },
   themePill: {
     borderRadius: 999,
     borderWidth: 1,
