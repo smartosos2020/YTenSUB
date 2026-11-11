@@ -29,6 +29,7 @@ interface Props {
   zhLines: (string | null)[] | null
   /** 已加入生词本的单词（小写），字幕中橙色高亮 */
   knownWords: Set<string>
+  savedTranslations?: ReadonlyMap<string, string>
   onWordSelect: (sel: WordSelection) => void
   /** 悬停取词（悬停 300ms 弹出翻译，设置页开关控制） */
   onWordHover?: (word: string, rect: DOMRect, sentence: string) => void
@@ -59,6 +60,7 @@ export default function CaptionOverlay({
   showZh,
   zhLines,
   knownWords,
+  savedTranslations,
   onWordSelect,
   onWordHover,
   onCaptionEnter,
@@ -140,6 +142,7 @@ export default function CaptionOverlay({
             text={cue.text}
             sentence={cue.text}
             knownWords={knownWords}
+            savedTranslations={savedTranslations}
             onWord={(word, rect, sentence) => onWordSelect({ text: word, rect, sentence })}
             onWordHover={onWordHover}
           />

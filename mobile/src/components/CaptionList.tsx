@@ -1,3 +1,4 @@
+import { formatSubtitleGloss } from '../../../src/shared/subtitle-gloss'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import * as Speech from 'expo-speech'
@@ -60,12 +61,14 @@ interface Props {
 function WordRow({
   text,
   knownLemmas,
+  savedTranslations,
   highlightStyle,
   textStyle,
   onWord
 }: {
   text: string
   knownLemmas: Set<string>
+  savedTranslations: ReadonlyMap<string, string>
   highlightStyle?: object
   textStyle?: object
   onWord: (word: string) => void
@@ -76,10 +79,13 @@ function WordRow({
         if (/^\s*$/.test(part)) return <Text key={i}>{part}</Text>
         const word = cleanWord(part)
         if (!word) return <Text key={i}>{part}</Text>
-        const known = knownLemmas.has(lemmatize(word))
+        const lemma = lemmatize(word)
+        const known = knownLemmas.has(lemma)
+        const translation = savedTranslations.get(lemma)
+        const wordEnd = part.indexOf(word) + word.length
         return (
           <Text key={i} style={[known && staticStyles.wordKnown, highlightStyle]} onPress={() => onWord(word)}>
-            {part}
+            {part.slice(0, wordEnd)}{translation && `[${translation}]`}{part.slice(wordEnd)}
           </Text>
         )
       })}
@@ -192,6 +198,10 @@ export default function CaptionList({
 }: Props): React.JSX.Element {
   const { dark, colors } = useTheme()
   const styles = useMemo(() => makeStyles(colors, dark), [colors, dark])
+  const savedTranslations = useMemo(
+    () => new Map(vocab.map((item) => [lemmatize(item.text), formatSubtitleGloss(item.translation)])),
+    [vocab]
+  )
   const listRef = useRef<FlatList<Cue>>(null)
   const activeIdx = useMemo(() => findActiveCueIndex(cues, time), [cues, time])
   // 当前句卡片里展开的词
@@ -222,6 +232,7 @@ export default function CaptionList({
               <WordRow
                 text={item.text}
                 knownLemmas={knownLemmas}
+                savedTranslations={savedTranslations}
                 highlightStyle={styles.activeWord}
                 textStyle={styles.activeEn}
                 onWord={(word) => {
@@ -257,6 +268,7 @@ export default function CaptionList({
             <WordRow
               text={item.text}
               knownLemmas={knownLemmas}
+              savedTranslations={savedTranslations}
               textStyle={styles.cardEn}
               onWord={(word) => onWord(word, item.text)}
             />

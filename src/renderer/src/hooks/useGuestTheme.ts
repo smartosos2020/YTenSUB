@@ -30,19 +30,12 @@ export function useGuestTheme(
       try {
         // 'system' 先解析为实际明暗（主进程 themeSource=system 时已模拟好系统媒体查询）
         const resolved = resolveTheme(t)
-        // guest 页面滚动条：与宿主一致的细圆角样式，颜色随主题。
+        // 隐藏 YouTube guest 页面的滚动条；鼠标滚轮和触控板滚动仍然可用。
         // 渲染进程 CSS 管不到 webview 内部，必须注入；重复注入后者覆盖前者。
         // 注意要在下面的 isLoading 早退之前注入，否则初次加载会回落到默认滚动条
-        const thumb = resolved === 'night' ? '#333837' : '#d9d9d9'
-        const thumbHover = resolved === 'night' ? '#4a514d' : '#bdbdbd'
         wv.insertCSS(
-          // YouTube 在 html/body 设了标准 scrollbar-color，会禁用 ::-webkit-scrollbar
-          // 自定义，必须先重置为 auto；下面的 webkit 规则才生效
-          'html, body { scrollbar-color: auto !important; scrollbar-width: auto !important; }' +
-            '::-webkit-scrollbar { width: 9px !important; height: 9px !important; }' +
-            '::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent !important; }' +
-            `::-webkit-scrollbar-thumb { background: ${thumb} !important; border-radius: 999px !important; border: 2px solid transparent !important; background-clip: content-box !important; }` +
-            `::-webkit-scrollbar-thumb:hover { background: ${thumbHover} !important; }`
+          'html, body { scrollbar-width: none !important; }' +
+            '::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }'
         ).catch(() => {})
         if (!wv.getURL().includes('youtube.com') || wv.isLoading()) return
         wv.executeJavaScript(

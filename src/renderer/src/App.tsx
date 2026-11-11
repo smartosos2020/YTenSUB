@@ -75,6 +75,7 @@ function MainArea(): JSX.Element {
 
 export default function App(): JSX.Element {
   const [collapsed, setCollapsed] = usePersistentState<boolean>('ytensub:nav-collapsed', false)
+  const sidebarResizeTimerRef = useRef<number | null>(null)
   // 字幕浮层总开关（标题栏，默认开）
   const [showCaptions, setShowCaptions] = useState(true)
   // 版本号与更新状态（electron-updater 事件）：下载中显示百分比，就绪/失败可点击
@@ -86,6 +87,33 @@ export default function App(): JSX.Element {
   // 手动检查更新（点版本号）的瞬时反馈文案
   const [checkHint, setCheckHint] = useState('')
   const checkTimerRef = useRef<number | null>(null)
+
+  const toggleSidebar = (): void => {
+    const browseBody = document.querySelector<HTMLElement>('.browse-body')
+    if (browseBody) {
+      browseBody.style.setProperty('--browse-body-width', `${browseBody.getBoundingClientRect().width}px`)
+      browseBody.classList.add('sidebar-resizing')
+      if (sidebarResizeTimerRef.current !== null) window.clearTimeout(sidebarResizeTimerRef.current)
+      sidebarResizeTimerRef.current = window.setTimeout(() => {
+        browseBody.classList.remove('sidebar-resizing')
+        browseBody.style.removeProperty('--browse-body-width')
+        sidebarResizeTimerRef.current = null
+      }, 260)
+    }
+    setCollapsed(!collapsed)
+  }
+
+  const finishSidebarResize = (event: React.TransitionEvent<HTMLElement>): void => {
+    if (event.propertyName !== 'width') return
+    const browseBody = document.querySelector<HTMLElement>('.browse-body.sidebar-resizing')
+    if (!browseBody) return
+    browseBody.classList.remove('sidebar-resizing')
+    browseBody.style.removeProperty('--browse-body-width')
+    if (sidebarResizeTimerRef.current !== null) {
+      window.clearTimeout(sidebarResizeTimerRef.current)
+      sidebarResizeTimerRef.current = null
+    }
+  }
 
   /** 点版本号手动检查更新：瞬时反馈 3 秒后自动消隐 */
   const manualCheck = async (): Promise<void> => {
@@ -148,16 +176,19 @@ export default function App(): JSX.Element {
       <div className="app">
         <TitleBar
           collapsed={collapsed}
-          onToggle={() => setCollapsed(!collapsed)}
+          onToggle={toggleSidebar}
           showCaptions={showCaptions}
           onToggleCaptions={() => void api.settingsSet({ showCaptions: !showCaptions })}
         />
         <div className="app-body">
-          <nav className={collapsed ? 'sidebar collapsed' : 'sidebar'}>
+          <nav
+            className={collapsed ? 'sidebar collapsed' : 'sidebar'}
+            onTransitionEnd={finishSidebarResize}
+          >
             {NAV_ITEMS.map((item) => (
               <NavLink key={item.to} to={item.to} title={item.label}>
                 <span className="nav-icon">{item.icon}</span>
-                {!collapsed && <span className="nav-label">{item.label}</span>}
+                <span className="nav-label">{item.label}</span>
               </NavLink>
             ))}
             <div className="sidebar-foot">

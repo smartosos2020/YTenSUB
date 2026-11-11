@@ -1,3 +1,4 @@
+import { formatSubtitleGloss } from '../../../shared/subtitle-gloss'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { WebviewTag } from 'electron'
@@ -7,7 +8,7 @@ import { EXTRACT_SCRIPT } from '../../../shared/extract'
 import { fetchProCues } from '../../../shared/auth-api'
 import { loadAvailableCaptions } from '../../../shared/caption-loader'
 import { CaptionTexture, Favorite, Folder, Theme, VocabItem } from '../../../shared/types'
-import { toKnownLemmas, findSavedByLemma } from '../lemma'
+import { toKnownLemmas, findSavedByLemma, lemmatize } from '../lemma'
 import { captionFontCss } from '../caption-fonts'
 import { registerGuestAudio } from '../guest-audio'
 import { useSidePanel } from '../hooks/useSidePanel'
@@ -94,6 +95,10 @@ export default function BrowsePage(): JSX.Element {
   // 列表本身供翻译弹窗判断"已添加"→显示删除按钮
   const [vocabList, setVocabList] = useState<VocabItem[]>([])
   const vocabWords = useMemo(() => toKnownLemmas(vocabList), [vocabList])
+  const savedTranslations = useMemo(
+    () => new Map(vocabList.map((item) => [lemmatize(item.text), formatSubtitleGloss(item.translation)])),
+    [vocabList]
+  )
   // 应用主题：useGuestTheme 同步到 YouTube guest 页面
   const [theme, setTheme] = useState<Theme>('night')
 
@@ -712,6 +717,7 @@ export default function BrowsePage(): JSX.Element {
             showZh={showZh}
             zhLines={zhLines}
             knownWords={vocabWords}
+            savedTranslations={savedTranslations}
             onWordSelect={openSelection}
             onWordHover={hoverTranslate ? hoverWord : undefined}
             onCaptionEnter={onCaptionEnter}
@@ -751,6 +757,7 @@ export default function BrowsePage(): JSX.Element {
                 zhLoading={zhLoading}
                 onShowZhChange={toggleZh}
                 knownWords={vocabWords}
+                savedTranslations={savedTranslations}
                 looping={looping}
                 onLoopChange={setLooping}
                 hasZhNative={hasZhNative}

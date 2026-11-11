@@ -27,6 +27,7 @@ interface Props {
   onShowZhChange: (v: boolean) => void
   /** 已加入生词本的单词（小写），字幕中橙色高亮 */
   knownWords: Set<string>
+  savedTranslations: ReadonlyMap<string, string>
   /** 单句循环 */
   looping: boolean
   onLoopChange: (v: boolean) => void
@@ -45,6 +46,7 @@ interface RowProps {
   showZh: boolean
   zh: string | null
   knownWords: Set<string>
+  savedTranslations: ReadonlyMap<string, string>
   onSeek: (t: number) => void
   onWord: (text: string, rect: DOMRect, sentence: string) => void
   onWordHover?: (text: string, rect: DOMRect, sentence: string) => void
@@ -58,6 +60,7 @@ const CueRow = memo(function CueRow({
   showZh,
   zh,
   knownWords,
+  savedTranslations,
   onSeek,
   onWord,
   onWordHover
@@ -71,7 +74,13 @@ const CueRow = memo(function CueRow({
   return (
     <div data-cue-idx={idx} className={'cue' + (active ? ' active' : '')} onClick={handleClick}>
       <div className="cue-en">
-        <WordSpans text={cue.text} knownWords={knownWords} onWord={onWord} onWordHover={onWordHover} />
+        <WordSpans
+          text={cue.text}
+          knownWords={knownWords}
+          savedTranslations={savedTranslations}
+          onWord={onWord}
+          onWordHover={onWordHover}
+        />
       </div>
       {showZh && zh && <div className="cue-zh">{zh}</div>}
     </div>
@@ -156,6 +165,7 @@ export default function SubtitlePanel({
   zhLoading,
   onShowZhChange,
   knownWords,
+  savedTranslations,
   looping,
   onLoopChange,
   hasZhNative,
@@ -225,6 +235,7 @@ export default function SubtitlePanel({
                 showZh={showZh}
                 zh={showZh ? (zhLines?.[i] ?? null) : null}
                 knownWords={knownWords}
+                savedTranslations={savedTranslations}
                 onSeek={onSeek}
                 onWord={handleWord}
                 onWordHover={onWordHover}
