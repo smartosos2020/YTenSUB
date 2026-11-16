@@ -9,7 +9,7 @@ export function cleanWord(w: string): string {
 interface Props {
   text: string
   sentence?: string
-  /** 已加入生词本的单词词元（小写），命中即橙色高亮（不同形态按词元关联） */
+  /** 已加入生词本的单词词元（小写），命中时用主题色高亮 */
   knownWords?: Set<string>
   savedTranslations?: ReadonlyMap<string, string>
   onWord: (word: string, rect: DOMRect, sentence: string) => void
@@ -64,7 +64,9 @@ export default function WordSpans({ text, sentence, knownWords, savedTranslation
             }
             onMouseLeave={onWordHover ? cancelHover : undefined}
           >
-            {part.slice(0, wordEnd)}{translation && `[${translation}]`}{part.slice(wordEnd)}
+            {part.slice(0, wordEnd)}
+            {translation && <span className="word-gloss">[{translation}]</span>}
+            {part.slice(wordEnd)}
           </span>
         )
       })}

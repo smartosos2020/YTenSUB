@@ -4,6 +4,7 @@ import type { AuthSession } from '../shared/auth-api'
 import type { CachedEntitlement } from '../shared/entitlement'
 import type { CuratedFeedback } from '../shared/curated-feedback'
 import type { CaptionCacheEntry } from '../main/captions-cache'
+import type { VocabVisualRequest, VocabVisualResult } from '../shared/vocab-visual'
 
 const api = {
   translate: (text: string) => ipcRenderer.invoke('translate:text', text),
@@ -12,6 +13,10 @@ const api = {
   vocabAdd: (item: Omit<VocabItem, 'id' | 'addedAt'>) => ipcRenderer.invoke('vocab:add', item),
   vocabList: () => ipcRenderer.invoke('vocab:list'),
   vocabRemove: (id: string) => ipcRenderer.invoke('vocab:remove', id),
+  vocabVisualGet: (item: VocabVisualRequest, refresh?: boolean): Promise<VocabVisualResult | null> =>
+    ipcRenderer.invoke('vocab:visual', item, refresh),
+  vocabVisualCacheSize: (): Promise<number> => ipcRenderer.invoke('vocab:visual-cache-size'),
+  vocabVisualCacheClear: (): Promise<void> => ipcRenderer.invoke('vocab:visual-cache-clear'),
 
   favAdd: (fav: Omit<Favorite, 'addedAt'>) => ipcRenderer.invoke('fav:add', fav),
   favList: (folderId?: string | null) => ipcRenderer.invoke('fav:list', folderId),
@@ -102,6 +107,7 @@ const api = {
   updateCheck: (): Promise<'available' | 'latest' | 'error'> =>
     ipcRenderer.invoke('update:check'),
   updateOpenReleases: () => ipcRenderer.send('update:open-releases'),
+  openExternal: (url: string) => ipcRenderer.invoke('app:open-external', url),
 
   // 自定义标题栏的窗口控制
   windowMinimize: () => ipcRenderer.send('window:minimize'),

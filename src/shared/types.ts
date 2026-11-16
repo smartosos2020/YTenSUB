@@ -175,6 +175,8 @@ export interface Settings {
   autoCollectWord: boolean
   /** 悬停字幕单词自动弹出翻译（悬停 300ms 触发） */
   hoverTranslate: boolean
+  /** 复习卡片显示开放版权的图片释义 */
+  reviewImages: boolean
   /** 跟读脚本生成策略 */
   shadowingStrategy: ShadowingStrategy
 /** 收藏难度估算方式：freq = 离线词频估（免费即时），llm = LLM 精估（花 token 更准） */
@@ -223,6 +225,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoSpeakOnLookup: false,
   autoCollectWord: false,
   hoverTranslate: false,
+  reviewImages: true,
   shadowingStrategy: 'llm-fallback',
   levelEstimator: 'freq',
   autoTag: true,

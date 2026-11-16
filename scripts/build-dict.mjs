@@ -1,7 +1,7 @@
 /**
- * 从 ECDICT (stardict.csv) 构建精简本地词典 resources/dict.json
+ * 从 ECDICT 构建 PC 和手机共用的离线词典
  * 用法：npm run build:dict
- * 下载失败时写入一个最小内置词表，保证应用仍可离线工作。
+ * 也可传入本地 CSV：npm run build:dict -- path/to/ecdict.csv
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -9,23 +9,13 @@ import https from 'node:https'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const OUT = path.join(__dirname, '..', 'resources', 'dict.json')
+const OUTPUTS = [
+  path.join(__dirname, '..', 'resources', 'dict.json'),
+  path.join(__dirname, '..', 'mobile', 'assets', 'dict.json')
+]
 const URL_CSV = 'https://raw.githubusercontent.com/skywind3000/ECDICT/master/ecdict.csv'
-// COCA 词频排名阈值：只保留前 8 万常用词
-const FRQ_LIMIT = 80000
-
-const FALLBACK = {
-  hello: { p: "hə'ləʊ", t: '你好' },
-  world: { p: 'wɜːld', t: '世界' },
-  learn: { p: 'lɜːn', t: '学习' },
-  english: { p: "'ɪŋɡlɪʃ", t: '英语；英语的' },
-  video: { p: "'vɪdiəʊ", t: '视频' },
-  word: { p: 'wɜːd', t: '单词' },
-  language: { p: "'læŋɡwɪdʒ", t: '语言' },
-  subtitle: { p: "'sʌbtaɪtl", t: '字幕' },
-  translate: { p: 'trænsˈleɪt', t: '翻译' },
-  favorite: { p: "'feɪvərɪt", t: '收藏；最喜欢的' }
-}
+// 任一语料库有排名即可收录，包括只出现在 BNC 的常见英式拼写。
+const RANK_LIMIT = 80000
 
 function download(url, redirects = 3) {
   return new Promise((resolve, reject) => {
@@ -81,22 +71,16 @@ function parseCsvLine(line) {
 }
 
 async function main() {
-  let csv
-  try {
-    console.log('下载 ECDICT stardict.csv …')
-    csv = await download(URL_CSV)
-    console.log(`下载完成，${(csv.length / 1024 / 1024).toFixed(1)}MB`)
-  } catch (e) {
-    console.error('下载失败，写入最小内置词表：', e.message)
-    fs.mkdirSync(path.dirname(OUT), { recursive: true })
-    fs.writeFileSync(OUT, JSON.stringify(FALLBACK, null, 2), 'utf8')
-    return
-  }
+  const input = process.argv[2]
+  const csv = input ? fs.readFileSync(input, 'utf8') : await download(URL_CSV)
 
   const lines = csv.split('\n')
   const header = parseCsvLine(lines[0])
   const idx = Object.fromEntries(header.map((h, i) => [h, i]))
-  const dict = {}
+  for (const field of ['word', 'phonetic', 'definition', 'translation', 'frq', 'bnc']) {
+    if (!(field in idx)) throw new Error(`ECDICT CSV 缺少字段：${field}`)
+  }
+  const dict = Object.create(null)
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i]
     if (!line) continue
@@ -104,7 +88,8 @@ async function main() {
     const word = (f[idx.word] || '').trim().toLowerCase()
     if (!/^[a-z][a-z'-]*$/.test(word)) continue
     const frq = Number(f[idx.frq] || 0)
-    if (!frq || frq > FRQ_LIMIT) continue
+    const bnc = Number(f[idx.bnc] || 0)
+    if (!(frq > 0 && frq <= RANK_LIMIT) && !(bnc > 0 && bnc <= RANK_LIMIT)) continue
     const t = (f[idx.translation] || f[idx.definition] || '')
       .split('\\n')
       .join('; ')
@@ -112,12 +97,20 @@ async function main() {
       .trim()
     if (!t) continue
     // f = COCA 词频排名（难度估算用；缺省不写字段）
-    dict[word] = { p: (f[idx.phonetic] || '').trim() || undefined, t, f: frq }
+    dict[word] = { p: (f[idx.phonetic] || '').trim() || undefined, t, f: frq > 0 ? frq : undefined }
   }
 
-  fs.mkdirSync(path.dirname(OUT), { recursive: true })
-  fs.writeFileSync(OUT, JSON.stringify(dict), 'utf8')
-  console.log(`已生成 ${OUT}，共 ${Object.keys(dict).length} 词`)
+  const count = Object.keys(dict).length
+  if (count === 0) throw new Error('ECDICT 没有可用词条，保留现有词典')
+  const json = JSON.stringify(dict)
+  for (const output of OUTPUTS) {
+    fs.mkdirSync(path.dirname(output), { recursive: true })
+    fs.writeFileSync(output, json, 'utf8')
+    console.log(`已生成 ${output}，共 ${count} 词`)
+  }
 }
 
-main()
+main().catch((error) => {
+  console.error(error)
+  process.exitCode = 1
+})

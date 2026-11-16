@@ -15,6 +15,8 @@ import type { CachedEntitlement } from '../shared/entitlement'
 import type { CuratedFeedback } from '../shared/curated-feedback'
 import { estimateLevelByFreq } from './cefr'
 import { CURATED_SNAPSHOT_URL, CURATED_INDEX_URL, CURATED_INC_URL_BASE } from '../shared/curated-config'
+import { VocabVisuals, isLikelyConcreteNoun } from './vocab-visuals'
+import type { VocabVisualRequest } from '../shared/vocab-visual'
 
 const dataFile = path.join(app.getPath('userData'), 'ytensub-data.json')
 const syncTokenFile = path.join(app.getPath('userData'), 'sync-pair-token')
@@ -58,6 +60,12 @@ const store = new Store(dataFile)
 // 字幕缓存：独立文件，命中/写入都刷新"最近观看锚点"，LRU 淘汰
 const captionsCache = new CaptionsCache(
   path.join(app.getPath('userData'), 'captions-cache.json')
+)
+// 图片释义是可重建缓存：独立于生词主数据与备份，按总字节 LRU 控制在 10MB。
+const vocabVisuals = new VocabVisuals(
+  path.join(app.getPath('userData'), 'vocab-visual-cache', 'manifest.json'),
+  path.join(app.getPath('userData'), 'vocab-visual-cache', 'images'),
+  (url, init) => net.fetch(url, init)
 )
 
 let mainWin: BrowserWindow | null = null
@@ -263,20 +271,100 @@ function applyProxy(proxy: string): void {
   void session.fromPartition(UPDATER_SESSION_PARTITION, { cache: false }).setProxy(config)
 }
 
+/**
+ * 有 LLM 时把“单词+释义+原句”压成 1~3 个可视化英文关键词；
+ * 未配置 LLM 时只对词典明确标注的名词查图，避免给抽象动词硬配错误图片。
+ */
+async function vocabVisualQuery(item: VocabVisualRequest): Promise<string | null> {
+  const text = String(item.text ?? '').trim().slice(0, 80)
+  const translation = String(item.translation ?? '').trim().slice(0, 500)
+  const sentence = String(item.sentence ?? '').trim().slice(0, 500)
+  if (!text) return null
+  const s = store.getSettings()
+  if (!s.llm.baseUrl || !s.llm.apiKey || !s.llm.model) {
+    return isLikelyConcreteNoun(text, translation) ? text : null
+  }
+  const raw = await llmChat(
+    s.llm,
+    [
+      {
+        role: 'system',
+        content:
+          '你为英语生词选择图片检索词。根据当前语境，把词义转成一张清晰、适合学习且不含文字的画面；抽象词要使用具体视觉隐喻，例如 hesitate→person crossroads、fiduciary→trust handshake。只返回 JSON：{"imageable":true或false,"query":"1到3个具体英文关键词"}。只有冠词、介词等无法成像的功能词才 imageable=false；不要输出解释。'
+      },
+      { role: 'user', content: `单词：${text}\n中文释义：${translation}\n例句：${sentence}` }
+    ],
+    (url, init) => net.fetch(url, init),
+    0.1
+  )
+  if (!raw) return isLikelyConcreteNoun(text, translation) ? text : null
+  try {
+    const json = raw.match(/\{[\s\S]*\}/)?.[0]
+    if (!json) return null
+    const parsed = JSON.parse(json) as { imageable?: boolean; query?: string }
+    if (parsed.imageable !== true) return null
+    const query = String(parsed.query ?? '')
+      .replace(/[^A-Za-z0-9 '-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    return query ? query.slice(0, 120) : null
+  } catch {
+    return isLikelyConcreteNoun(text, translation) ? text : null
+  }
+}
+
 function registerIpc(): void {
-  ipcMain.handle('translate:text', (_e, text: string) => {
+  ipcMain.handle('translate:text', async (_e, text: string) => {
     const s = store.getSettings()
     // 数组顺序即优先级（设置页可上下移调整）
     const enabled = s.enabledTranslators.filter((t) => TRANSLATOR_ORDER.includes(t))
-    return translateText(text, {
+    const attempts: { source: string; reason: string }[] = []
+    let llmFailure: string | undefined
+    const result = await translateText(text, {
       localLookup: (w) => {
         const hit = dict.lookup(w)
         return hit ? { translation: hit.t, phonetic: hit.p } : null
       },
-      googleTranslate: (t) => googleTranslateFree(t, (u) => net.fetch(u)),
-      llmTranslate: (t) => llmTranslate(t, s.llm, (u, init) => net.fetch(u, init)),
-      enabled
+      googleTranslate: (t) => googleTranslateFree(t, async (u) => {
+        const response = await net.fetch(u)
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        return response
+      }),
+      llmTranslate: (t) =>
+        llmTranslate(t, s.llm, (u, init) => net.fetch(u, init), (reason) => {
+          llmFailure = reason
+        }),
+      enabled,
+      onSourceFailure: (source, error) => {
+        const detail = error instanceof Error ? error.message : source === 'llm' ? llmFailure : undefined
+        // 只保留已知错误码，避免写入请求 URL 或凭据。
+        const code = detail?.match(/\b(?:HTTP \d{3}|ERR_[A-Z_]+)\b/)?.[0]
+        let reason = code ?? 'empty_response'
+        if (!code && detail) {
+          if (detail.startsWith('LLM 未配置完整')) reason = 'not_configured'
+          else if (detail !== '响应中没有内容') reason = error instanceof SyntaxError ? 'invalid_json' : 'request_error'
+        } else if (!detail && source === 'local') {
+          reason = 'no_dictionary_match'
+        }
+        attempts.push({ source, reason })
+      }
     })
+    if (!result) {
+      const dictionaryMiss = attempts.find((attempt) => attempt.reason === 'no_dictionary_match')
+      if (dictionaryMiss && dict.size === 0) dictionaryMiss.reason = 'dictionary_unavailable'
+      const entry = {
+        time: new Date().toISOString(),
+        text: text.trim().slice(0, 120),
+        enabled,
+        attempts
+      }
+      await fs.promises.appendFile(
+        path.join(app.getPath('userData'), 'translation-failures.log'),
+        JSON.stringify(entry) + '\n',
+        'utf8'
+      ).catch(() => {})
+    }
+    return result
   })
 
   // 语境释义（弹窗里"语境"按钮按需触发）：单词 + 所在整句一起给 LLM
@@ -330,6 +418,16 @@ function registerIpc(): void {
   ipcMain.handle('vocab:review', (_e, id: string, level: number) =>
     store.updateVocabReview(id, level)
   )
+  ipcMain.handle('vocab:visual', (_e, item: VocabVisualRequest, refresh?: boolean) => {
+    const request: VocabVisualRequest = {
+      text: String(item?.text ?? '').slice(0, 80),
+      translation: String(item?.translation ?? '').slice(0, 1000),
+      sentence: String(item?.sentence ?? '').slice(0, 1000)
+    }
+    return vocabVisuals.get(request, () => vocabVisualQuery(request), refresh === true)
+  })
+  ipcMain.handle('vocab:visual-cache-size', () => vocabVisuals.sizeBytes)
+  ipcMain.handle('vocab:visual-cache-clear', () => vocabVisuals.clear())
   ipcMain.handle('stats:get', () => store.getStats())
 
   ipcMain.handle('fav:add', (_e, fav: Omit<Favorite, 'addedAt'>) => {
@@ -402,6 +500,15 @@ function registerIpc(): void {
 
   // 版本与更新：侧栏版本号 + 更新可用提示
   ipcMain.handle('app:version', () => app.getVersion())
+  ipcMain.handle('app:open-external', (_e, value: string) => {
+    try {
+      const url = new URL(String(value ?? ''))
+      if (url.protocol === 'https:' || url.protocol === 'http:') return shell.openExternal(url.toString())
+    } catch {
+      // 非法 URL 不打开。
+    }
+    return undefined
+  })
   ipcMain.on('update:install', () => autoUpdater.quitAndInstall())
   // 手动检查更新（点侧栏版本号触发）：返回结果供渲染进程给瞬时反馈
   ipcMain.handle('update:check', async (): Promise<'available' | 'latest' | 'error'> => {
@@ -806,10 +913,12 @@ function setupAutoUpdater(): void {
 app.on('window-all-closed', () => {
   store.flush()
   captionsCache.flush()
+  vocabVisuals.flush()
   if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('before-quit', () => {
   store.flush()
   captionsCache.flush()
+  vocabVisuals.flush()
 })

@@ -13,12 +13,12 @@ import ShadowingPage from './pages/ShadowingPage'
 import SettingsPage from './pages/SettingsPage'
 import ProfilePage from './pages/ProfilePage'
 import TitleBar from './components/TitleBar'
+import SidebarToggleIcon from './components/SidebarToggleIcon'
 import PlayIcon from './components/icons/PlayIcon'
 import StarOutlineIcon from './components/icons/StarOutlineIcon'
 import BookIcon from './components/icons/BookIcon'
 import RepeatIcon from './components/icons/RepeatIcon'
 import GearIcon from './components/icons/GearIcon'
-import UpdateIcon from './components/icons/UpdateIcon'
 import CompassIcon from './components/icons/CompassIcon'
 import UserIcon from './components/icons/UserIcon'
 
@@ -26,10 +26,9 @@ const NAV_ITEMS: { to: string; label: string; icon: JSX.Element }[] = [
   { to: '/browse', label: '浏览', icon: <PlayIcon /> },
   { to: '/curated', label: '精选', icon: <CompassIcon /> },
   { to: '/favorites', label: '收藏', icon: <StarOutlineIcon /> },
-  { to: '/vocabulary', label: '生词本', icon: <BookIcon /> },
+  { to: '/vocabulary', label: '生词', icon: <BookIcon /> },
   { to: '/review', label: '复习', icon: <RepeatIcon /> },
-  { to: '/profile', label: '我的', icon: <UserIcon /> },
-  { to: '/settings', label: '设置', icon: <GearIcon /> }
+  { to: '/profile', label: '我的', icon: <UserIcon /> }
 ]
 
 /**
@@ -104,7 +103,7 @@ export default function App(): JSX.Element {
   }
 
   const finishSidebarResize = (event: React.TransitionEvent<HTMLElement>): void => {
-    if (event.propertyName !== 'width') return
+    if (event.target !== event.currentTarget || event.propertyName !== 'width') return
     const browseBody = document.querySelector<HTMLElement>('.browse-body.sidebar-resizing')
     if (!browseBody) return
     browseBody.classList.remove('sidebar-resizing')
@@ -175,30 +174,38 @@ export default function App(): JSX.Element {
     <HashRouter>
       <div className="app">
         <TitleBar
-          collapsed={collapsed}
-          onToggle={toggleSidebar}
           showCaptions={showCaptions}
           onToggleCaptions={() => void api.settingsSet({ showCaptions: !showCaptions })}
         />
         <div className="app-body">
-          <nav
-            className={collapsed ? 'sidebar collapsed' : 'sidebar'}
+          <div
+            className={collapsed ? 'sidebar-frame collapsed' : 'sidebar-frame'}
             onTransitionEnd={finishSidebarResize}
           >
-            {NAV_ITEMS.map((item) => (
-              <NavLink key={item.to} to={item.to} title={item.label}>
-                <span className="nav-icon">{item.icon}</span>
-                <span className="nav-label">{item.label}</span>
+            <nav className="sidebar" aria-label="主菜单">
+              {NAV_ITEMS.map((item) => (
+                <NavLink key={item.to} to={item.to} title={item.label}>
+                  <span className="nav-icon">{item.icon}</span>
+                  <span className="nav-label">{item.label}</span>
+                </NavLink>
+              ))}
+              <button
+                type="button"
+                className="sidebar-toggle"
+                aria-expanded={!collapsed}
+                aria-label={collapsed ? '展开菜单' : '收起菜单'}
+                title={collapsed ? '展开菜单' : '收起菜单'}
+                onClick={toggleSidebar}
+              >
+                <span className="nav-icon"><SidebarToggleIcon mirrored={collapsed} /></span>
+              </button>
+              <NavLink to="/settings" title="设置" aria-label="设置">
+                <span className="nav-icon"><GearIcon /></span>
               </NavLink>
-            ))}
-            <div className="sidebar-foot">
-              <span className="version" title="点击检查更新" onClick={() => void manualCheck()}>
-                v{appVersion}
-              </span>
-              {checkHint && <span className="version-hint">{checkHint}</span>}
-              {updateState !== 'none' && (
+              <div className="sidebar-foot">
                 <button
-                  className={`update-btn ${updateState}`}
+                  type="button"
+                  className={`version ${updateState}`}
                   style={
                     updateState === 'downloading'
                       ? ({ '--pct': updatePct } as React.CSSProperties)
@@ -208,20 +215,23 @@ export default function App(): JSX.Element {
                     updateState === 'downloaded'
                       ? '更新已就绪，点击重启安装'
                       : updateState === 'error'
-                        ? '更新失败，点击重试（也可到设置页手动检查）'
-                        : `正在下载更新… ${updatePct}%`
+                        ? '更新失败，点击重试'
+                        : updateState === 'downloading'
+                          ? `正在下载更新… ${updatePct}%`
+                          : '点击检查更新'
                   }
+                  aria-disabled={updateState === 'downloading'}
                   onClick={() => {
-                    // 已下载 → 重启安装；失败 → 重试检查；下载中不可点。任何状态都不打开浏览器
                     if (updateState === 'downloaded') api.updateInstall()
-                    else if (updateState === 'error') void manualCheck()
+                    else if (updateState !== 'downloading') void manualCheck()
                   }}
                 >
-                  <UpdateIcon />
+                  {updateState === 'downloaded' ? '新版就绪' : `v${appVersion}`}
                 </button>
-              )}
-            </div>
-          </nav>
+                {checkHint && <span className="version-hint">{checkHint}</span>}
+              </div>
+            </nav>
+          </div>
           <MainArea />
         </div>
       </div>

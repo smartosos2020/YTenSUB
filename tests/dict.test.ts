@@ -35,9 +35,23 @@ describe('Dict', () => {
     expect(dict.lookup('hello world')).toBeNull()
   })
 
+  it('网页划词带标点或弯撇号时仍能查到词典', () => {
+    const dict = makeDict({ hello: { t: '你好' }, world: { t: '世界' } })
+    expect(dict.lookup('“Hello,”')?.t).toBe('你好')
+    expect(dict.lookup('world’s')?.t).toBe('世界')
+    expect(dict.lookup('“hello world”')).toBeNull()
+  })
+
   it('未收录词返回 null', () => {
     const dict = makeDict({})
     expect(dict.lookup('unobtainium')).toBeNull()
+  })
+
+  it('词典直接收录英式拼写时也能查到常见词形', () => {
+    const dict = makeDict({ recognise: { t: '认出' } })
+    for (const word of ['recognise', 'recognised', 'recognises', 'recognising']) {
+      expect(dict.lookup(word)?.t).toBe('认出')
+    }
   })
 
   it('词典文件缺失时返回 null 而不是崩溃', () => {

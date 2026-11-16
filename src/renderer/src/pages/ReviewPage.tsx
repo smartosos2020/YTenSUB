@@ -4,6 +4,7 @@ import { speakWord } from '../speech'
 import { MASTERED_LEVEL, VocabItem } from '../../../shared/types'
 import VolumeIcon from '../components/icons/VolumeIcon'
 import PageShell from '../components/PageShell'
+import type { VocabVisualResult } from '../../../shared/vocab-visual'
 
 /** 到期判断：从未复习（无 due）或到期时间已过 */
 function isDue(v: VocabItem, now: number): boolean {
@@ -17,6 +18,12 @@ function shuffle<T>(arr: T[]): T[] {
     ;[a[i], a[j]] = [a[j], a[i]]
   }
   return a
+}
+
+function visualSourceLabel(source: VocabVisualResult['source']): string {
+  if (source === 'noto') return 'Noto Emoji'
+  if (source === 'openverse') return 'Openverse'
+  return 'Wikimedia Commons'
 }
 
 /**
@@ -33,6 +40,9 @@ export default function ReviewPage(): JSX.Element {
   const [dragX, setDragX] = useState(0)
   const [dragging, setDragging] = useState(false)
   const dragStartRef = useRef(0)
+  const [imagesEnabled, setImagesEnabled] = useState(true)
+  const [visual, setVisual] = useState<VocabVisualResult | null>(null)
+  const [visualLoading, setVisualLoading] = useState(false)
 
   useEffect(() => {
     const now = Date.now()
@@ -42,6 +52,39 @@ export default function ReviewPage(): JSX.Element {
       setTotal(due.length)
     })
   }, [])
+
+  useEffect(() => {
+    void api.settingsGet().then((settings) => setImagesEnabled(settings.reviewImages !== false))
+  }, [])
+
+  const item = queue?.[0] ?? null
+  const visualItemId = item?.id
+  const visualText = item?.text ?? ''
+  const visualTranslation = item?.translation ?? ''
+  const visualSentence = item?.sentence ?? ''
+
+  useEffect(() => {
+    let active = true
+    setVisual(null)
+    if (!visualItemId || !imagesEnabled) {
+      setVisualLoading(false)
+      return () => {
+        active = false
+      }
+    }
+    setVisualLoading(true)
+    void api
+      .vocabVisualGet({ text: visualText, translation: visualTranslation, sentence: visualSentence })
+      .then((result) => {
+        if (active) setVisual(result)
+      })
+      .finally(() => {
+        if (active) setVisualLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [visualItemId, visualText, visualTranslation, visualSentence, imagesEnabled])
 
   if (queue === null) return <div className="page">加载中…</div>
 
@@ -55,8 +98,19 @@ export default function ReviewPage(): JSX.Element {
     )
   }
 
-  const item = queue[0]
+  if (!item) return <div className="page">加载中…</div>
   const done = total - queue.length
+
+  const refreshVisual = (): void => {
+    setVisualLoading(true)
+    void api
+      .vocabVisualGet(
+        { text: item.text, translation: item.translation, sentence: item.sentence },
+        true
+      )
+      .then(setVisual)
+      .finally(() => setVisualLoading(false))
+  }
 
   /** 结算当前卡片并移出队列 */
   const grade = (known: boolean): void => {
@@ -122,6 +176,46 @@ export default function ReviewPage(): JSX.Element {
           style={dragX ? { transform: `translateX(${dragX}px)` } : undefined}
           onMouseDown={onCardMouseDown}
         >
+          {imagesEnabled && (revealed || (item.reviewLevel ?? 0) <= 1) && (
+            <div className="review-visual" aria-live="polite">
+              {visualLoading ? (
+                <div className="review-visual-loading">正在匹配图片释义…</div>
+              ) : visual ? (
+                <>
+                  {visual.imageDataUrl ? (
+                    <img src={visual.imageDataUrl} alt={`${item.text} 的图片释义`} draggable={false} />
+                  ) : visual.emoji ? (
+                    <div className="review-visual-emoji" role="img" aria-label={visual.alt}>
+                      {visual.emoji}
+                    </div>
+                  ) : null}
+                  <div className="review-visual-meta">
+                    {visual.sourceUrl ? (
+                      <button
+                        type="button"
+                        className="review-visual-source"
+                        onClick={() => void api.openExternal(visual.sourceUrl!)}
+                        title="打开图片来源页"
+                      >
+                        {visual.creator || visualSourceLabel(visual.source)}
+                        {visual.license ? ` · ${visual.license}` : ''}
+                      </button>
+                    ) : (
+                      <span>{visualSourceLabel(visual.source)}</span>
+                    )}
+                    <button type="button" onClick={refreshVisual} disabled={visualLoading}>
+                      换一张
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="review-visual-empty">
+                  <span>暂无可靠配图</span>
+                  <button type="button" onClick={refreshVisual}>重新匹配</button>
+                </div>
+              )}
+            </div>
+          )}
           <div className="review-word-row">
             <span className="review-word">{item.text}</span>
             <button className="icon-btn popup-speak" title="发音" onClick={() => speakWord(item.text)}>

@@ -8,6 +8,7 @@ export interface TranslateDeps {
   llmTranslate: (text: string) => Promise<string | null>
   /** 已启用的翻译源，数组顺序即优先级 */
   enabled: TranslateSource[]
+  onSourceFailure?: (source: TranslateSource, error?: unknown) => void
 }
 
 /** 翻译链：按 enabled 顺序依次尝试，全部失败返回 null */
@@ -29,8 +30,10 @@ export async function translateText(
         const r = await deps.llmTranslate(t)
         if (r) return { text: t, translation: r, source: 'llm' }
       }
-    } catch {
+      deps.onSourceFailure?.(src)
+    } catch (error) {
       // 某一级失败，继续下一级
+      deps.onSourceFailure?.(src, error)
     }
   }
   return null
@@ -112,9 +115,10 @@ export async function llmChat(
 export async function llmTranslate(
   text: string,
   cfg: LlmSettings,
-  fetchFn: FetchLike
+  fetchFn: FetchLike,
+  onFailure?: (reason: string) => void
 ): Promise<string | null> {
-  return llmChat(
+  const result = await llmChatDetailed(
     cfg,
     [
       {
@@ -126,6 +130,8 @@ export async function llmTranslate(
     ],
     fetchFn
   )
+  if (result.error) onFailure?.(result.error)
+  return result.content
 }
 
 /** 语境释义：把单词所在的整句一起给 LLM，返回该词在此语境下的中文意思（熟词僻义场景） */

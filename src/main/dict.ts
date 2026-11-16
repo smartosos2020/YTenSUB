@@ -37,7 +37,13 @@ export class Dict {
 
   lookup(word: string): DictEntry | null {
     const map = this.ensure()
-    const w = word.trim().toLowerCase()
+    // WebView 划词会原样传入选区，可能包含引号、标点或排版用的弯撇号。
+    const w = word
+      .trim()
+      .toLowerCase()
+      .replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, '')
+      .replace(/[‘’]/g, "'")
+      .replace(/[‐‑]/g, '-')
     if (!/^[a-z][a-z'-]*$/.test(w)) return null
     return map[w] ?? this.lookupLemma(map, w)
   }

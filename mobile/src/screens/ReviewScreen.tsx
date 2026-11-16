@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Animated, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Animated, Image, Linking, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import * as Speech from 'expo-speech'
 import { MASTERED_LEVEL, VocabItem, vocabReview } from '../lib/storage'
 import { ThemeColors, useTheme } from '../lib/theme'
 import { VolumeIcon } from '../components/icons'
+import { MobileVocabVisual, vocabVisualGet } from '../lib/vocabVisual'
 
 function isDue(v: VocabItem, now: number): boolean {
   return v.reviewDue === undefined || v.reviewDue <= now
@@ -32,6 +33,8 @@ export default function ReviewScreen({ vocab, onVocabChanged }: Props): React.JS
   const [queue, setQueue] = useState<VocabItem[] | null>(null)
   const [total, setTotal] = useState(0)
   const [revealed, setRevealed] = useState(true)
+  const [visual, setVisual] = useState<MobileVocabVisual | null>(null)
+  const [visualLoading, setVisualLoading] = useState(false)
   const dragX = useRef(new Animated.Value(0)).current
 
   // 队列只在进页时构建一次：评分后 onVocabChanged 刷新的 vocab 不再触发重洗（否则进度恒为 1/N）
@@ -47,6 +50,17 @@ export default function ReviewScreen({ vocab, onVocabChanged }: Props): React.JS
 
   const item = queue?.[0]
 
+  useEffect(() => {
+    let active = true
+    setVisual(null)
+    if (!item) return () => { active = false }
+    setVisualLoading(true)
+    void vocabVisualGet(item)
+      .then((result) => { if (active) setVisual(result) })
+      .finally(() => { if (active) setVisualLoading(false) })
+    return () => { active = false }
+  }, [item?.id])
+
   const grade = (known: boolean): void => {
     if (!item) return
     const level = known ? Math.min((item.reviewLevel ?? -1) + 1, MASTERED_LEVEL) : 0
@@ -56,6 +70,12 @@ export default function ReviewScreen({ vocab, onVocabChanged }: Props): React.JS
 
   const gradeRef = useRef(grade)
   gradeRef.current = grade
+
+  const refreshVisual = (): void => {
+    if (!item) return
+    setVisualLoading(true)
+    void vocabVisualGet(item, true).then(setVisual).finally(() => setVisualLoading(false))
+  }
 
   const pan = useRef(
     PanResponder.create({
@@ -110,6 +130,42 @@ export default function ReviewScreen({ vocab, onVocabChanged }: Props): React.JS
         >
           <Animated.View style={[StyleSheet.absoluteFill, styles.tint, { backgroundColor: tintColor }]} />
           <TouchableOpacity activeOpacity={0.9} onPress={() => setRevealed(!revealed)}>
+            {(revealed || (item.reviewLevel ?? 0) <= 1) ? (
+              <View style={styles.visualWrap}>
+                {visualLoading ? (
+                  <View style={styles.visualLoading}><ActivityIndicator color={colors.accent} /></View>
+                ) : visual?.uri ? (
+                  <Image source={{ uri: visual.uri }} style={styles.visualImage} resizeMode="contain" />
+                ) : visual?.emoji ? (
+                  <Text style={styles.visualEmoji}>{visual.emoji}</Text>
+                ) : (
+                  <View style={styles.visualEmpty}>
+                    <Text style={styles.visualEmptyText}>暂无可靠配图</Text>
+                    <TouchableOpacity onPress={refreshVisual}>
+                      <Text style={styles.visualChange}>重新匹配</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {visual ? (
+                  <View style={styles.visualMeta}>
+                    <TouchableOpacity
+                      disabled={!visual.sourceUrl}
+                      onPress={() => visual.sourceUrl && void Linking.openURL(visual.sourceUrl)}
+                    >
+                      <Text style={styles.visualSource} numberOfLines={1}>
+                        {visual.creator || (visual.source === 'noto'
+                          ? 'Noto Emoji'
+                          : visual.source === 'openverse' ? 'Openverse' : 'Wikimedia Commons')}
+                        {visual.license ? ` · ${visual.license}` : ''}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={refreshVisual} disabled={visualLoading}>
+                      <Text style={styles.visualChange}>换一张</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
             <View style={styles.wordRow}>
               <Text style={styles.word}>{item.text}</Text>
               <TouchableOpacity onPress={() => Speech.speak(item.text, { language: 'en-US' })} hitSlop={6}>
@@ -164,6 +220,15 @@ const makeStyles = (c: ThemeColors) =>
   wordRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   word: { color: c.text, fontSize: 26, fontWeight: '600' },
   phonetic: { color: c.subtext, marginTop: 4 },
+  visualWrap: { marginBottom: 14 },
+  visualLoading: { height: 116, alignItems: 'center', justifyContent: 'center' },
+  visualEmpty: { height: 84, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: c.bg, borderRadius: 8 },
+  visualEmptyText: { color: c.subtext, fontSize: 11 },
+  visualImage: { width: '100%', height: 150, borderRadius: 8, backgroundColor: c.bg },
+  visualEmoji: { height: 130, textAlign: 'center', textAlignVertical: 'center', fontSize: 82, backgroundColor: c.bg, borderRadius: 8 },
+  visualMeta: { minHeight: 28, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10, marginTop: 4 },
+  visualSource: { color: c.subtext, fontSize: 10, maxWidth: 210 },
+  visualChange: { color: c.accent, fontSize: 11, paddingVertical: 5, paddingHorizontal: 7 },
   translation: { color: c.text, fontSize: 17, lineHeight: 26, marginTop: 14 },
   sentence: { color: c.subtext, fontSize: 13, lineHeight: 20, marginTop: 10 },
   revealHint: { color: c.subtext, fontSize: 13, marginTop: 20, textAlign: 'center' },

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { speakWord } from '../speech'
@@ -6,9 +6,91 @@ import { MASTERED_LEVEL, VocabItem } from '../../../shared/types'
 import TrashIcon from '../components/icons/TrashIcon'
 import VolumeIcon from '../components/icons/VolumeIcon'
 import PageShell from '../components/PageShell'
+import type { VocabVisualResult } from '../../../shared/vocab-visual'
 
 function isMastered(v: VocabItem): boolean {
   return v.reviewLevel !== undefined && v.reviewLevel >= MASTERED_LEVEL
+}
+
+function visualSourceLabel(source: VocabVisualResult['source']): string {
+  if (source === 'noto') return 'Noto Emoji'
+  if (source === 'openverse') return 'Openverse'
+  return 'Wikimedia Commons'
+}
+
+/** 只给进入视口的卡片取图，避免打开大生词本时瞬间发起大量请求。 */
+function VocabVisualThumb({ item, enabled }: { item: VocabItem; enabled: boolean }): JSX.Element | null {
+  const hostRef = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+  const [visual, setVisual] = useState<VocabVisualResult | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!enabled) return
+    const node = hostRef.current
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setVisible(true)
+      return
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisible(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '180px' }
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [enabled])
+
+  const load = useCallback((refresh = false): void => {
+    setLoading(true)
+    void api
+      .vocabVisualGet(
+        { text: item.text, translation: item.translation, sentence: item.sentence },
+        refresh
+      )
+      .then(setVisual)
+      .finally(() => setLoading(false))
+  }, [item.text, item.translation, item.sentence])
+
+  useEffect(() => {
+    if (enabled && visible) load(false)
+  }, [enabled, visible, load])
+
+  if (!enabled) return null
+  return (
+    <div ref={hostRef} className="vocab-visual">
+      {!visible || loading ? (
+        <div className="vocab-visual-state">{visible ? '正在匹配图片…' : '等待加载…'}</div>
+      ) : visual?.imageDataUrl ? (
+        <img src={visual.imageDataUrl} alt={`${item.text} 的图片释义`} draggable={false} />
+      ) : visual?.emoji ? (
+        <div className="vocab-visual-emoji" role="img" aria-label={visual.alt}>{visual.emoji}</div>
+      ) : (
+        <div className="vocab-visual-state vocab-visual-empty">
+          <span>暂无可靠配图</span>
+          <button type="button" onClick={() => load(true)}>重新匹配</button>
+        </div>
+      )}
+      {visual && !loading && (
+        <div className="vocab-visual-meta">
+          <button
+            type="button"
+            disabled={!visual.sourceUrl}
+            title={visual.sourceUrl ? '打开图片来源页' : undefined}
+            onClick={() => visual.sourceUrl && void api.openExternal(visual.sourceUrl)}
+          >
+            {visual.creator || visualSourceLabel(visual.source)}
+            {visual.license ? ` · ${visual.license}` : ''}
+          </button>
+          <button type="button" onClick={() => load(true)}>换一张</button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 /** 导出 CSV（Excel / Anki 均可导入） */
@@ -30,6 +112,7 @@ export default function VocabularyPage(): JSX.Element {
   const navigate = useNavigate()
   const [vocab, setVocab] = useState<VocabItem[]>([])
   const [groupByVideo, setGroupByVideo] = useState(true)
+  const [imagesEnabled, setImagesEnabled] = useState(true)
 
   const reload = useCallback(async (): Promise<void> => {
     setVocab(await api.vocabList())
@@ -37,6 +120,7 @@ export default function VocabularyPage(): JSX.Element {
 
   useEffect(() => {
     void reload()
+    void api.settingsGet().then((settings) => setImagesEnabled(settings.reviewImages !== false))
   }, [reload])
 
   const remove = async (id: string): Promise<void> => {
@@ -93,6 +177,7 @@ export default function VocabularyPage(): JSX.Element {
           <div className="vocab-grid">
             {items.map((item) => (
               <div key={item.id} className="vocab-item">
+                <VocabVisualThumb item={item} enabled={imagesEnabled} />
                 <div className="vocab-head">
                   <span className="vocab-text">{item.text}</span>
                   <button

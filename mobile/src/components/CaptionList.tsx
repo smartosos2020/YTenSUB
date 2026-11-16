@@ -39,7 +39,7 @@ interface Props {
   /** 与 cues 等长对齐的中文字幕 */
   zhLines: (string | null)[] | null
   time: number
-  /** 生词词元集合：命中橙色高亮 */
+  /** 生词词元集合：命中时用主题色高亮 */
   knownLemmas: Set<string>
   /** 点词（非当前句卡片）：底部弹窗翻译 */
   onWord: (word: string, sentence: string) => void
@@ -62,6 +62,7 @@ function WordRow({
   text,
   knownLemmas,
   savedTranslations,
+  knownColor,
   highlightStyle,
   textStyle,
   onWord
@@ -69,6 +70,7 @@ function WordRow({
   text: string
   knownLemmas: Set<string>
   savedTranslations: ReadonlyMap<string, string>
+  knownColor: string
   highlightStyle?: object
   textStyle?: object
   onWord: (word: string) => void
@@ -84,8 +86,10 @@ function WordRow({
         const translation = savedTranslations.get(lemma)
         const wordEnd = part.indexOf(word) + word.length
         return (
-          <Text key={i} style={[known && staticStyles.wordKnown, highlightStyle]} onPress={() => onWord(word)}>
-            {part.slice(0, wordEnd)}{translation && `[${translation}]`}{part.slice(wordEnd)}
+          <Text key={i} style={[known && { color: knownColor }, highlightStyle]} onPress={() => onWord(word)}>
+            {part.slice(0, wordEnd)}
+            {translation && <Text style={known && !highlightStyle && staticStyles.wordGloss}>[{translation}]</Text>}
+            {part.slice(wordEnd)}
           </Text>
         )
       })}
@@ -233,6 +237,7 @@ export default function CaptionList({
                 text={item.text}
                 knownLemmas={knownLemmas}
                 savedTranslations={savedTranslations}
+                knownColor={colors.accent}
                 highlightStyle={styles.activeWord}
                 textStyle={styles.activeEn}
                 onWord={(word) => {
@@ -269,6 +274,7 @@ export default function CaptionList({
               text={item.text}
               knownLemmas={knownLemmas}
               savedTranslations={savedTranslations}
+              knownColor={colors.accent}
               textStyle={styles.cardEn}
               onWord={(word) => onWord(word, item.text)}
             />
@@ -285,9 +291,8 @@ export default function CaptionList({
   )
 }
 
-// 语义色（生词橙）两个主题通用，保持静态
 const staticStyles = StyleSheet.create({
-  wordKnown: { color: '#F0A35E' }
+  wordGloss: { color: '#F0A35E' }
 })
 
 const makeStyles = (c: ThemeColors, dark: boolean) =>

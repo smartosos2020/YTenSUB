@@ -97,6 +97,7 @@ export default function SettingsPage(): JSX.Element {
   const [vocabList, setVocabList] = useState<VocabItem[] | null>(null)
   const [favCount, setFavCount] = useState<number | null>(null)
   const [captionCacheCount, setCaptionCacheCount] = useState<number | null>(null)
+  const [visualCacheBytes, setVisualCacheBytes] = useState<number | null>(null)
   // 学习统计（按日）：今日复习次数/认识率
   const [stats, setStats] = useState<Record<string, { reviewed: number; known: number }>>({})
   // 手机同步服务地址（开启后显示，如 http://192.168.0.10:47832）
@@ -165,6 +166,7 @@ export default function SettingsPage(): JSX.Element {
     api.vocabList().then((l: VocabItem[]) => setVocabList(l)).catch(() => {})
     api.favList().then((l: unknown[]) => setFavCount(l.length)).catch(() => {})
     api.captionsCacheSize().then(setCaptionCacheCount).catch(() => {})
+    api.vocabVisualCacheSize().then(setVisualCacheBytes).catch(() => {})
     api.statsGet().then(setStats).catch(() => {})
     api.appVersion().then((v) => setAppVersion(String(v))).catch(() => {})
   }, [])
@@ -378,6 +380,17 @@ export default function SettingsPage(): JSX.Element {
                 <Switch
                   checked={settings.hoverTranslate}
                   onChange={(e) => update({ ...settings, hoverTranslate: e.currentTarget.checked })}
+                />
+              </div>
+              <div className="behavior-row">
+                <span className="behavior-icon" aria-hidden="true">🖼️</span>
+                <span className="engine-info">
+                  <span className="engine-name">复习时显示图片释义</span>
+                  <span className="engine-hint">优先开源图标，再从 Openverse / Wikimedia 匹配；图片缓存最多 10 MB</span>
+                </span>
+                <Switch
+                  checked={settings.reviewImages !== false}
+                  onChange={(e) => update({ ...settings, reviewImages: e.currentTarget.checked })}
                 />
               </div>
               <div className="card-divider" />
@@ -743,6 +756,12 @@ export default function SettingsPage(): JSX.Element {
                   <div className="stat-num">{captionCacheCount ?? '-'}</div>
                   <div className="stat-label">字幕缓存（部）</div>
                 </div>
+                <div className="stat-tile">
+                  <div className="stat-num">
+                    {visualCacheBytes === null ? '-' : `${(visualCacheBytes / 1048576).toFixed(1)} MB`}
+                  </div>
+                  <div className="stat-label">生词图片缓存</div>
+                </div>
               </div>
               <div className="card-divider" />
               <div className="data-row">
@@ -767,6 +786,18 @@ export default function SettingsPage(): JSX.Element {
                   }
                 >
                   清除字幕缓存
+                </Button>
+                <Button
+                  variant="default"
+                  title="清空可重建的图片释义缓存，不影响生词和复习进度"
+                  onClick={() =>
+                    void api.vocabVisualCacheClear().then(() => {
+                      setVisualCacheBytes(0)
+                      setDataMsg('生词图片缓存已清除')
+                    })
+                  }
+                >
+                  清除图片缓存
                 </Button>
                 {dataMsg && <span className="saved-hint">{dataMsg}</span>}
               </div>
