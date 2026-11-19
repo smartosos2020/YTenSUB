@@ -394,6 +394,15 @@ export default function SettingsPage(): JSX.Element {
                 />
               </div>
               <div className="card-divider" />
+              <PasswordInput
+                label="OpenSubtitles API Key"
+                labelProps={{ className: 'field-label' }}
+                value={settings.openSubtitlesApiKey ?? ''}
+                onChange={(e) => update({ ...settings, openSubtitlesApiKey: e.currentTarget.value })}
+                placeholder="在 opensubtitles.com 的 API Consumers 页面创建"
+                description="用于按本地视频文件 Hash 搜索英文字幕；视频文件不会上传"
+              />
+              <div className="card-divider" />
               <div className="field-label">网络代理</div>
               <TextInput
                 value={settings.proxy ?? ''}

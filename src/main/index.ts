@@ -1,8 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, session, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, protocol, session, shell } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { Readable } from 'node:stream'
 import { Store } from './store'
 import { CaptionsCache, CaptionCacheEntry } from './captions-cache'
 import { startSyncServer, SyncServer } from './sync'
@@ -17,9 +18,33 @@ import { estimateLevelByFreq } from './cefr'
 import { CURATED_SNAPSHOT_URL, CURATED_INDEX_URL, CURATED_INC_URL_BASE } from '../shared/curated-config'
 import { VocabVisuals, isLikelyConcreteNoun } from './vocab-visuals'
 import type { VocabVisualRequest } from '../shared/vocab-visual'
+import type { LocalVideoFile } from '../shared/local-media'
+import {
+  computeOpenSubtitlesHash,
+  decodeSubtitleBuffer,
+  downloadOpenSubtitle,
+  findSidecarSubtitle,
+  parseMediaByteRange,
+  parseEpisodeInfo,
+  searchOpenSubtitles
+} from './local-media'
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'ytensub-media',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true
+    }
+  }
+])
 
 const dataFile = path.join(app.getPath('userData'), 'ytensub-data.json')
 const syncTokenFile = path.join(app.getPath('userData'), 'sync-pair-token')
+const allowedLocalMedia = new Set<string>()
 
 function loadOrCreateSyncToken(): string {
   try {
@@ -590,6 +615,76 @@ function registerIpc(): void {
     return 'file:///' + p.replace(/\\/g, '/')
   })
 
+  ipcMain.handle('local:pick-video', async (): Promise<LocalVideoFile | null> => {
+    if (!mainWin) return null
+    const result = await dialog.showOpenDialog(mainWin, {
+      title: '选择本地视频',
+      filters: [
+        { name: '视频文件', extensions: ['mp4', 'm4v', 'webm', 'mov', 'mkv', 'avi'] },
+        { name: '所有文件', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    })
+    const filePath = result.filePaths[0]
+    if (result.canceled || !filePath) return null
+    const stat = await fs.promises.stat(filePath)
+    const resolvedPath = path.resolve(filePath)
+    allowedLocalMedia.add(resolvedPath)
+    const info = parseEpisodeInfo(path.basename(filePath))
+    const hash = await computeOpenSubtitlesHash(filePath).catch(() => null)
+    return {
+      path: filePath,
+      url: `ytensub-media://video?path=${encodeURIComponent(resolvedPath)}`,
+      name: path.basename(filePath),
+      extension: path.extname(filePath).slice(1).toLowerCase(),
+      size: stat.size,
+      hash,
+      ...info,
+      sidecarSubtitle: findSidecarSubtitle(filePath)
+    }
+  })
+
+  ipcMain.handle('local:pick-subtitle', async () => {
+    if (!mainWin) return null
+    const result = await dialog.showOpenDialog(mainWin, {
+      title: '选择英文字幕',
+      filters: [{ name: '字幕文件', extensions: ['srt', 'vtt', 'ass', 'ssa'] }],
+      properties: ['openFile']
+    })
+    const filePath = result.filePaths[0]
+    if (result.canceled || !filePath) return null
+    const stat = await fs.promises.stat(filePath)
+    if (stat.size > 8 * 1024 * 1024) throw new Error('字幕文件过大，已拒绝加载')
+    return { fileName: path.basename(filePath), text: decodeSubtitleBuffer(await fs.promises.readFile(filePath)) }
+  })
+
+  ipcMain.handle('local:search-subtitles', async (_event, video: LocalVideoFile) => {
+    const apiKey = store.getSettings().openSubtitlesApiKey?.trim()
+    if (!apiKey) throw new Error('请先在设置中填写 OpenSubtitles API Key')
+    return searchOpenSubtitles({
+      apiKey,
+      hash: video.hash,
+      query: String(video.query ?? '').trim().slice(0, 160),
+      fileName: path.basename(String(video.name ?? '')).slice(0, 240),
+      season: Number.isInteger(video.season) ? video.season : undefined,
+      episode: Number.isInteger(video.episode) ? video.episode : undefined,
+      userAgent: `YTenSUB v${app.getVersion()}`,
+      fetchFn: (url, init) => net.fetch(url, init)
+    })
+  })
+
+  ipcMain.handle('local:download-subtitle', async (_event, fileId: number) => {
+    const apiKey = store.getSettings().openSubtitlesApiKey?.trim()
+    if (!apiKey) throw new Error('请先在设置中填写 OpenSubtitles API Key')
+    if (!Number.isInteger(fileId) || fileId <= 0) throw new Error('字幕文件标识无效')
+    return downloadOpenSubtitle({
+      apiKey,
+      fileId,
+      userAgent: `YTenSUB v${app.getVersion()}`,
+      fetchFn: (url, init) => net.fetch(url, init)
+    })
+  })
+
   // 通用文本保存（生词 CSV、双语字幕等）：保存对话框 + 写文件，取消返回 null
   ipcMain.handle(
     'file:save-text',
@@ -830,6 +925,61 @@ function createWindow(): void {
 app.whenReady().then(() => {
   // 与 electron-builder 的 appId 一致：Windows 任务栏分组/通知才用应用图标而不是 Electron 默认图标
   if (process.platform === 'win32') app.setAppUserModelId('com.ytensub.app')
+  protocol.handle('ytensub-media', async (request) => {
+    const requestedPath = new URL(request.url).searchParams.get('path')
+    if (!requestedPath) return new Response('Bad request', { status: 400 })
+    const resolvedPath = path.resolve(requestedPath)
+    if (!allowedLocalMedia.has(resolvedPath)) return new Response('Not found', { status: 404 })
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      return new Response('Method not allowed', { status: 405 })
+    }
+
+    let stat: fs.Stats
+    try {
+      stat = await fs.promises.stat(resolvedPath)
+      if (!stat.isFile()) return new Response('Not found', { status: 404 })
+    } catch {
+      return new Response('Not found', { status: 404 })
+    }
+
+    const range = parseMediaByteRange(request.headers.get('range'), stat.size)
+    const headers = new Headers()
+    headers.set('Access-Control-Allow-Origin', '*')
+    headers.set('Access-Control-Allow-Headers', 'Range')
+    headers.set('Access-Control-Expose-Headers', 'Accept-Ranges, Content-Length, Content-Range')
+    headers.set('Accept-Ranges', 'bytes')
+    headers.set('Cache-Control', 'no-store')
+    const extension = path.extname(resolvedPath).slice(1).toLowerCase()
+    const mediaTypes: Record<string, string> = {
+      mp4: 'video/mp4',
+      m4v: 'video/x-m4v',
+      webm: 'video/webm',
+      mov: 'video/quicktime',
+      mkv: 'video/x-matroska',
+      avi: 'video/x-msvideo'
+    }
+    headers.set('Content-Type', mediaTypes[extension] ?? 'application/octet-stream')
+
+    if (range === null) {
+      headers.set('Content-Range', `bytes */${stat.size}`)
+      return new Response(null, { status: 416, headers })
+    }
+
+    const start = range?.start ?? 0
+    // Chromium treats the end of an open-ended stream as the end of playback.
+    // Keep the requested range intact and stream it with backpressure.
+    const end = range?.end ?? stat.size - 1
+    headers.set('Content-Length', String(end - start + 1))
+    if (range) headers.set('Content-Range', `bytes ${start}-${end}/${stat.size}`)
+    if (request.method === 'HEAD') {
+      return new Response(null, { status: range ? 206 : 200, headers })
+    }
+    const stream = fs.createReadStream(resolvedPath, { start, end })
+    return new Response(Readable.toWeb(stream) as unknown as BodyInit, {
+      status: range ? 206 : 200,
+      headers
+    })
+  })
   Menu.setApplicationMenu(null)
   registerIpc()
   createWindow()

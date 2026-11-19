@@ -5,6 +5,12 @@ import type { CachedEntitlement } from '../shared/entitlement'
 import type { CuratedFeedback } from '../shared/curated-feedback'
 import type { CaptionCacheEntry } from '../main/captions-cache'
 import type { VocabVisualRequest, VocabVisualResult } from '../shared/vocab-visual'
+import type {
+  DownloadedSubtitle,
+  LocalSubtitleFile,
+  LocalVideoFile,
+  OnlineSubtitleCandidate
+} from '../shared/local-media'
 
 const api = {
   translate: (text: string) => ipcRenderer.invoke('translate:text', text),
@@ -67,6 +73,12 @@ const api = {
     ipcRenderer.invoke('captions:put-cache', videoId, entry),
   captionsCacheSize: (): Promise<number> => ipcRenderer.invoke('captions:cache-size'),
   captionsClearCache: () => ipcRenderer.invoke('captions:clear-cache'),
+  localPickVideo: (): Promise<LocalVideoFile | null> => ipcRenderer.invoke('local:pick-video'),
+  localPickSubtitle: (): Promise<LocalSubtitleFile | null> => ipcRenderer.invoke('local:pick-subtitle'),
+  localSearchSubtitles: (video: LocalVideoFile): Promise<OnlineSubtitleCandidate[]> =>
+    ipcRenderer.invoke('local:search-subtitles', video),
+  localDownloadSubtitle: (fileId: number): Promise<DownloadedSubtitle> =>
+    ipcRenderer.invoke('local:download-subtitle', fileId),
   syncStart: (): Promise<{ ip: string; port: number; token: string } | null> =>
     ipcRenderer.invoke('sync:start'),
   syncStop: () => ipcRenderer.invoke('sync:stop'),

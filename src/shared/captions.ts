@@ -79,6 +79,102 @@ export function parseCaptionText(text: string | null | undefined): Cue[] {
   return []
 }
 
+function parseClock(value: string): number | null {
+  const normalized = value.trim().replace(',', '.')
+  const parts = normalized.split(':')
+  if (parts.length < 2 || parts.length > 3) return null
+  const seconds = Number(parts.pop())
+  const minutes = Number(parts.pop())
+  const hours = parts.length ? Number(parts.pop()) : 0
+  if (![hours, minutes, seconds].every(Number.isFinite)) return null
+  return hours * 3600 + minutes * 60 + seconds
+}
+
+function cleanExternalText(value: string): string {
+  return decodeXmlEntities(
+    value
+      .replace(/\{\\[^}]*\}/g, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\\[Nn]/g, ' ')
+  )
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** 解析常见 SRT / WebVTT 字幕。 */
+export function parseSrtOrVtt(text: string): Cue[] {
+  const normalized = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n')
+  const blocks = normalized.split(/\n{2,}/)
+  const cues: Cue[] = []
+  for (const block of blocks) {
+    const lines = block.split('\n').map((line) => line.trimEnd())
+    const timingIndex = lines.findIndex((line) => line.includes('-->'))
+    if (timingIndex < 0 || /^NOTE\b/i.test(lines[0] ?? '')) continue
+    const match = /^\s*([^\s]+)\s*-->\s*([^\s]+)/.exec(lines[timingIndex])
+    if (!match) continue
+    const start = parseClock(match[1])
+    const end = parseClock(match[2])
+    if (start === null || end === null || end < start) continue
+    const cueText = cleanExternalText(lines.slice(timingIndex + 1).join(' '))
+    if (!cueText) continue
+    cues.push({ start, dur: Math.max(0, end - start), text: cueText })
+  }
+  return cues.sort((a, b) => a.start - b.start)
+}
+
+/** 解析 ASS/SSA 的 Dialogue 行；样式标记会被剥除，只保留学习所需文本。 */
+export function parseAss(text: string): Cue[] {
+  const lines = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n')
+  let inEvents = false
+  let format: string[] = []
+  const cues: Cue[] = []
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (/^\[Events\]$/i.test(line)) {
+      inEvents = true
+      continue
+    }
+    if (/^\[/.test(line) && !/^\[Events\]$/i.test(line)) {
+      inEvents = false
+      continue
+    }
+    if (!inEvents) continue
+    if (/^Format\s*:/i.test(line)) {
+      format = line
+        .replace(/^Format\s*:/i, '')
+        .split(',')
+        .map((part) => part.trim().toLowerCase())
+      continue
+    }
+    if (!/^Dialogue\s*:/i.test(line)) continue
+    const body = line.replace(/^Dialogue\s*:/i, '').trim()
+    const expected = Math.max(1, format.length)
+    const parts = body.split(',')
+    if (parts.length < expected) continue
+    const fixed = parts.slice(0, expected - 1)
+    fixed.push(parts.slice(expected - 1).join(','))
+    const startIndex = format.indexOf('start')
+    const endIndex = format.indexOf('end')
+    const textIndex = format.indexOf('text')
+    if (startIndex < 0 || endIndex < 0 || textIndex < 0) continue
+    const start = parseClock(fixed[startIndex])
+    const end = parseClock(fixed[endIndex])
+    if (start === null || end === null || end < start) continue
+    const cueText = cleanExternalText(fixed[textIndex])
+    if (!cueText) continue
+    cues.push({ start, dur: Math.max(0, end - start), text: cueText })
+  }
+  return cues.sort((a, b) => a.start - b.start)
+}
+
+/** 根据内容自动判别并解析本地/在线下载的 SRT、VTT、ASS/SSA 字幕。 */
+export function parseExternalSubtitle(text: string | null | undefined): Cue[] {
+  if (!text?.trim()) return []
+  const trimmed = text.trimStart()
+  if (/\[Script Info\]|\[Events\]/i.test(trimmed)) return parseAss(text)
+  return parseSrtOrVtt(text)
+}
+
 /** 找到当前播放时间对应的字幕下标，没有则返回 -1 */
 export function findActiveCueIndex(cues: Cue[], time: number): number {
   // 字幕按 start 升序；取最后一个 start <= time 且未明显过期的 cue

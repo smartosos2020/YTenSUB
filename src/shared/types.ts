@@ -177,6 +177,8 @@ export interface Settings {
   hoverTranslate: boolean
   /** 复习卡片显示开放版权的图片释义 */
   reviewImages: boolean
+  /** OpenSubtitles REST API Consumer Key；本地视频自动搜索英文字幕用 */
+  openSubtitlesApiKey: string
   /** 跟读脚本生成策略 */
   shadowingStrategy: ShadowingStrategy
 /** 收藏难度估算方式：freq = 离线词频估（免费即时），llm = LLM 精估（花 token 更准） */
@@ -226,6 +228,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoCollectWord: false,
   hoverTranslate: false,
   reviewImages: true,
+  openSubtitlesApiKey: '',
   shadowingStrategy: 'llm-fallback',
   levelEstimator: 'freq',
   autoTag: true,

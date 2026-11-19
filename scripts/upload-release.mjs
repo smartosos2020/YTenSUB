@@ -86,11 +86,12 @@ async function main() {
       })
     )
 
-  await put(`${PREFIX}/latest.yml`, ymlPath, 'no-cache')
   for (const f of binaries) {
     await put(`${PREFIX}/${f}`, path.join(dist, f), 'public, max-age=86400')
   }
   await put(`${PREFIX}/${FIXED_NAME}`, path.join(dist, installer), 'no-cache')
+  // 更新清单最后上传，避免客户端在安装包可下载前发现新版本。
+  await put(`${PREFIX}/latest.yml`, ymlPath, 'no-cache')
 
   // 回读校验：公开地址应立刻能拿到刚传的 latest.yml，且版本与本地一致
   const res = await fetch(`${PUBLIC_BASE}/${PREFIX}/latest.yml`, { cache: 'no-store' })

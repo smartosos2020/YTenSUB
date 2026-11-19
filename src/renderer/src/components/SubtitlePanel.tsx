@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { Cue, findActiveCueIndex } from '../../../shared/captions'
 import WordSpans from './WordSpans'
 import RepeatIcon from './icons/RepeatIcon'
@@ -12,6 +13,7 @@ export interface WordSelection {
 
 interface Props {
   cues: Cue[]
+  windowed?: boolean
   time: number
   hasCaptions: boolean
   onSeek: (t: number) => void
@@ -155,6 +157,7 @@ function ZhToolbar({
 
 export default function SubtitlePanel({
   cues,
+  windowed = false,
   time,
   hasCaptions,
   onSeek,
@@ -175,10 +178,20 @@ export default function SubtitlePanel({
 }: Props): JSX.Element {
   const activeIdx = findActiveCueIndex(cues, time)
   const activeRef = useRef<HTMLDivElement | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const virtualizer = useVirtualizer({
+    enabled: windowed,
+    count: cues.length,
+    getScrollElement: () => panelRef.current,
+    estimateSize: () => showZh ? 68 : 46,
+    overscan: 8
+  })
 
   useEffect(() => {
-    activeRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [activeIdx])
+    if (activeIdx < 0) return
+    if (windowed) virtualizer.scrollToIndex(activeIdx, { align: 'center' })
+    else activeRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [activeIdx, virtualizer, windowed])
 
   // 单词点击回调必须引用稳定（useCallback），否则每次渲染都是新函数，
   // CueRow 的 memo 会失效，导致播放进度刷新（每 300ms）时全列表重渲染
@@ -206,6 +219,21 @@ export default function SubtitlePanel({
     onWordSelect({ text, rect, sentence })
   }
 
+  const renderRow = (cue: Cue, index: number): JSX.Element => (
+    <CueRow
+      cue={cue}
+      idx={index}
+      active={index === activeIdx}
+      showZh={showZh}
+      zh={showZh ? (zhLines?.[index] ?? null) : null}
+      knownWords={knownWords}
+      savedTranslations={savedTranslations}
+      onSeek={onSeek}
+      onWord={handleWord}
+      onWordHover={onWordHover}
+    />
+  )
+
   return (
     <div className="subs-wrap">
       <ZhToolbar
@@ -225,21 +253,23 @@ export default function SubtitlePanel({
           {hasCaptions ? '打开一个视频，字幕会显示在这里' : '该视频没有英文字幕'}
         </div>
       ) : (
-        <div className="subtitle-panel" onMouseUp={handleMouseUp}>
-          {cues.map((cue, i) => (
-            <div key={i} ref={i === activeIdx ? activeRef : undefined}>
-              <CueRow
-                cue={cue}
-                idx={i}
-                active={i === activeIdx}
-                showZh={showZh}
-                zh={showZh ? (zhLines?.[i] ?? null) : null}
-                knownWords={knownWords}
-                savedTranslations={savedTranslations}
-                onSeek={onSeek}
-                onWord={handleWord}
-                onWordHover={onWordHover}
-              />
+        <div ref={panelRef} className="subtitle-panel" onMouseUp={handleMouseUp}>
+          {windowed ? (
+            <div style={{ position: 'relative', height: virtualizer.getTotalSize() }}>
+              {virtualizer.getVirtualItems().map(({ key, index, start }) => (
+                <div
+                  key={key}
+                  ref={virtualizer.measureElement}
+                  data-index={index}
+                  style={{ position: 'absolute', top: 0, width: '100%', transform: `translateY(${start}px)` }}
+                >
+                  {renderRow(cues[index], index)}
+                </div>
+              ))}
+            </div>
+          ) : cues.map((cue, index) => (
+            <div key={index} ref={index === activeIdx ? activeRef : undefined}>
+              {renderRow(cue, index)}
             </div>
           ))}
         </div>

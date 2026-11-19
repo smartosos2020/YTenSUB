@@ -1,6 +1,6 @@
 {
   "name": "ytensub",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "private": true,
   "description": "Desktop YouTube player for English learning: bilingual (EN/ZH) subtitles, subtitle word translation, vocabulary book, favorites",
   "main": "out/main/index.js",
@@ -19,7 +19,11 @@
   "dependencies": {
     "@mantine/core": "^7.17.8",
     "@mantine/hooks": "^7.17.8",
+    "@mediabunny/ac3": "^1.66.0",
+    "@mediabunny/dts": "^1.66.0",
+    "@tanstack/react-virtual": "^3.14.26",
     "electron-updater": "^6.8.9",
+    "mediabunny": "^1.66.0",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

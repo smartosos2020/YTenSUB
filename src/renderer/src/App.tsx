@@ -12,6 +12,7 @@ import ReviewPage from './pages/ReviewPage'
 import ShadowingPage from './pages/ShadowingPage'
 import SettingsPage from './pages/SettingsPage'
 import ProfilePage from './pages/ProfilePage'
+import LocalPage from './pages/LocalPage'
 import TitleBar from './components/TitleBar'
 import SidebarToggleIcon from './components/SidebarToggleIcon'
 import PlayIcon from './components/icons/PlayIcon'
@@ -21,9 +22,11 @@ import RepeatIcon from './components/icons/RepeatIcon'
 import GearIcon from './components/icons/GearIcon'
 import CompassIcon from './components/icons/CompassIcon'
 import UserIcon from './components/icons/UserIcon'
+import LocalVideoIcon from './components/icons/LocalVideoIcon'
 
 const NAV_ITEMS: { to: string; label: string; icon: JSX.Element }[] = [
   { to: '/browse', label: '浏览', icon: <PlayIcon /> },
+  { to: '/local', label: '本地', icon: <LocalVideoIcon /> },
   { to: '/curated', label: '精选', icon: <CompassIcon /> },
   { to: '/favorites', label: '收藏', icon: <StarOutlineIcon /> },
   { to: '/vocabulary', label: '生词', icon: <BookIcon /> },
@@ -61,6 +64,7 @@ function MainArea(): JSX.Element {
       {!onBrowse && !onCurated && (
         <Routes>
           <Route path="/favorites" element={<FavoritesPage />} />
+          <Route path="/local" element={<LocalPage />} />
           <Route path="/vocabulary" element={<VocabularyPage />} />
           <Route path="/review" element={<ReviewPage />} />
           <Route path="/shadowing" element={<ShadowingPage />} />
