@@ -11,6 +11,31 @@ function makeStore(): { store: Store; file: string } {
 }
 
 describe('Store', () => {
+  it('记住播放列表文件夹、去重，并兼容没有播放列表的旧数据', () => {
+    const { store, file } = makeStore()
+    try {
+      expect(store.listLocalVideoFolders()).toEqual([])
+      store.addLocalVideoFolder('D:/Shows/Season1')
+      store.addLocalVideoFolder('D:/Shows/Season1')
+      store.addLocalVideoFolder('D:/Shows/Season2')
+      store.flush()
+      const restored = new Store(file)
+      expect(restored.listLocalVideoFolders()).toEqual(['D:/Shows/Season1', 'D:/Shows/Season2'])
+      restored.removeLocalVideoFolder('D:/Shows/Season1')
+      restored.flush()
+      expect(new Store(file).listLocalVideoFolders()).toEqual(['D:/Shows/Season2'])
+
+      const oldData = store.exportAll()
+      delete oldData.localVideoFolders
+      store.replaceAll(oldData)
+      expect(store.listLocalVideoFolders()).toEqual([])
+      store.flush()
+    } finally {
+      store.flush()
+      fs.rmSync(path.dirname(file), { recursive: true, force: true })
+    }
+  })
+
   it('文件夹增删；删文件夹时收藏归为未分类', () => {
     const { store } = makeStore()
     const folder = store.addFolder('TED 演讲')

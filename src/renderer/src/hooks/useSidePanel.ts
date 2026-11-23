@@ -7,8 +7,8 @@ const SIDE_WIDTH_MIN = 260
 const SIDE_WIDTH_MAX = 640
 
 export interface SidePanelState {
-  sideTab: 'subs' | 'favs'
-  setSideTab: (t: 'subs' | 'favs') => void
+  sideTab: 'subs' | 'favs' | 'playlist'
+  setSideTab: (t: 'subs' | 'favs' | 'playlist') => void
   sideCollapsed: boolean
   toggleSide: () => void
   sideWidth: number
@@ -16,14 +16,14 @@ export interface SidePanelState {
 }
 
 /** 右侧标签面板：字幕/收藏切换、收缩（开关在地址栏右侧）、左缘拖拽调宽，状态持久化 */
-export function useSidePanel(): SidePanelState {
-  const [sideTab, setSideTab] = useState<'subs' | 'favs'>('subs')
+export function useSidePanel(storageKey = 'ytensub:side'): SidePanelState {
+  const [sideTab, setSideTab] = useState<SidePanelState['sideTab']>('subs')
   const [sideCollapsed, setSideCollapsed] = usePersistentState<boolean>(
-    'ytensub:side-collapsed',
+    `${storageKey}-collapsed`,
     false
   )
   const [sideWidth, setSideWidth] = usePersistentState<number>(
-    'ytensub:side-width',
+    `${storageKey}-width`,
     SIDE_WIDTH_DEFAULT,
     (w) => w >= SIDE_WIDTH_MIN && w <= SIDE_WIDTH_MAX
   )

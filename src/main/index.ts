@@ -20,12 +20,14 @@ import { VocabVisuals, isLikelyConcreteNoun } from './vocab-visuals'
 import type { VocabVisualRequest } from '../shared/vocab-visual'
 import type { LocalVideoFile } from '../shared/local-media'
 import {
-  computeOpenSubtitlesHash,
+  LOCAL_VIDEO_EXTENSIONS,
   decodeSubtitleBuffer,
   downloadOpenSubtitle,
-  findSidecarSubtitle,
   parseMediaByteRange,
-  parseEpisodeInfo,
+  readLocalVideo,
+  readLocalVideoFolder,
+  resolvePlaylistVideo,
+  saveDownloadedSubtitle,
   searchOpenSubtitles
 } from './local-media'
 
@@ -620,28 +622,45 @@ function registerIpc(): void {
     const result = await dialog.showOpenDialog(mainWin, {
       title: '选择本地视频',
       filters: [
-        { name: '视频文件', extensions: ['mp4', 'm4v', 'webm', 'mov', 'mkv', 'avi'] },
+        { name: '视频文件', extensions: LOCAL_VIDEO_EXTENSIONS },
         { name: '所有文件', extensions: ['*'] }
       ],
       properties: ['openFile']
     })
     const filePath = result.filePaths[0]
     if (result.canceled || !filePath) return null
-    const stat = await fs.promises.stat(filePath)
-    const resolvedPath = path.resolve(filePath)
-    allowedLocalMedia.add(resolvedPath)
-    const info = parseEpisodeInfo(path.basename(filePath))
-    const hash = await computeOpenSubtitlesHash(filePath).catch(() => null)
-    return {
-      path: filePath,
-      url: `ytensub-media://video?path=${encodeURIComponent(resolvedPath)}`,
-      name: path.basename(filePath),
-      extension: path.extname(filePath).slice(1).toLowerCase(),
-      size: stat.size,
-      hash,
-      ...info,
-      sidecarSubtitle: findSidecarSubtitle(filePath)
-    }
+    const video = await readLocalVideo(filePath)
+    allowedLocalMedia.add(video.path)
+    return video
+  })
+
+  ipcMain.handle('local:playlist-list', () =>
+    Promise.all(store.listLocalVideoFolders().map(readLocalVideoFolder))
+  )
+
+  ipcMain.handle('local:playlist-add-folder', async () => {
+    if (!mainWin) return null
+    const result = await dialog.showOpenDialog(mainWin, {
+      title: '添加视频文件夹',
+      properties: ['openDirectory']
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    const folderPath = await fs.promises.realpath(result.filePaths[0])
+    const folder = await readLocalVideoFolder(folderPath)
+    if (folder.error) throw new Error(folder.error)
+    store.addLocalVideoFolder(folderPath)
+    return folder
+  })
+
+  ipcMain.handle('local:playlist-remove-folder', (_event, folderPath: string) => {
+    store.removeLocalVideoFolder(folderPath)
+  })
+
+  ipcMain.handle('local:playlist-open-video', async (_event, filePath: string) => {
+    const resolvedPath = await resolvePlaylistVideo(filePath, store.listLocalVideoFolders())
+    const video = await readLocalVideo(resolvedPath)
+    allowedLocalMedia.add(video.path)
+    return video
   })
 
   ipcMain.handle('local:pick-subtitle', async () => {
@@ -673,16 +692,25 @@ function registerIpc(): void {
     })
   })
 
-  ipcMain.handle('local:download-subtitle', async (_event, fileId: number) => {
+  ipcMain.handle('local:download-subtitle', async (_event, fileId: number, videoPath: string) => {
     const apiKey = store.getSettings().openSubtitlesApiKey?.trim()
     if (!apiKey) throw new Error('请先在设置中填写 OpenSubtitles API Key')
     if (!Number.isInteger(fileId) || fileId <= 0) throw new Error('字幕文件标识无效')
-    return downloadOpenSubtitle({
+    if (typeof videoPath !== 'string' || !allowedLocalMedia.has(path.resolve(videoPath))) {
+      throw new Error('请先选择本地视频')
+    }
+    const subtitle = await downloadOpenSubtitle({
       apiKey,
       fileId,
       userAgent: `YTenSUB v${app.getVersion()}`,
       fetchFn: (url, init) => net.fetch(url, init)
     })
+    try {
+      const savedPath = await saveDownloadedSubtitle(path.resolve(videoPath), subtitle)
+      return { ...subtitle, savedPath }
+    } catch (error) {
+      return { ...subtitle, saveError: error instanceof Error ? error.message : String(error) }
+    }
   })
 
   // 通用文本保存（生词 CSV、双语字幕等）：保存对话框 + 写文件，取消返回 null

@@ -77,6 +77,22 @@ export class Store {
   }
 
   // ---------- folders ----------
+  listLocalVideoFolders(): string[] {
+    return Array.isArray(this.data.localVideoFolders)
+      ? this.data.localVideoFolders.filter((folder) => typeof folder === 'string')
+      : []
+  }
+
+  addLocalVideoFolder(folderPath: string): void {
+    this.data.localVideoFolders = [...new Set([...this.listLocalVideoFolders(), folderPath])]
+    this.scheduleSave()
+  }
+
+  removeLocalVideoFolder(folderPath: string): void {
+    this.data.localVideoFolders = this.listLocalVideoFolders().filter((folder) => folder !== folderPath)
+    this.scheduleSave()
+  }
+
   listFolders(): Folder[] {
     return [...this.data.folders]
   }

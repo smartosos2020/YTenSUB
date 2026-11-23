@@ -9,6 +9,7 @@ import type {
   DownloadedSubtitle,
   LocalSubtitleFile,
   LocalVideoFile,
+  LocalVideoFolder,
   OnlineSubtitleCandidate
 } from '../shared/local-media'
 
@@ -74,11 +75,17 @@ const api = {
   captionsCacheSize: (): Promise<number> => ipcRenderer.invoke('captions:cache-size'),
   captionsClearCache: () => ipcRenderer.invoke('captions:clear-cache'),
   localPickVideo: (): Promise<LocalVideoFile | null> => ipcRenderer.invoke('local:pick-video'),
+  localPlaylistList: (): Promise<LocalVideoFolder[]> => ipcRenderer.invoke('local:playlist-list'),
+  localPlaylistAddFolder: (): Promise<LocalVideoFolder | null> => ipcRenderer.invoke('local:playlist-add-folder'),
+  localPlaylistRemoveFolder: (folderPath: string): Promise<void> =>
+    ipcRenderer.invoke('local:playlist-remove-folder', folderPath),
+  localPlaylistOpenVideo: (filePath: string): Promise<LocalVideoFile> =>
+    ipcRenderer.invoke('local:playlist-open-video', filePath),
   localPickSubtitle: (): Promise<LocalSubtitleFile | null> => ipcRenderer.invoke('local:pick-subtitle'),
   localSearchSubtitles: (video: LocalVideoFile): Promise<OnlineSubtitleCandidate[]> =>
     ipcRenderer.invoke('local:search-subtitles', video),
-  localDownloadSubtitle: (fileId: number): Promise<DownloadedSubtitle> =>
-    ipcRenderer.invoke('local:download-subtitle', fileId),
+  localDownloadSubtitle: (fileId: number, videoPath: string): Promise<DownloadedSubtitle> =>
+    ipcRenderer.invoke('local:download-subtitle', fileId, videoPath),
   syncStart: (): Promise<{ ip: string; port: number; token: string } | null> =>
     ipcRenderer.invoke('sync:start'),
   syncStop: () => ipcRenderer.invoke('sync:stop'),

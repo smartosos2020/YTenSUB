@@ -194,6 +194,7 @@ export interface Settings {
 }
 
 export interface AppData {
+  localVideoFolders?: string[]
   folders: Folder[]
   favorites: Favorite[]
   vocab: VocabItem[]
@@ -239,6 +240,7 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export function defaultData(): AppData {
   return {
+    localVideoFolders: [],
     folders: [],
     favorites: [],
     vocab: [],

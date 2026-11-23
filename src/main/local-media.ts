@@ -1,14 +1,64 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { gunzipSync } from 'node:zlib'
+import { parseExternalSubtitle } from '../shared/captions'
 import type {
   DownloadedSubtitle,
   LocalSubtitleFile,
+  LocalVideoFile,
+  LocalVideoFolder,
   OnlineSubtitleCandidate
 } from '../shared/local-media'
 
 const HASH_CHUNK = 64 * 1024
 const UINT64_MASK = (1n << 64n) - 1n
+export const LOCAL_VIDEO_EXTENSIONS = ['mp4', 'm4v', 'webm', 'mov', 'mkv', 'avi']
+
+export async function readLocalVideoFolder(folderPath: string): Promise<LocalVideoFolder> {
+  const folder: LocalVideoFolder = {
+    path: folderPath,
+    name: path.basename(folderPath) || folderPath,
+    videos: []
+  }
+  try {
+    const entries = await fs.promises.readdir(folderPath, { withFileTypes: true })
+    folder.videos = entries
+      .filter((entry) => entry.isFile() && LOCAL_VIDEO_EXTENSIONS.includes(path.extname(entry.name).slice(1).toLowerCase()))
+      .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true, sensitivity: 'base' }))
+      .map((entry) => ({ name: entry.name, path: path.join(folderPath, entry.name) }))
+  } catch {
+    folder.error = '无法读取文件夹，请检查路径或设备连接'
+  }
+  return folder
+}
+
+/** Opening a file is the only point where the playlist reads video bytes. */
+export async function readLocalVideo(filePath: string): Promise<LocalVideoFile> {
+  const resolvedPath = path.resolve(filePath)
+  const stat = await fs.promises.stat(resolvedPath)
+  if (!stat.isFile()) throw new Error('所选路径不是视频文件')
+  return {
+    path: resolvedPath,
+    url: `ytensub-media://video?path=${encodeURIComponent(resolvedPath)}`,
+    name: path.basename(resolvedPath),
+    extension: path.extname(resolvedPath).slice(1).toLowerCase(),
+    size: stat.size,
+    hash: await computeOpenSubtitlesHash(resolvedPath).catch(() => null),
+    ...parseEpisodeInfo(path.basename(resolvedPath)),
+    sidecarSubtitle: findSidecarSubtitle(resolvedPath)
+  }
+}
+
+export async function resolvePlaylistVideo(filePath: string, folderPaths: string[]): Promise<string> {
+  if (typeof filePath !== 'string') throw new Error('视频路径无效')
+  const resolvedPath = await fs.promises.realpath(filePath)
+  if (!folderPaths.includes(path.dirname(resolvedPath)) ||
+      !LOCAL_VIDEO_EXTENSIONS.includes(path.extname(resolvedPath).slice(1).toLowerCase())) {
+    throw new Error('请先将视频所在文件夹添加到播放列表')
+  }
+  return resolvedPath
+}
 
 export interface EpisodeInfo {
   query: string
@@ -110,8 +160,30 @@ export function findSidecarSubtitle(videoPath: string): LocalSubtitleFile | unde
   const stem = path.basename(videoPath, path.extname(videoPath))
   const candidates = [
     `${stem}.en.srt`, `${stem}.eng.srt`, `${stem}.srt`,
-    `${stem}.en.vtt`, `${stem}.vtt`, `${stem}.en.ass`, `${stem}.ass`
+    `${stem}.en.vtt`, `${stem}.vtt`, `${stem}.en.ass`, `${stem}.ass`,
+    `${stem}.en.ssa`, `${stem}.ssa`
   ]
+
+  // A downloaded selection takes precedence when the video is opened again.
+  const downloadDir = path.join(dir, 'dSub')
+  const downloaded = candidates.flatMap((fileName) => {
+    try {
+      const filePath = path.join(downloadDir, fileName)
+      const stat = fs.statSync(filePath)
+      return stat.isFile() && stat.size <= 8 * 1024 * 1024
+        ? [{ fileName, filePath, modified: stat.mtimeMs }]
+        : []
+    } catch {
+      return []
+    }
+  }).sort((a, b) => b.modified - a.modified)
+  for (const candidate of downloaded) {
+    try {
+      return { fileName: candidate.fileName, text: decodeSubtitleBuffer(fs.readFileSync(candidate.filePath)) }
+    } catch {
+      // Continue with another saved subtitle if a file is unreadable.
+    }
+  }
 
   // Prefer a sidecar beside the video, then inspect common subtitle folders and
   // other descendants. Depth and directory count are bounded so opening a video
@@ -156,6 +228,28 @@ export function findSidecarSubtitle(videoPath: string): LocalSubtitleFile | unde
     }
   }
   return undefined
+}
+
+/** Save one selected subtitle per format, with a name the sidecar lookup can find. */
+export async function saveDownloadedSubtitle(
+  videoPath: string,
+  subtitle: LocalSubtitleFile
+): Promise<string> {
+  if (!parseExternalSubtitle(subtitle.text).length) throw new Error('无法解析下载的字幕')
+  const extension = path.extname(subtitle.fileName).toLowerCase()
+  const subtitleExtension = ['.srt', '.vtt', '.ass', '.ssa'].includes(extension) ? extension : '.srt'
+  const stem = path.basename(videoPath, path.extname(videoPath))
+  const directory = path.join(path.dirname(videoPath), 'dSub')
+  const savedPath = path.join(directory, `${stem}.en${subtitleExtension}`)
+  await fs.promises.mkdir(directory, { recursive: true })
+  const temporaryPath = `${savedPath}.${randomUUID()}.tmp`
+  try {
+    await fs.promises.writeFile(temporaryPath, subtitle.text, { encoding: 'utf8', flag: 'wx' })
+    await fs.promises.rename(temporaryPath, savedPath)
+  } finally {
+    await fs.promises.rm(temporaryPath, { force: true })
+  }
+  return savedPath
 }
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>
@@ -223,19 +317,30 @@ function scoreCandidate(
   localName: string,
   season?: number,
   episode?: number
-): number {
+): { score: number; matchReasons: string[] } {
   let score = attrs.moviehash_match ? 1000 : 0
+  const matchReasons: string[] = []
+  if (attrs.moviehash_match) matchReasons.push('文件 Hash 精确匹配')
   const details = attrs.feature_details
-  if (season !== undefined && details?.season_number === season) score += 120
-  if (episode !== undefined && details?.episode_number === episode) score += 160
+  if (season !== undefined && details?.season_number === season) {
+    score += 120
+    matchReasons.push('季数一致')
+  }
+  if (episode !== undefined && details?.episode_number === episode) {
+    score += 160
+    matchReasons.push('集数一致')
+  }
   const local = releaseTokens(localName)
   const remote = releaseTokens(`${attrs.release ?? ''} ${fileName}`)
-  let overlap = 0
-  for (const token of local) if (remote.has(token)) overlap++
-  score += Math.min(120, overlap * 12)
+  const matchingTokens = [...local].filter((token) => remote.has(token))
+  score += Math.min(120, matchingTokens.length * 12)
+  if (matchingTokens.length) {
+    matchReasons.push(`文件名相同标记 ${matchingTokens.slice(0, 4).join('、')}`)
+  }
   score += Math.min(40, Math.log10(Math.max(1, attrs.download_count ?? 0)) * 10)
   if (attrs.hearing_impaired) score -= 5
-  return Math.round(score)
+  if (!matchReasons.length) matchReasons.push('参考下载量')
+  return { score: Math.round(score), matchReasons }
 }
 
 export async function searchOpenSubtitles(options: {
@@ -289,7 +394,7 @@ export async function searchOpenSubtitles(options: {
         hearingImpaired: attrs.hearing_impaired === true,
         fps: Number.isFinite(attrs.fps) ? Number(attrs.fps) : null,
         exactMatch: attrs.moviehash_match === true,
-        score: scoreCandidate(attrs, file.file_name ?? '', fileName, season, episode),
+        ...scoreCandidate(attrs, file.file_name ?? '', fileName, season, episode),
         source: 'opensubtitles'
       }
       const previous = byFile.get(candidate.fileId)

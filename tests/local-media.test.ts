@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { parseExternalSubtitle } from '../src/shared/captions'
 import {
   computeHashFromParts,
@@ -9,7 +9,12 @@ import {
   fetchWithDeadline,
   findSidecarSubtitle,
   parseMediaByteRange,
-  parseEpisodeInfo
+  parseEpisodeInfo,
+  saveDownloadedSubtitle,
+  searchOpenSubtitles,
+  readLocalVideoFolder,
+  readLocalVideo,
+  resolvePlaylistVideo
 } from '../src/main/local-media'
 
 describe('parseEpisodeInfo', () => {
@@ -112,6 +117,150 @@ describe('findSidecarSubtitle', () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }
+  })
+})
+
+describe('保存在线字幕并重新加载', () => {
+  let root: string
+  let videoPath: string
+  const text = '1\n00:00:01,000 --> 00:00:02,000\nHello\n'
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'ytensub-download-'))
+    videoPath = path.join(root, 'Show.S01E01.mkv')
+    fs.writeFileSync(videoPath, 'video')
+  })
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  it('创建 dSub 并按视频名称保存，重新打开时使用选中的在线字幕', async () => {
+    fs.writeFileSync(path.join(root, 'Show.S01E01.srt'), 'older local subtitle')
+    const savedPath = await saveDownloadedSubtitle(videoPath, {
+      fileName: '../../different-release.srt', text
+    })
+
+    expect(savedPath).toBe(path.join(root, 'dSub', 'Show.S01E01.en.srt'))
+    expect(fs.readFileSync(savedPath, 'utf8')).toBe(text)
+    expect(findSidecarSubtitle(videoPath)).toEqual({ fileName: 'Show.S01E01.en.srt', text })
+    expect(fs.readFileSync(videoPath, 'utf8')).toBe('video')
+  })
+
+  it('再次选择同格式字幕时替换已保存的版本', async () => {
+    const savedPath = await saveDownloadedSubtitle(videoPath, { fileName: 'first.srt', text })
+    const updated = text.replace('Hello', 'Selected another release')
+    await saveDownloadedSubtitle(videoPath, { fileName: 'second.srt', text: updated })
+
+    expect(fs.readFileSync(savedPath, 'utf8')).toBe(updated)
+    expect(fs.readdirSync(path.dirname(savedPath))).toEqual(['Show.S01E01.en.srt'])
+    expect(findSidecarSubtitle(videoPath)?.text).toBe(updated)
+  })
+
+  it('保留字幕格式，并在不同格式中自动加载最新选择的版本', async () => {
+    const firstPath = await saveDownloadedSubtitle(videoPath, { fileName: 'first.srt', text })
+    fs.utimesSync(firstPath, new Date('2020-01-01'), new Date('2020-01-01'))
+    const vtt = 'WEBVTT\n\n00:01.000 --> 00:02.000\nNew selection\n'
+    const savedPath = await saveDownloadedSubtitle(videoPath, { fileName: 'second.VTT', text: vtt })
+
+    expect(path.extname(savedPath)).toBe('.vtt')
+    expect(findSidecarSubtitle(videoPath)).toEqual({ fileName: 'Show.S01E01.en.vtt', text: vtt })
+  })
+
+  it('无效字幕不会覆盖已保存的字幕', async () => {
+    const savedPath = await saveDownloadedSubtitle(videoPath, { fileName: 'valid.srt', text })
+    await expect(saveDownloadedSubtitle(videoPath, {
+      fileName: 'invalid.srt', text: '<html>Download error</html>'
+    })).rejects.toThrow('无法解析下载的字幕')
+
+    expect(fs.readFileSync(savedPath, 'utf8')).toBe(text)
+    expect(fs.readdirSync(path.dirname(savedPath))).toEqual(['Show.S01E01.en.srt'])
+  })
+
+  it('无法创建目录时报告保存错误', async () => {
+    fs.writeFileSync(path.join(root, 'dSub'), 'existing file')
+    await expect(saveDownloadedSubtitle(videoPath, { fileName: 'valid.srt', text })).rejects.toThrow()
+    expect(fs.readFileSync(path.join(root, 'dSub'), 'utf8')).toBe('existing file')
+  })
+})
+
+describe('本地播放列表', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ytensub-playlist-')))
+  })
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  it('只列出视频文件，兼容大写扩展名，并按剧集自然顺序排序', async () => {
+    for (const name of ['Show10.mkv', 'Show2.MP4', 'Show1.avi', 'readme.txt', 'Show1.srt']) {
+      fs.writeFileSync(path.join(root, name), '')
+    }
+    fs.mkdirSync(path.join(root, 'folder.mp4'))
+    const folder = await readLocalVideoFolder(root)
+
+    expect(folder.videos.map((video) => video.name)).toEqual(['Show1.avi', 'Show2.MP4', 'Show10.mkv'])
+    expect(folder.videos[0].path).toBe(path.join(root, 'Show1.avi'))
+    expect(folder.error).toBeUndefined()
+  })
+
+  it('设备断开或文件夹不存在时保留文件夹并显示读取错误', async () => {
+    const folderPath = path.join(root, 'missing')
+    expect(await readLocalVideoFolder(folderPath)).toMatchObject({
+      path: folderPath, name: 'missing', videos: [], error: expect.any(String)
+    })
+  })
+
+  it('点击视频时读取同一套视频信息和本地字幕，并限制在已添加的文件夹中', async () => {
+    const videoPath = path.join(root, 'Show.S01E02.mkv')
+    fs.writeFileSync(videoPath, 'video')
+    fs.writeFileSync(path.join(root, 'Show.S01E02.srt'), '1\n00:00:01,000 --> 00:00:02,000\nHello\n')
+    expect(await resolvePlaylistVideo(videoPath, [root])).toBe(videoPath)
+    expect(await readLocalVideo(videoPath)).toMatchObject({
+      path: videoPath, name: 'Show.S01E02.mkv', season: 1, episode: 2,
+      size: 5, hash: null, sidecarSubtitle: { text: expect.stringContaining('Hello') }
+    })
+    await expect(resolvePlaylistVideo(videoPath, [])).rejects.toThrow('添加到播放列表')
+    await expect(resolvePlaylistVideo(path.join(root, 'Show.S01E02.srt'), [root])).rejects.toThrow('添加到播放列表')
+  })
+})
+
+describe('在线字幕推荐', () => {
+  it('精确匹配优先，推荐理由来自实际匹配信息', async () => {
+    const results = await searchOpenSubtitles({
+      apiKey: 'test-key',
+      hash: null,
+      query: 'Show',
+      fileName: 'Show.S01E01.BluRay-GROUP.mkv',
+      season: 1,
+      episode: 1,
+      userAgent: 'test-agent',
+      fetchFn: async () => new Response(JSON.stringify({ data: [
+        { id: 'popular', attributes: {
+          download_count: 100000,
+          files: [{ file_id: 1, file_name: 'different.srt' }]
+        } },
+        { id: 'release', attributes: {
+          release: 'Show.S01E01.BluRay-GROUP',
+          feature_details: { season_number: 1, episode_number: 1 },
+          files: [{ file_id: 2, file_name: 'release.srt' }]
+        } },
+        { id: 'exact', attributes: {
+          moviehash_match: true,
+          files: [{ file_id: 3, file_name: 'exact.srt' }]
+        } }
+      ] }), { headers: { 'Content-Type': 'application/json' } })
+    })
+
+    expect(results.map((candidate) => candidate.fileId)).toEqual([3, 2, 1])
+    expect(results[0].matchReasons).toEqual(['文件 Hash 精确匹配'])
+    expect(results[1].matchReasons).toContain('季数一致')
+    expect(results[1].matchReasons).toContain('集数一致')
+    expect(results[1].matchReasons.join(' ')).toContain('bluray')
+    expect(results[2].matchReasons).toEqual(['参考下载量'])
   })
 })
 
