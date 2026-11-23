@@ -35,17 +35,22 @@ const NAV_ITEMS: { to: string; label: string; icon: JSX.Element }[] = [
 ]
 
 /**
- * Browse 页常驻挂载：切换菜单只是 display:none，webview 与播放进度保持不变。
+ * Browse 页常驻挂载；本地页首次访问后保留播放器，离开时仅暂停。
  * 仅当带着新的视频参数（/browse?v=...）进入时才重挂载加载新视频。
  */
 function MainArea(): JSX.Element {
   const location = useLocation()
   const onBrowse = location.pathname === '/' || location.pathname === '/browse'
   const onCurated = location.pathname === '/curated'
+  const onLocal = location.pathname === '/local'
   const [hasVisitedCurated, setHasVisitedCurated] = useState(onCurated)
+  const [hasVisitedLocal, setHasVisitedLocal] = useState(onLocal)
   useEffect(() => {
     if (onCurated) setHasVisitedCurated(true)
   }, [onCurated])
+  useEffect(() => {
+    if (onLocal) setHasVisitedLocal(true)
+  }, [onLocal])
   const browseKeyRef = useRef(onBrowse ? location.search : '')
   if (onBrowse && location.search && location.search !== browseKeyRef.current) {
     browseKeyRef.current = location.search
@@ -61,10 +66,14 @@ function MainArea(): JSX.Element {
           <CuratedPage isActive={onCurated} />
         </div>
       )}
-      {!onBrowse && !onCurated && (
+      {(hasVisitedLocal || onLocal) && (
+        <div className="local-holder" style={{ display: onLocal ? 'flex' : 'none' }}>
+          <LocalPage isActive={onLocal} />
+        </div>
+      )}
+      {!onBrowse && !onCurated && !onLocal && (
         <Routes>
           <Route path="/favorites" element={<FavoritesPage />} />
-          <Route path="/local" element={<LocalPage />} />
           <Route path="/vocabulary" element={<VocabularyPage />} />
           <Route path="/review" element={<ReviewPage />} />
           <Route path="/shadowing" element={<ShadowingPage />} />

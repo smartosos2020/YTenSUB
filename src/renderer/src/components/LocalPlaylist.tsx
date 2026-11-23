@@ -1,17 +1,23 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { LocalVideoFolder } from '../../../shared/local-media'
 import { api } from '../api'
 import RefreshIcon from './icons/RefreshIcon'
 import CloseIcon from './icons/CloseIcon'
 import PlayIcon from './icons/PlayIcon'
+import FolderPlusIcon from './icons/FolderPlusIcon'
+import PlayerIconButton from './PlayerIconButton'
 
 interface Props {
   currentPath?: string
   openingPath: string | null
   onPlay: (filePath: string) => void
+  actionsContainer: HTMLSpanElement | null
+  refreshContainer: HTMLSpanElement | null
+  onShowPlaylist: () => void
 }
 
-export default function LocalPlaylist({ currentPath, openingPath, onPlay }: Props): JSX.Element {
+export default function LocalPlaylist({ currentPath, openingPath, onPlay, actionsContainer, refreshContainer, onShowPlaylist }: Props): JSX.Element {
   const [folders, setFolders] = useState<LocalVideoFolder[]>([])
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(true)
@@ -27,6 +33,7 @@ export default function LocalPlaylist({ currentPath, openingPath, onPlay }: Prop
   }, [])
 
   const refresh = async (): Promise<void> => {
+    onShowPlaylist()
     setBusy(true)
     setError('')
     try {
@@ -50,6 +57,7 @@ export default function LocalPlaylist({ currentPath, openingPath, onPlay }: Prop
         next.delete(folder.path)
         return next
       })
+      onShowPlaylist()
     } catch {
       setError('无法添加文件夹，请检查路径和读取权限')
     } finally {
@@ -81,12 +89,18 @@ export default function LocalPlaylist({ currentPath, openingPath, onPlay }: Prop
 
   return (
     <div className="local-playlist">
-      <div className="local-playlist-toolbar">
-        <button disabled={busy} onClick={() => void addFolder()}>添加文件夹</button>
-        <button disabled={busy} aria-label="刷新播放列表" title="刷新播放列表" onClick={() => void refresh()}>
+      {actionsContainer && createPortal(
+        <PlayerIconButton label="添加文件夹" disabled={busy} onClick={() => void addFolder()}>
+          <FolderPlusIcon />
+        </PlayerIconButton>,
+        actionsContainer
+      )}
+      {refreshContainer && createPortal(
+        <PlayerIconButton label="刷新播放列表" disabled={busy} onClick={() => void refresh()}>
           <RefreshIcon />
-        </button>
-      </div>
+        </PlayerIconButton>,
+        refreshContainer
+      )}
       {error && <p className="local-playlist-message" role="alert">{error}</p>}
       {busy && <p className="local-playlist-message" role="status">正在读取文件夹…</p>}
       <div className="local-playlist-folders">

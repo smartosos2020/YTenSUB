@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type MouseEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Button, TextInput } from '@mantine/core'
 import { formatSubtitleGloss } from '../../../shared/subtitle-gloss'
 import {
@@ -17,6 +17,11 @@ import SubtitlePanel, { WordSelection } from '../components/SubtitlePanel'
 import TranslatePopup from '../components/TranslatePopup'
 import LocalPlaylist from '../components/LocalPlaylist'
 import SidebarToggleIcon from '../components/SidebarToggleIcon'
+import PlayerIconButton from '../components/PlayerIconButton'
+import FolderOpenIcon from '../components/icons/FolderOpenIcon'
+import CaptionIcon from '../components/icons/CaptionIcon'
+import SearchIcon from '../components/icons/SearchIcon'
+import FullscreenIcon from '../components/icons/FullscreenIcon'
 import { useSidePanel } from '../hooks/useSidePanel'
 import { useZhSubtitles } from '../hooks/useZhSubtitles'
 import { useLocalAudioFallback } from '../hooks/useLocalAudioFallback'
@@ -32,16 +37,26 @@ function fileSize(bytes: number): string {
 }
 
 /** 桌面端本地视频播放器，选中的在线字幕自动保存到视频目录的 dSub 文件夹。 */
-export default function LocalPage(): JSX.Element {
+export default function LocalPage({ isActive = true }: { isActive?: boolean }): JSX.Element {
+  const activeRef = useRef(isActive)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const videoWrapRef = useRef<HTMLDivElement | null>(null)
   const resumeOnCloseRef = useRef(false)
   const hoverPausedRef = useRef(false)
+  const popupOpenRef = useRef(false)
+  const popupFromHoverRef = useRef(false)
+  const popupHoverRef = useRef(false)
+  const captionHoverRef = useRef(false)
+  const hoverCloseTimerRef = useRef<number | null>(null)
+  const videoClickTimerRef = useRef<number | null>(null)
+  const clickPlaybackRef = useRef<{ video: HTMLVideoElement; paused: boolean } | null>(null)
   const lastLoopCueRef = useRef(-1)
   const pendingSeekRef = useRef<number | null>(null)
   const currentMediaRef = useRef<LocalVideoFile | null>(null)
   const videoOpenRequestRef = useRef(0)
   const [openingVideoPath, setOpeningVideoPath] = useState<string | null>(null)
+  const [playlistActions, setPlaylistActions] = useState<HTMLSpanElement | null>(null)
+  const [playlistRefresh, setPlaylistRefresh] = useState<HTMLSpanElement | null>(null)
   const { sideTab, setSideTab, sideCollapsed, toggleSide, sideWidth, startSideResize } =
     useSidePanel('ytensub:local-side')
   const [media, setMedia] = useState<LocalVideoFile | null>(null)
@@ -60,6 +75,7 @@ export default function LocalPage(): JSX.Element {
   const [vocabList, setVocabList] = useState<VocabItem[]>([])
   const [captionOpacity, setCaptionOpacity] = useState(0.72)
   const [showCaptions, setShowCaptions] = useState(true)
+  const [hoverTranslate, setHoverTranslate] = useState(false)
   const [captionFontSize, setCaptionFontSize] = useState(20)
   const [captionZhSize, setCaptionZhSize] = useState(16)
   const [captionFont, setCaptionFont] = useState('default')
@@ -99,6 +115,7 @@ export default function LocalPage(): JSX.Element {
       void api.settingsGet().then((settings) => {
         setCaptionOpacity(settings.captionOpacity ?? 0.72)
         setShowCaptions(settings.showCaptions ?? true)
+        setHoverTranslate(settings.hoverTranslate ?? false)
         setShowZh(settings.showZhSubtitle ?? false)
         setCaptionFontSize(settings.captionFontSize ?? 20)
         setCaptionZhSize(settings.captionZhSize ?? 16)
@@ -122,6 +139,45 @@ export default function LocalPage(): JSX.Element {
       window.removeEventListener(VOCAB_CHANGED_EVENT, loadVocab)
     }
   }, [setShowZh])
+
+  const cancelHoverClose = useCallback((): void => {
+    if (hoverCloseTimerRef.current !== null) {
+      window.clearTimeout(hoverCloseTimerRef.current)
+      hoverCloseTimerRef.current = null
+    }
+  }, [])
+
+  const cancelVideoClick = useCallback((): void => {
+    if (videoClickTimerRef.current !== null) {
+      window.clearTimeout(videoClickTimerRef.current)
+      videoClickTimerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => () => {
+    cancelHoverClose()
+    cancelVideoClick()
+  }, [cancelHoverClose, cancelVideoClick])
+
+  useLayoutEffect(() => {
+    activeRef.current = isActive
+    if (isActive) return
+    // 隐藏页面保留 video 与字幕，只清理可能触发自动恢复的临时交互。
+    cancelHoverClose()
+    cancelVideoClick()
+    clickPlaybackRef.current = null
+    popupOpenRef.current = false
+    popupFromHoverRef.current = false
+    popupHoverRef.current = false
+    captionHoverRef.current = false
+    hoverPausedRef.current = false
+    resumeOnCloseRef.current = false
+    setSelection(null)
+    videoRef.current?.pause()
+    if (document.fullscreenElement === videoWrapRef.current) {
+      void document.exitFullscreen().catch(() => {})
+    }
+  }, [isActive, cancelHoverClose, cancelVideoClick])
 
   const applySubtitle = useCallback((fileName: string, text: string): boolean => {
     const parsed = parseExternalSubtitle(text)
@@ -190,6 +246,13 @@ export default function LocalPage(): JSX.Element {
   }, [cues.length, downloadCandidate, media, query, searching])
 
   const loadVideo = async (picked: LocalVideoFile, autoplay: boolean): Promise<void> => {
+    cancelHoverClose()
+    cancelVideoClick()
+    popupOpenRef.current = false
+    popupFromHoverRef.current = false
+    popupHoverRef.current = false
+    captionHoverRef.current = false
+    clickPlaybackRef.current = null
     if (currentMediaRef.current?.path === picked.path && videoRef.current?.readyState) {
       videoRef.current.currentTime = 0
       if (autoplay) void videoRef.current.play()
@@ -266,18 +329,69 @@ export default function LocalPage(): JSX.Element {
   }, [])
 
   const openSelection = useCallback((next: WordSelection): void => {
+    if (!activeRef.current) return
+    cancelHoverClose()
+    popupFromHoverRef.current = false
     const video = videoRef.current
-    resumeOnCloseRef.current = video ? !video.paused || hoverPausedRef.current : false
-    hoverPausedRef.current = false
-    video?.pause()
+    if (!popupOpenRef.current) {
+      resumeOnCloseRef.current = video ? !video.paused || hoverPausedRef.current : false
+      hoverPausedRef.current = false
+      video?.pause()
+    }
+    popupOpenRef.current = true
     setSelection(next)
-  }, [])
+  }, [cancelHoverClose])
+
+  const hoverWord = useCallback((word: string, rect: DOMRect, sentence: string): void => {
+    if (!activeRef.current) return
+    openSelection({ text: word, rect, sentence })
+    popupFromHoverRef.current = true
+  }, [openSelection])
 
   const closeSelection = useCallback((): void => {
+    cancelHoverClose()
+    if (!popupOpenRef.current) return
+    popupOpenRef.current = false
+    popupFromHoverRef.current = false
+    popupHoverRef.current = false
     setSelection(null)
-    if (resumeOnCloseRef.current) void videoRef.current?.play()
+    const shouldResume = resumeOnCloseRef.current
     resumeOnCloseRef.current = false
-  }, [])
+    if (captionHoverRef.current) {
+      hoverPausedRef.current = shouldResume
+    } else if (shouldResume && activeRef.current) {
+      void videoRef.current?.play().catch(() => {})
+    }
+  }, [cancelHoverClose])
+
+  // 原生控制条自行处理点击；画面单击与双击全屏分别处理。
+  const isVideoPicture = (event: MouseEvent<HTMLVideoElement>): boolean => {
+    const video = event.currentTarget
+    return event.target === video &&
+      (event.detail === 0 || event.clientY < video.getBoundingClientRect().bottom - 64)
+  }
+
+  const onVideoMouseDown = (event: MouseEvent<HTMLVideoElement>): void => {
+    if (!isVideoPicture(event)) return
+    // 弹窗的 document mousedown 会关闭并恢复播放，先记住点击时的真实状态。
+    clickPlaybackRef.current = { video: event.currentTarget, paused: event.currentTarget.paused }
+  }
+
+  const onVideoClick = (event: MouseEvent<HTMLVideoElement>): void => {
+    if (!isVideoPicture(event) || event.detail > 1) return
+    const video = event.currentTarget
+    const paused = clickPlaybackRef.current?.video === video ? clickPlaybackRef.current.paused : video.paused
+    clickPlaybackRef.current = null
+    cancelVideoClick()
+    videoClickTimerRef.current = window.setTimeout(() => {
+      videoClickTimerRef.current = null
+      if (videoRef.current !== video || !activeRef.current) return
+      hoverPausedRef.current = false
+      resumeOnCloseRef.current = false
+      if (paused) void video.play().catch(() => {})
+      else video.pause()
+    }, 250)
+  }
 
   useEffect(() => {
     const player = videoWrapRef.current
@@ -304,16 +418,31 @@ export default function LocalPage(): JSX.Element {
   }
 
   const onCaptionEnter = (): void => {
+    if (!activeRef.current) return
+    captionHoverRef.current = true
+    cancelHoverClose()
     const video = videoRef.current
-    if (!video || video.paused || selection) return
+    if (!video || video.paused || popupOpenRef.current) return
     hoverPausedRef.current = true
     video.pause()
   }
 
   const onCaptionLeave = (): void => {
-    if (!hoverPausedRef.current || selection) return
+    if (!activeRef.current) return
+    captionHoverRef.current = false
+    if (popupOpenRef.current) {
+      if (popupFromHoverRef.current) {
+        cancelHoverClose()
+        hoverCloseTimerRef.current = window.setTimeout(() => {
+          hoverCloseTimerRef.current = null
+          if (!popupHoverRef.current) closeSelection()
+        }, 400)
+      }
+      return
+    }
+    if (!hoverPausedRef.current) return
     hoverPausedRef.current = false
-    void videoRef.current?.play()
+    void videoRef.current?.play().catch(() => {})
   }
 
   const updateTime = (): void => {
@@ -363,10 +492,11 @@ export default function LocalPage(): JSX.Element {
   return (
     <div className="local-page">
       <div className="local-toolbar">
-        <Button size="xs" onClick={() => void openVideo()}>打开视频</Button>
-        <Button size="xs" variant="default" disabled={!media} onClick={() => void openSubtitle()}>
-          选择本地字幕
-        </Button>
+        <PlayerIconButton label="打开视频" onClick={() => void openVideo()}><FolderOpenIcon /></PlayerIconButton>
+        <span className="local-playlist-actions" ref={setPlaylistActions} />
+        <PlayerIconButton label="选择本地字幕" disabled={!media} onClick={() => void openSubtitle()}>
+          <CaptionIcon />
+        </PlayerIconButton>
         {media && (
           <>
             <TextInput
@@ -377,9 +507,9 @@ export default function LocalPage(): JSX.Element {
               onKeyDown={(event) => { if (event.key === 'Enter') void searchOnline() }}
               placeholder="剧名"
             />
-            <Button size="xs" variant="default" loading={searching} onClick={() => void searchOnline()}>
-              在线找英文字幕
-            </Button>
+            <PlayerIconButton label="在线找英文字幕" loading={searching} onClick={() => void searchOnline()}>
+              <SearchIcon />
+            </PlayerIconButton>
             {candidates.length > 0 && (
               <Button
                 size="xs"
@@ -430,8 +560,16 @@ export default function LocalPage(): JSX.Element {
                 }}
                 onTimeUpdate={updateTime}
                 onSeeked={updateTime}
+                onPlay={(event) => {
+                  if (!activeRef.current) event.currentTarget.pause()
+                }}
+                onMouseDown={onVideoMouseDown}
+                onClick={onVideoClick}
                 onDoubleClick={(event) => {
+                  if (!isVideoPicture(event)) return
                   event.preventDefault()
+                  cancelVideoClick()
+                  clickPlaybackRef.current = null
                   void toggleFullscreen()
                 }}
                 onError={() => setStatus('当前格式/编码无法直接播放；首版建议使用 MP4（H.264/AAC）或 WebM')}
@@ -465,20 +603,19 @@ export default function LocalPage(): JSX.Element {
                 knownWords={knownWords}
                 savedTranslations={savedTranslations}
                 onWordSelect={openSelection}
+                onWordHover={hoverTranslate ? hoverWord : undefined}
                 onCaptionEnter={onCaptionEnter}
                 onCaptionLeave={onCaptionLeave}
               />
             )}
             {media && playbackRequested && (
-              <button
-                type="button"
+              <PlayerIconButton
                 className="local-fullscreen-button"
-                aria-label={isFullscreen ? '退出全屏' : '全屏'}
-                title={isFullscreen ? '退出全屏（Esc）' : '全屏（也可双击画面）'}
+                label={isFullscreen ? '退出全屏' : '全屏'}
                 onClick={() => void toggleFullscreen()}
               >
-                {isFullscreen ? '退出全屏' : '全屏'}
-              </button>
+                <FullscreenIcon exit={isFullscreen} />
+              </PlayerIconButton>
             )}
             {selection && media && (
               <TranslatePopup
@@ -490,6 +627,14 @@ export default function LocalPage(): JSX.Element {
                 time={time}
                 savedItem={findSavedByLemma(vocabList, selection.text)}
                 onClose={closeSelection}
+                onEnter={() => {
+                  popupHoverRef.current = true
+                  cancelHoverClose()
+                }}
+                onLeave={() => {
+                  popupHoverRef.current = false
+                  if (popupFromHoverRef.current && !captionHoverRef.current) closeSelection()
+                }}
               />
             )}
           </div>
@@ -587,16 +732,29 @@ export default function LocalPage(): JSX.Element {
                 className={sideTab === 'subs' ? 'selected' : ''}
                 onClick={() => setSideTab('subs')}
               >字幕</button>
-              <button
-                id="local-playlist-tab"
-                role="tab"
-                aria-selected={sideTab === 'playlist'}
-                aria-controls="local-playlist-panel"
-                className={sideTab === 'playlist' ? 'selected' : ''}
-                onClick={() => setSideTab('playlist')}
-              >播放列表</button>
+              <div className={`local-playlist-tab${sideTab === 'playlist' ? ' selected' : ''}`}>
+                <button
+                  id="local-playlist-tab"
+                  role="tab"
+                  aria-selected={sideTab === 'playlist'}
+                  aria-controls="local-playlist-panel"
+                  onClick={() => setSideTab('playlist')}
+                >播放列表</button>
+                <span className="local-playlist-refresh" ref={setPlaylistRefresh} />
+              </div>
             </div>
-            <div id="local-subs-panel" className="local-tab-panel" role="tabpanel" aria-labelledby="local-subs-tab" hidden={sideTab !== 'subs'}>
+            <div
+              id="local-subs-panel"
+              className="local-tab-panel"
+              role="tabpanel"
+              aria-labelledby="local-subs-tab"
+              hidden={sideTab !== 'subs'}
+              onMouseEnter={() => {
+                captionHoverRef.current = true
+                cancelHoverClose()
+              }}
+              onMouseLeave={onCaptionLeave}
+            >
               <SubtitlePanel
                 key={JSON.stringify([media?.url, subtitleName])}
                 cues={shiftedCues}
@@ -605,6 +763,7 @@ export default function LocalPage(): JSX.Element {
                 hasCaptions={!!media}
                 onSeek={seek}
                 onWordSelect={openSelection}
+                onWordHover={hoverTranslate ? hoverWord : undefined}
                 showZh={showZh}
                 zhLines={zhLines}
                 zhLoading={zhLoading}
@@ -620,7 +779,17 @@ export default function LocalPage(): JSX.Element {
               />
             </div>
             <div id="local-playlist-panel" className="local-tab-panel" role="tabpanel" aria-labelledby="local-playlist-tab" hidden={sideTab !== 'playlist'}>
-              <LocalPlaylist currentPath={media?.path} openingPath={openingVideoPath} onPlay={(filePath) => void openPlaylistVideo(filePath)} />
+              <LocalPlaylist
+                currentPath={media?.path}
+                openingPath={openingVideoPath}
+                onPlay={(filePath) => void openPlaylistVideo(filePath)}
+                actionsContainer={playlistActions}
+                refreshContainer={playlistRefresh}
+                onShowPlaylist={() => {
+                  setSideTab('playlist')
+                  if (sideCollapsed) toggleSide()
+                }}
+              />
             </div>
           </div>
         </aside>
