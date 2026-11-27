@@ -8,6 +8,7 @@ import {
   toBilingualSrt
 } from '../../../shared/captions'
 import type { LocalVideoFile, OnlineSubtitleCandidate } from '../../../shared/local-media'
+import { formatSubtitleSearchQuery } from '../../../shared/local-media'
 import type { CaptionTexture, VocabItem } from '../../../shared/types'
 import { api, SETTINGS_CHANGED_EVENT, VOCAB_CHANGED_EVENT } from '../api'
 import { captionFontCss } from '../caption-fonts'
@@ -37,7 +38,11 @@ function fileSize(bytes: number): string {
 }
 
 /** 桌面端本地视频播放器，选中的在线字幕自动保存到视频目录的 dSub 文件夹。 */
-export default function LocalPage({ isActive = true }: { isActive?: boolean }): JSX.Element {
+export default function LocalPage({ isActive = true, openRequest }: {
+  isActive?: boolean
+  openRequest?: { downloadedVideo: LocalVideoFile; downloadRequest: string }
+}): JSX.Element {
+  const openedDownloadRef = useRef<string | null>(null)
   const activeRef = useRef(isActive)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const videoWrapRef = useRef<HTMLDivElement | null>(null)
@@ -227,7 +232,7 @@ export default function LocalPage({ isActive = true }: { isActive?: boolean }): 
     setCandidates([])
     setStatus('正在按文件 Hash 与剧集信息搜索英文字幕…')
     try {
-      const results = await api.localSearchSubtitles({ ...target, query: targetQuery.trim() || target.query })
+      const results = await api.localSearchSubtitles({ ...target, query: targetQuery.trim() || formatSubtitleSearchQuery(target) })
       if (currentMediaRef.current !== target) return
       setCandidates(results)
       setResultsExpanded(results.length > 0)
@@ -245,7 +250,7 @@ export default function LocalPage({ isActive = true }: { isActive?: boolean }): 
     }
   }, [cues.length, downloadCandidate, media, query, searching])
 
-  const loadVideo = async (picked: LocalVideoFile, autoplay: boolean): Promise<void> => {
+  const loadVideo = useCallback(async (picked: LocalVideoFile, autoplay: boolean): Promise<void> => {
     cancelHoverClose()
     cancelVideoClick()
     popupOpenRef.current = false
@@ -267,7 +272,7 @@ export default function LocalPage({ isActive = true }: { isActive?: boolean }): 
     hoverPausedRef.current = false
     resumeOnCloseRef.current = false
     setSelection(null)
-    setQuery(picked.query)
+    setQuery(formatSubtitleSearchQuery(picked))
     setCues([])
     setCandidates([])
     setResultsExpanded(false)
@@ -284,7 +289,15 @@ export default function LocalPage({ isActive = true }: { isActive?: boolean }): 
     setStatus(settings.openSubtitlesApiKey
       ? '未发现同名字幕；点击“在线找英文字幕”可手动搜索'
       : '未发现同名字幕；可选择本地字幕，或在设置中填写 OpenSubtitles API Key')
-  }
+  }, [cancelHoverClose, cancelVideoClick, applySubtitle, resetZh])
+
+  useEffect(() => {
+    const request = openRequest
+    if (!isActive || !request?.downloadedVideo || !request.downloadRequest || openedDownloadRef.current === request.downloadRequest) return
+    openedDownloadRef.current = request.downloadRequest
+    ++videoOpenRequestRef.current
+    void loadVideo(request.downloadedVideo, true).catch((error) => setStatus(errorMessage(error)))
+  }, [openRequest, isActive, loadVideo])
 
   const openVideo = async (): Promise<void> => {
     const request = ++videoOpenRequestRef.current
@@ -505,7 +518,8 @@ export default function LocalPage({ isActive = true }: { isActive?: boolean }): 
               value={query}
               onChange={(event) => setQuery(event.currentTarget.value)}
               onKeyDown={(event) => { if (event.key === 'Enter') void searchOnline() }}
-              placeholder="剧名"
+              aria-label="字幕搜索词"
+              placeholder="剧名与季集，如 Young Sheldon S01E02"
             />
             <PlayerIconButton label="在线找英文字幕" loading={searching} onClick={() => void searchOnline()}>
               <SearchIcon />
@@ -576,14 +590,13 @@ export default function LocalPage({ isActive = true }: { isActive?: boolean }): 
               />
             ) : media ? (
               <button className="local-empty" onClick={() => setPlaybackRequested(true)}>
-                <span>▶</span>
+                <span aria-hidden="true">▶</span>
                 <b>开始播放</b>
               </button>
             ) : (
               <button className="local-empty" onClick={() => void openVideo()}>
-                <span>▶</span>
-                <b>打开本地美剧</b>
-                <small>不会复制或上传视频，只读取头尾各 64 KB 用于字幕匹配</small>
+                <span aria-hidden="true">▶</span>
+                <b>打开本地视频</b>
               </button>
             )}
             {media && (

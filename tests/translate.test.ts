@@ -79,6 +79,80 @@ describe('googleTranslateFree 响应解析', () => {
     const fetchFn = async () => new Response('err', { status: 500 })
     expect(await googleTranslateFree('hi', fetchFn)).toBeNull()
   })
+
+  it('请求挂起时在超时后中止并抛出 ERR_TIMEOUT', async () => {
+    let aborted = false
+    const fetchFn = (_url: string, init?: RequestInit) =>
+      new Promise<Response>(() => {
+        init?.signal?.addEventListener('abort', () => {
+          aborted = true
+        })
+      })
+    await expect(googleTranslateFree('hi', fetchFn, 20)).rejects.toThrow('ERR_TIMEOUT')
+    expect(aborted).toBe(true)
+  })
+
+  it('响应头立即返回但正文挂起时，同样在超时后中止并抛出 ERR_TIMEOUT', async () => {
+    let aborted = false
+    const fetchFn = async (_url: string, init?: RequestInit) => {
+      init?.signal?.addEventListener('abort', () => {
+        aborted = true
+      })
+      return {
+        ok: true,
+        status: 200,
+        json: () => new Promise(() => {})
+      } as unknown as Response
+    }
+    await expect(googleTranslateFree('hi', fetchFn, 20)).rejects.toThrow('ERR_TIMEOUT')
+    expect(aborted).toBe(true)
+  })
+})
+
+describe('llmChatDetailed 超时保护', () => {
+  it('上游无响应时超时返回 ERR_TIMEOUT 且触发 AbortSignal', async () => {
+    const { llmChatDetailed } = await import('../src/main/translate')
+    let aborted = false
+    const fetchFn = (_url: string, init?: RequestInit) =>
+      new Promise<Response>(() => {
+        init?.signal?.addEventListener('abort', () => {
+          aborted = true
+        })
+      })
+    const res = await llmChatDetailed(
+      { baseUrl: 'http://x/v1', apiKey: 'k', model: 'm' },
+      [{ role: 'user', content: 'hi' }],
+      fetchFn,
+      0.2,
+      20
+    )
+    expect(res).toEqual({ content: null, error: 'ERR_TIMEOUT' })
+    expect(aborted).toBe(true)
+  })
+
+  it('上游响应头返回但正文挂起时超时返回 ERR_TIMEOUT 且触发 AbortSignal', async () => {
+    const { llmChatDetailed } = await import('../src/main/translate')
+    let aborted = false
+    const fetchFn = async (_url: string, init?: RequestInit) => {
+      init?.signal?.addEventListener('abort', () => {
+        aborted = true
+      })
+      return {
+        ok: true,
+        status: 200,
+        json: () => new Promise(() => {})
+      } as unknown as Response
+    }
+    const res = await llmChatDetailed(
+      { baseUrl: 'http://x/v1', apiKey: 'k', model: 'm' },
+      [{ role: 'user', content: 'hi' }],
+      fetchFn,
+      0.2,
+      20
+    )
+    expect(res).toEqual({ content: null, error: 'ERR_TIMEOUT' })
+    expect(aborted).toBe(true)
+  })
 })
 
 describe('translateBatch 整句批量翻译', () => {

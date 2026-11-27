@@ -1,11 +1,10 @@
 import {
-  mergeVocab,
   shadowingMerge,
   shadowingList,
   ShadowingScript,
   VocabItem,
   vocabList,
-  vocabReplaceAll
+  vocabMerge
 } from './storage'
 
 /** 与桌面端 SyncPayload 同构 */
@@ -14,6 +13,30 @@ interface SyncPayload {
   exportedAt: number
   vocab: VocabItem[]
   shadowing: ShadowingScript[]
+}
+
+/** RN/Hermes 兼容的带超时 JSON 请求（覆盖发起请求与正文解析全过程） */
+async function fetchJsonWithTimeout<T>(url: string, init: RequestInit, timeoutMs = 10_000): Promise<T> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      reject(new Error('请求超时'))
+    }, timeoutMs)
+  })
+  try {
+    return await Promise.race([
+      (async () => {
+        const r = await fetch(url, { ...init, signal: controller.signal })
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return (await r.json()) as T
+      })(),
+      deadline
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
 }
 
 /** 规范化用户输入为 http://ip:port */
@@ -31,19 +54,15 @@ export function normalizeAddr(input: string): string | null {
   }
 }
 
-/** 从电脑拉取：本地与远端合并后写回（生词双向合并，跟读脚本取新） */
+/** 从电脑拉取：本地与远端原子合并后写回（生词双向合并，跟读脚本取新） */
 export async function pullFromDesktop(
   base: string,
   token: string | null
 ): Promise<{ vocab: number; shadowing: number }> {
-  const r = await fetch(base + '/export', {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    signal: AbortSignal.timeout(10_000)
+  const payload = await fetchJsonWithTimeout<SyncPayload>(base + '/export', {
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
   })
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
-  const payload = (await r.json()) as SyncPayload
-  const merged = mergeVocab(await vocabList(), payload.vocab ?? [])
-  await vocabReplaceAll(merged)
+  const merged = await vocabMerge(payload.vocab ?? [])
   await shadowingMerge(payload.shadowing ?? [])
   return { vocab: merged.length, shadowing: (await shadowingList()).length }
 }
@@ -59,15 +78,12 @@ export async function pushToDesktop(
     vocab: await vocabList(),
     shadowing: await shadowingList()
   }
-  const r = await fetch(base + '/import', {
+  return fetchJsonWithTimeout<{ vocab: number; shadowing: number }>(base + '/import', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(10_000)
+    body: JSON.stringify(payload)
   })
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
-  return (await r.json()) as { vocab: number; shadowing: number }
 }

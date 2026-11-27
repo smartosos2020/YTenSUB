@@ -1,13 +1,14 @@
 import { Cue, parseCaptionText } from '../shared/captions'
 import { INNERTUBE_ANDROID_CLIENT_VERSION, INNERTUBE_KEY } from '../shared/innertube'
 import { ChatMessage } from './translate'
+import type { CaptionError } from '../shared/pipeline'
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 
 /** 抓取结果：成功给 cues；失败给原因（限流 429 要区别于"视频没字幕"） */
 export type EnglishCuesResult =
   | { title: string; cues: Cue[]; category: string }
-  | { error: 'no-captions' | 'rate-limited' }
+  | { error: CaptionError; stage?: 'player' | 'captions'; status?: number; reason?: string }
 
 /**
  * 主进程侧拉取视频英文 cue：innertube ANDROID 客户端拿字幕轨地址，再取原文。
@@ -17,9 +18,10 @@ export async function fetchEnglishCues(
   videoId: string,
   fetchFn: FetchLike
 ): Promise<EnglishCuesResult> {
+  let stage: 'player' | 'captions' = 'player'
   try {
     const res = await fetchFn(`https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_KEY}`, {
-      method: 'POST',
+      method: 'POST', signal: AbortSignal.timeout(15_000),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         context: {
@@ -28,29 +30,43 @@ export async function fetchEnglishCues(
         videoId
       })
     })
-    const pr = (await res.json()) as {
+    if (!res.ok) { await res.body?.cancel(); return { error: res.status === 429 ? 'rate-limited' : 'http-error', stage, status: res.status } }
+    let pr: {
+      playabilityStatus?: { status?: string; reason?: string }
       videoDetails?: { title?: string }
       captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: { baseUrl?: string; languageCode?: string; kind?: string }[] } }
       microformat?: { playerMicroformatRenderer?: { category?: string } }
     }
+    try { pr = await res.json() as typeof pr } catch { return { error: 'invalid-response', stage, reason: '播放器响应不是有效 JSON' } }
+    if (!pr || typeof pr !== 'object') return { error: 'invalid-response', stage }
+    const playback = pr.playabilityStatus?.status
+    if (playback && playback !== 'OK') {
+      return { error: playback === 'UNPLAYABLE' ? 'video-unavailable' : 'player-error', stage, reason: playback }
+    }
+    if (!playback && !pr.videoDetails && !pr.captions) return { error: 'invalid-response', stage, reason: '播放器缺少视频信息' }
     const tracks = pr.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? []
+    if (!Array.isArray(tracks) || tracks.some(t => !t || typeof t.languageCode !== 'string')) return { error: 'invalid-response', stage, reason: '字幕轨列表格式异常' }
     // 优先人工英文字幕，其次自动生成（kind === 'asr'）
     const ens = tracks.filter((t) => (t.languageCode ?? '').toLowerCase().startsWith('en'))
     const en = ens.find((t) => t.kind !== 'asr') ?? ens[0]
-    if (!en?.baseUrl) return { error: 'no-captions' }
+    if (!en?.baseUrl) return { error: 'no-captions', stage }
     // baseUrl 已自带 fmt 参数（srv3 XML），原样抓取即可，parseCaptionText 自动判别 json3/XML；
     // 追加 fmt=json3 会产生重复 fmt 参数被 YouTube 拒掉
-    const r = await fetchFn(en.baseUrl)
-    if (!r.ok) return { error: r.status === 429 ? 'rate-limited' : 'no-captions' }
+    stage = 'captions'
+    const r = await fetchFn(en.baseUrl, { signal: AbortSignal.timeout(15_000) })
+    if (!r.ok) { await r.body?.cancel(); return { error: r.status === 429 ? 'rate-limited' : 'http-error', stage, status: r.status } }
     const cues = parseCaptionText(await r.text())
-    if (cues.length === 0) return { error: 'no-captions' }
+    if (cues.length === 0) return { error: 'empty-captions', stage, reason: '字幕接口未返回可解析的字幕' }
     return {
       title: pr.videoDetails?.title ?? '',
       cues,
       category: pr.microformat?.playerMicroformatRenderer?.category ?? ''
     }
-  } catch {
-    return { error: 'no-captions' }
+  } catch (error) {
+    const cause = error as { name?: string; cause?: { code?: string } }
+    // Never include raw fetch errors: they can contain signed subtitle URLs or credentials.
+    const code = cause?.cause?.code
+    return { error: 'network-error', stage, reason: code && /^[A-Z0-9_]{1,64}$/.test(code) ? code : cause?.name === 'TimeoutError' ? '请求超时' : '网络连接失败' }
   }
 }
 

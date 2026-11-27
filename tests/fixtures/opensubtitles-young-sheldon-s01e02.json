@@ -1,0 +1,390 @@
+{
+  "hash": {
+    "data": [
+      {
+        "id": "5583350",
+        "attributes": {
+          "language": "en",
+          "download_count": 46093,
+          "hearing_impaired": true,
+          "fps": 24,
+          "release": "His.House.2020.720p.NF.WEB-DL.DDP5.1.Atmos.x264-MZABI",
+          "moviehash_match": true,
+          "feature_details": {
+            "feature_id": 1184796,
+            "feature_type": "Movie",
+            "year": 2020,
+            "title": "His House",
+            "movie_name": "2020 - His House",
+            "imdb_id": 8508734,
+            "tmdb_id": 575774
+          },
+          "files": [
+            {
+              "file_id": 6620896,
+              "cd_number": 1,
+              "file_name": "His.House.2020.720p.NF.WEB-DL.DDP5.1.Atmos"
+            }
+          ]
+        }
+      },
+      {
+        "id": "4727279",
+        "attributes": {
+          "language": "en",
+          "download_count": 26892,
+          "hearing_impaired": false,
+          "fps": 23.976,
+          "release": "Young.Sheldon.S01E01.720p.BluRay.X264-REWARD",
+          "moviehash_match": true,
+          "feature_details": {
+            "feature_id": 487436,
+            "feature_type": "Episode",
+            "year": 2017,
+            "title": "Pilot",
+            "movie_name": "Young Sheldon - S01E01  Pilot",
+            "imdb_id": 6719334,
+            "tmdb_id": 1318082,
+            "season_number": 1,
+            "episode_number": 1,
+            "parent_imdb_id": 6226232,
+            "parent_title": "Young Sheldon",
+            "parent_tmdb_id": 71728,
+            "parent_feature_id": 17969
+          },
+          "files": [
+            {
+              "file_id": 4850261,
+              "cd_number": 1,
+              "file_name": "Young.Sheldon.S01E01.720p.BluRay.X264-REWARD"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "query": {
+    "data": [
+      {
+        "id": "12154477",
+        "attributes": {
+          "language": "en",
+          "download_count": 0,
+          "hearing_impaired": true,
+          "fps": 23.976,
+          "release": "Young.Sheldon.2017.S01E02.Rockets.Communists.and.the.Dewey.Decimal.System.German.1080p.HMAX.WEB-DL.MULTi.DDP5.1.H.265-FUZEER",
+          "feature_details": {
+            "feature_id": 487441,
+            "feature_type": "Episode",
+            "year": 2017,
+            "title": "Rockets, Communists, and the Dewey Decimal System",
+            "movie_name": "Young Sheldon - S01E02  Rockets, Communists, and the Dewey Decimal System",
+            "imdb_id": 6914022,
+            "tmdb_id": 1344588,
+            "season_number": 1,
+            "episode_number": 2,
+            "parent_imdb_id": 6226232,
+            "parent_title": "Young Sheldon",
+            "parent_tmdb_id": 71728,
+            "parent_feature_id": 17969
+          },
+          "files": [
+            {
+              "file_id": 13031206,
+              "cd_number": 1,
+              "file_name": "Young.Sheldon.2017.S01E02.Rockets.Communists.and.the.Dewey.Decimal.System.German.1080p.HMAX.WEB-DL.MULTi.DDP5.1.H.265-FUZEER"
+            }
+          ]
+        }
+      },
+      {
+        "id": "6305789",
+        "attributes": {
+          "language": "en",
+          "download_count": 14181,
+          "hearing_impaired": false,
+          "fps": 29.97,
+          "release": "Young Sheldon S01E02 Rockets, Communists, and the Dewey Decimal System.DVDRip.NonHI.en.WB",
+          "feature_details": {
+            "feature_id": 487441,
+            "feature_type": "Episode",
+            "year": 2017,
+            "title": "Rockets, Communists, and the Dewey Decimal System",
+            "movie_name": "El Joven Sheldon - S01E02  Rockets, Communists, and the Dewey Decimal System",
+            "imdb_id": 6914022,
+            "tmdb_id": 1344588,
+            "season_number": 1,
+            "episode_number": 2,
+            "parent_imdb_id": 6226232,
+            "parent_title": "Young Sheldon",
+            "parent_tmdb_id": 71728,
+            "parent_feature_id": 17969
+          },
+          "files": [
+            {
+              "file_id": 7200442,
+              "cd_number": 1,
+              "file_name": "Young Sheldon S01E02 Rockets_ Communists_ and the Dewey Decimal System.DVDRip.NonHI.en.WB"
+            }
+          ]
+        }
+      },
+      {
+        "id": "6305788",
+        "attributes": {
+          "language": "en",
+          "download_count": 47816,
+          "hearing_impaired": true,
+          "fps": 29.97,
+          "release": "Young Sheldon S01E02 Rockets, Communists, and the Dewey Decimal System.DVDRip.HI.en.WB",
+          "feature_details": {
+            "feature_id": 487441,
+            "feature_type": "Episode",
+            "year": 2017,
+            "title": "Rockets, Communists, and the Dewey Decimal System",
+            "movie_name": "Young Sheldon - S01E02  Rockets, Communists, and the Dewey Decimal System",
+            "imdb_id": 6914022,
+            "tmdb_id": 1344588,
+            "season_number": 1,
+            "episode_number": 2,
+            "parent_imdb_id": 6226232,
+            "parent_title": "Young Sheldon",
+            "parent_tmdb_id": 71728,
+            "parent_feature_id": 17969
+          },
+          "files": [
+            {
+              "file_id": 7200441,
+              "cd_number": 1,
+              "file_name": "Young Sheldon S01E02 Rockets_ Communists_ and the Dewey Decimal System.DVDRip.HI.en.WB"
+            }
+          ]
+        }
+      },
+      {
+        "id": "3720755",
+        "attributes": {
+          "language": "en",
+          "download_count": 32435,
+          "hearing_impaired": true,
+          "fps": 23.976,
+          "release": "Young.Sheldon.S01E02.HDTV.x264-LOL (CHI)",
+          "feature_details": {
+            "feature_id": 487441,
+            "feature_type": "Episode",
+            "year": 2017,
+            "title": "Rockets, Communists, and the Dewey Decimal System",
+            "movie_name": "Young Sheldon - S01E02  Rockets, Communists, and the Dewey Decimal System",
+            "imdb_id": 6914022,
+            "tmdb_id": 1344588,
+            "season_number": 1,
+            "episode_number": 2,
+            "parent_imdb_id": 6226232,
+            "parent_title": "Young Sheldon",
+            "parent_tmdb_id": 71728,
+            "parent_feature_id": 17969
+          },
+          "files": [
+            {
+              "file_id": 3793925,
+              "cd_number": 1,
+              "file_name": "Young.Sheldon.S01E02.HDTV.x264-LOL (CHI)"
+            }
+          ]
+        }
+      },
+      {
+        "id": "3720731",
+        "attributes": {
+          "language": "en",
+          "download_count": 140527,
+          "hearing_impaired": false,
+          "fps": 23.976,
+          "release": "Young.Sheldon.S01E02.HDTV.x264-LOL",
+          "feature_details": {
+            "feature_id": 487441,
+            "feature_type": "Episode",
+            "year": 2017,
+            "title": "Rockets, Communists, and the Dewey Decimal System",
+            "movie_name": "Young Sheldon - S01E02  Rockets, Communists, and the Dewey Decimal System",
+            "imdb_id": 6914022,
+            "tmdb_id": 1344588,
+            "season_number": 1,
+            "episode_number": 2,
+            "parent_imdb_id": 6226232,
+            "parent_title": "Young Sheldon",
+            "parent_tmdb_id": 71728,
+            "parent_feature_id": 17969
+          },
+          "files": [
+            {
+              "file_id": 3793899,
+              "cd_number": 1,
+              "file_name": "Young.Sheldon.S01E02.HDTV.x264-LOL"
+            }
+          ]
+        }
+      },
+      {
+        "id": "12154459",
+        "attributes": {
+          "language": "en",
+          "download_count": 0,
+          "hearing_impaired": false,
+          "fps": 23.976,
+          "release": "Young.Sheldon.2017.S01E02.Rockets.Communists.and.the.Dewey.Decimal.System.German.1080p.HMAX.WEB-DL.MULTi.DDP5.1.H.265-FUZEER",
+          "feature_details": {
+            "feature_id": 487441,
+            "feature_type": "Episode",
+            "year": 2017,
+            "title": "Rockets, Communists, and the Dewey Decimal System",
+            "movie_name": "Young Sheldon - S01E02  Rockets, Communists, and the Dewey Decimal System",
+            "imdb_id": 6914022,
+            "tmdb_id": 1344588,
+            "season_number": 1,
+            "episode_number": 2,
+            "parent_imdb_id": 6226232,
+            "parent_title": "Young Sheldon",
+            "parent_tmdb_id": 71728,
+            "parent_feature_id": 17969
+          },
+          "files": [
+            {
+              "file_id": 13031185,
+              "cd_number": 1,
+              "file_name": "Young.Sheldon.2017.S01E02.Rockets.Communists.and.the.Dewey.Decimal.System.German.1080p.HMAX.WEB-DL.MULTi.DDP5.1.H.265-FUZEER"
+            }
+          ]
+        }
+      },
+      {
+        "id": "8287352",
+        "attributes": {
+          "language": "en",
+          "download_count": 28757,
+          "hearing_impaired": false,
+          "fps": 23.98,
+          "release": "Young.Sheldon.S01E02.1080p.WEBRip.2CH.x265.HEVC-PSA",
+          "feature_details": {
+            "feature_id": 487441,
+            "feature_type": "Episode",
+            "year": 2017,
+            "title": "Rockets, Communists, and the Dewey Decimal System",
+            "movie_name": "Young Sheldon - S01E02  Rockets, Communists, and the Dewey Decimal System",
+            "imdb_id": 6914022,
+            "tmdb_id": 1344588,
+            "season_number": 1,
+            "episode_number": 2,
+            "parent_imdb_id": 6226232,
+            "parent_title": "Young Sheldon",
+            "parent_tmdb_id": 71728,
+            "parent_feature_id": 17969
+          },
+          "files": [
+            {
+              "file_id": 9212296,
+              "cd_number": 1,
+              "file_name": "Young.Sheldon.S01E02.1080p.WEBRip.2CH.x265.HEVC-PSA"
+            }
+          ]
+        }
+      },
+      {
+        "id": "4738469",
+        "attributes": {
+          "language": "en",
+          "download_count": 23785,
+          "hearing_impaired": false,
+          "fps": 23.976,
+          "release": "Young.Sheldon.S01E02.720p.BluRay.X264-REWARD",
+          "feature_details": {
+            "feature_id": 487441,
+            "feature_type": "Episode",
+            "year": 2017,
+            "title": "Rockets, Communists, and the Dewey Decimal System",
+            "movie_name": "Young Sheldon - S01E02  Rockets, Communists, and the Dewey Decimal System",
+            "imdb_id": 6914022,
+            "tmdb_id": 1344588,
+            "season_number": 1,
+            "episode_number": 2,
+            "parent_imdb_id": 6226232,
+            "parent_title": "Young Sheldon",
+            "parent_tmdb_id": 71728,
+            "parent_feature_id": 17969
+          },
+          "files": [
+            {
+              "file_id": 4861395,
+              "cd_number": 1,
+              "file_name": "Young.Sheldon.S01E02.720p.BluRay.X264-REWARD"
+            }
+          ]
+        }
+      },
+      {
+        "id": "3720777",
+        "attributes": {
+          "language": "en",
+          "download_count": 154694,
+          "hearing_impaired": false,
+          "fps": 23.976,
+          "release": "Young.Sheldon.S01E02.1080p.HDTV.X264-DIMENSION",
+          "feature_details": {
+            "feature_id": 487441,
+            "feature_type": "Episode",
+            "year": 2017,
+            "title": "Rockets, Communists, and the Dewey Decimal System",
+            "movie_name": "Young Sheldon - S01E02  Rockets, Communists, and the Dewey Decimal System",
+            "imdb_id": 6914022,
+            "tmdb_id": 1344588,
+            "season_number": 1,
+            "episode_number": 2,
+            "parent_imdb_id": 6226232,
+            "parent_title": "Young Sheldon",
+            "parent_tmdb_id": 71728,
+            "parent_feature_id": 17969
+          },
+          "files": [
+            {
+              "file_id": 3793944,
+              "cd_number": 1,
+              "file_name": "Young.Sheldon.S01E02.1080p.HDTV.X264-DIMENSION"
+            }
+          ]
+        }
+      },
+      {
+        "id": "3720738",
+        "attributes": {
+          "language": "en",
+          "download_count": 58061,
+          "hearing_impaired": true,
+          "fps": 23.976,
+          "release": "Young.Sheldon.S01E02.HDTV.x264-LOL",
+          "feature_details": {
+            "feature_id": 487441,
+            "feature_type": "Episode",
+            "year": 2017,
+            "title": "Rockets, Communists, and the Dewey Decimal System",
+            "movie_name": "Young Sheldon - S01E02  Rockets, Communists, and the Dewey Decimal System",
+            "imdb_id": 6914022,
+            "tmdb_id": 1344588,
+            "season_number": 1,
+            "episode_number": 2,
+            "parent_imdb_id": 6226232,
+            "parent_title": "Young Sheldon",
+            "parent_tmdb_id": 71728,
+            "parent_feature_id": 17969
+          },
+          "files": [
+            {
+              "file_id": 3793909,
+              "cd_number": 1,
+              "file_name": "Young.Sheldon.S01E02.HDTV.x264-LOL.HI"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

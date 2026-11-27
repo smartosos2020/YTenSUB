@@ -41,24 +41,56 @@ export async function translateText(
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 
+export const GOOGLE_TRANSLATE_TIMEOUT_MS = 10_000
+export const LLM_CHAT_TIMEOUT_MS = 30_000
+
+/** 带全链路硬超时的执行包装：覆盖发起请求、读取响应正文与解析结果的完整过程 */
+async function withTimeout<T>(
+  timeoutMs: number,
+  task: (signal: AbortSignal) => Promise<T>
+): Promise<T> {
+  const controller = new AbortController()
+  let timedOut = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+      reject(new Error('ERR_TIMEOUT'))
+    }, timeoutMs)
+    timer.unref?.()
+  })
+  try {
+    return await Promise.race([task(controller.signal), deadline])
+  } catch (error) {
+    if (timedOut) throw new Error('ERR_TIMEOUT', { cause: error })
+    throw error
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
 /** Google 免费翻译接口（gtx 客户端），英译中 */
 export async function googleTranslateFree(
   text: string,
-  fetchFn: FetchLike
+  fetchFn: FetchLike,
+  timeoutMs = GOOGLE_TRANSLATE_TIMEOUT_MS
 ): Promise<string | null> {
   const url =
     'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&q=' +
     encodeURIComponent(text)
-  const res = await fetchFn(url)
-  if (!res.ok) return null
-  const data = (await res.json()) as unknown
-  const segments = (data as unknown[])?.[0]
-  if (!Array.isArray(segments)) return null
-  const out = segments
-    .map((seg) => (Array.isArray(seg) ? String(seg[0] ?? '') : ''))
-    .join('')
-    .trim()
-  return out || null
+  return withTimeout(timeoutMs, async (signal) => {
+    const res = await fetchFn(url, { signal })
+    if (!res.ok) return null
+    const data = (await res.json()) as unknown
+    const segments = (data as unknown[])?.[0]
+    if (!Array.isArray(segments)) return null
+    const out = segments
+      .map((seg) => (Array.isArray(seg) ? String(seg[0] ?? '') : ''))
+      .join('')
+      .trim()
+    return out || null
+  })
 }
 
 /** OpenAI 兼容 chat/completions 通用调用 */
@@ -78,27 +110,31 @@ export async function llmChatDetailed(
   cfg: LlmSettings,
   messages: ChatMessage[],
   fetchFn: FetchLike,
-  temperature = 0.2
+  temperature = 0.2,
+  timeoutMs = LLM_CHAT_TIMEOUT_MS
 ): Promise<LlmChatResult> {
   if (!cfg.baseUrl || !cfg.apiKey || !cfg.model)
     return { content: null, error: 'LLM 未配置完整（baseUrl/apiKey/model）' }
   try {
-    const res = await fetchFn(`${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${cfg.apiKey}`
-      },
-      body: JSON.stringify({ model: cfg.model, temperature, messages })
+    return await withTimeout(timeoutMs, async (signal) => {
+      const res = await fetchFn(`${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${cfg.apiKey}`
+        },
+        body: JSON.stringify({ model: cfg.model, temperature, messages }),
+        signal
+      })
+      if (!res.ok) return { content: null, error: `HTTP ${res.status}` }
+      const data = (await res.json()) as {
+        choices?: { message?: { content?: string } }[]
+      }
+      const content = data.choices?.[0]?.message?.content?.trim()
+      return content ? { content, error: null } : { content: null, error: '响应中没有内容' }
     })
-    if (!res.ok) return { content: null, error: `HTTP ${res.status}` }
-    const data = (await res.json()) as {
-      choices?: { message?: { content?: string } }[]
-    }
-    const content = data.choices?.[0]?.message?.content?.trim()
-    return content ? { content, error: null } : { content: null, error: '响应中没有内容' }
   } catch (e) {
-    return { content: null, error: String(e) }
+    return { content: null, error: e instanceof Error ? e.message : String(e) }
   }
 }
 

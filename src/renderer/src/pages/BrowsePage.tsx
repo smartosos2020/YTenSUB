@@ -57,7 +57,9 @@ function toUrl(input: string): string {
   return 'https://www.youtube.com/results?search_query=' + encodeURIComponent(s)
 }
 
-export default function BrowsePage(): JSX.Element {
+export default function BrowsePage({ isActive = true }: { isActive?: boolean } = {}): JSX.Element {
+  const isActiveRef = useRef(isActive)
+  isActiveRef.current = isActive
   const [searchParams] = useSearchParams()
   const initialUrl = searchParams.get('v')
     ? `https://www.youtube.com/watch?v=${encodeURIComponent(searchParams.get('v')!)}` +
@@ -115,7 +117,7 @@ export default function BrowsePage(): JSX.Element {
   const { showZh, setShowZh, zhLines, zhLoading, toggleZh, resetZh, loadZhNative, hasZhNative, zhOffset, adjustZhOffset } =
     useZhSubtitles(cues)
   const { fsMode, fsModeRef, fsIgnoreLeaveRef, enterFs, exitFs } = useAppFullscreen(wvRef)
-  useBackForwardNav(wvRef)
+  useBackForwardNav(wvRef, isActive)
 
   // 弹窗打开时视频是否原本在播：关闭弹窗时据此恢复播放
   const resumeOnCloseRef = useRef(false)
@@ -556,9 +558,10 @@ export default function BrowsePage(): JSX.Element {
     playSegmentNow
   ])
 
-  // Escape：先关翻译弹窗，其次退出应用级全屏
+  // Escape：先关翻译弹窗，其次退出应用级全屏（仅浏览页激活时响应）
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
+      if (!isActiveRef.current) return
       if (e.key !== 'Escape') return
       handleEscape()
     }
@@ -567,9 +570,10 @@ export default function BrowsePage(): JSX.Element {
   }, [handleEscape])
 
   // 播控快捷键（宿主侧）：空格播放/暂停，←/→ 快退快进 5s，↑/↓ 跳上/下一句字幕。
-  // webview 聚焦时按键进 guest，由 YouTube 原生快捷键接管；输入框/按钮聚焦时不劫持
+  // 仅浏览页激活时生效；webview 聚焦时按键进 guest，输入框/按钮聚焦时不劫持
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
+      if (!isActiveRef.current) return
       const t = e.target as HTMLElement
       if (t.closest('input, textarea, select, button, [contenteditable="true"]')) return
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return

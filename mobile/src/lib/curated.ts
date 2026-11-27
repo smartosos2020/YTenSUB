@@ -43,13 +43,28 @@ export function setCuratedLogSink(sink: (msg: string) => void): void {
 }
 
 async function fetchJson<T>(url: string): Promise<T | null> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      reject(new Error('timeout'))
+    }, 10_000)
+  })
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(10_000) })
-    if (!r.ok) return null
-    return (await r.json()) as T
+    return await Promise.race([
+      (async () => {
+        const r = await fetch(url, { signal: controller.signal })
+        if (!r.ok) return null
+        return (await r.json()) as T
+      })(),
+      deadline
+    ])
   } catch (e) {
     curatedLogSink?.(`curated: fetch fail ${url.slice(-30)} ${String(e)}`)
     return null
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
   }
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { api, SETTINGS_CHANGED_EVENT } from './api'
 import { applyTheme } from './theme'
@@ -13,6 +13,8 @@ import ShadowingPage from './pages/ShadowingPage'
 import SettingsPage from './pages/SettingsPage'
 import ProfilePage from './pages/ProfilePage'
 import LocalPage from './pages/LocalPage'
+import ResourcesPage from './pages/ResourcesPage'
+import DownloadIcon from './components/icons/DownloadIcon'
 import TitleBar from './components/TitleBar'
 import SidebarToggleIcon from './components/SidebarToggleIcon'
 import PlayIcon from './components/icons/PlayIcon'
@@ -24,12 +26,13 @@ import CompassIcon from './components/icons/CompassIcon'
 import UserIcon from './components/icons/UserIcon'
 import LocalVideoIcon from './components/icons/LocalVideoIcon'
 
-const NAV_ITEMS: { to: string; label: string; icon: JSX.Element }[] = [
+const NAV_ITEMS: { to: string; label: string; icon: JSX.Element; dividerBefore?: boolean }[] = [
   { to: '/browse', label: '浏览', icon: <PlayIcon /> },
-  { to: '/local', label: '本地', icon: <LocalVideoIcon /> },
   { to: '/curated', label: '精选', icon: <CompassIcon /> },
   { to: '/favorites', label: '收藏', icon: <StarOutlineIcon /> },
-  { to: '/vocabulary', label: '生词', icon: <BookIcon /> },
+  { to: '/resources', label: '资源', icon: <DownloadIcon />, dividerBefore: true },
+  { to: '/local', label: '本地', icon: <LocalVideoIcon /> },
+  { to: '/vocabulary', label: '生词', icon: <BookIcon />, dividerBefore: true },
   { to: '/review', label: '复习', icon: <RepeatIcon /> },
   { to: '/profile', label: '我的', icon: <UserIcon /> }
 ]
@@ -43,6 +46,9 @@ function MainArea(): JSX.Element {
   const onBrowse = location.pathname === '/' || location.pathname === '/browse'
   const onCurated = location.pathname === '/curated'
   const onLocal = location.pathname === '/local'
+  const onResources = location.pathname === '/resources'
+  const [hasVisitedResources, setHasVisitedResources] = useState(onResources)
+  useEffect(() => { if (onResources) setHasVisitedResources(true) }, [onResources])
   const [hasVisitedCurated, setHasVisitedCurated] = useState(onCurated)
   const [hasVisitedLocal, setHasVisitedLocal] = useState(onLocal)
   useEffect(() => {
@@ -59,7 +65,7 @@ function MainArea(): JSX.Element {
   return (
     <main className="content">
       <div className="browse-holder" style={{ display: onBrowse ? 'flex' : 'none' }}>
-        <BrowsePage key={browseKeyRef.current} />
+        <BrowsePage key={browseKeyRef.current} isActive={onBrowse} />
       </div>
       {(hasVisitedCurated || onCurated) && (
         <div className="curated-holder" style={{ display: onCurated ? 'flex' : 'none' }}>
@@ -68,10 +74,15 @@ function MainArea(): JSX.Element {
       )}
       {(hasVisitedLocal || onLocal) && (
         <div className="local-holder" style={{ display: onLocal ? 'flex' : 'none' }}>
-          <LocalPage isActive={onLocal} />
+          <LocalPage isActive={onLocal} openRequest={location.state ?? undefined} />
         </div>
       )}
-      {!onBrowse && !onCurated && !onLocal && (
+      {(hasVisitedResources || onResources) && (
+        <div className="resources-holder" style={{ display: onResources ? 'flex' : 'none' }}>
+          <ResourcesPage isActive={onResources} />
+        </div>
+      )}
+      {!onBrowse && !onCurated && !onLocal && !onResources && (
         <Routes>
           <Route path="/favorites" element={<FavoritesPage />} />
           <Route path="/vocabulary" element={<VocabularyPage />} />
@@ -197,10 +208,13 @@ export default function App(): JSX.Element {
           >
             <nav className="sidebar" aria-label="主菜单">
               {NAV_ITEMS.map((item) => (
-                <NavLink key={item.to} to={item.to} title={item.label}>
-                  <span className="nav-icon">{item.icon}</span>
-                  <span className="nav-label">{item.label}</span>
-                </NavLink>
+                <Fragment key={item.to}>
+                  {item.dividerBefore && <hr className="sidebar-divider" />}
+                  <NavLink to={item.to} title={item.label}>
+                    <span className="nav-icon">{item.icon}</span>
+                    <span className="nav-label">{item.label}</span>
+                  </NavLink>
+                </Fragment>
               ))}
               <button
                 type="button"

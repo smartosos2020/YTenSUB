@@ -68,9 +68,10 @@ export interface EpisodeInfo {
 
 /** 从常见美剧文件名提取剧名与 SxxEyy / 1x02 季集信息。 */
 export function parseEpisodeInfo(fileName: string): EpisodeInfo {
+  const baseName = path.basename(fileName)
   const stem = path.basename(fileName, path.extname(fileName))
-  const seasonEpisode = /(?:^|[. _-])S(\d{1,2})E(\d{1,3})(?:[. _-]|$)/i.exec(stem)
-  const alt = seasonEpisode ? null : /(?:^|[. _-])(\d{1,2})x(\d{1,3})(?:[. _-]|$)/i.exec(stem)
+  const seasonEpisode = /(?:^|[. _-])S(\d{1,2})E(\d{1,3})(?:[. _-]|$)/i.exec(baseName)
+  const alt = seasonEpisode ? null : /(?:^|[. _-])(\d{1,2})x(\d{1,3})(?:[. _-]|$)/i.exec(baseName)
   const hit = seasonEpisode ?? alt
   const titlePart = hit ? stem.slice(0, hit.index) : stem
   const query = titlePart
@@ -298,7 +299,14 @@ interface OsAttributes {
   release?: string
   moviehash_match?: boolean
   files?: OsFile[]
-  feature_details?: { season_number?: number; episode_number?: number; movie_name?: string }
+  feature_details?: {
+    feature_type?: string
+    title?: string
+    parent_title?: string
+    season_number?: number
+    episode_number?: number
+    movie_name?: string
+  }
 }
 interface OsRow { id?: string; attributes?: OsAttributes }
 
@@ -311,22 +319,56 @@ function releaseTokens(value: string): Set<string> {
   )
 }
 
+function normalizeTitle(value: string): string {
+  return value.normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/^(?:the|a|an) /, '')
+}
+
 function scoreCandidate(
   attrs: OsAttributes,
   fileName: string,
   localName: string,
+  query: string,
   season?: number,
   episode?: number
-): { score: number; matchReasons: string[] } {
-  let score = attrs.moviehash_match ? 1000 : 0
-  const matchReasons: string[] = []
-  if (attrs.moviehash_match) matchReasons.push('文件 Hash 精确匹配')
+): { score: number; matchReasons: string[] } | null {
+  // A season pack shares row metadata; identify the individual file first.
+  const fileEpisode = parseEpisodeInfo(fileName)
+  const releaseEpisode = parseEpisodeInfo(attrs.release ?? '')
   const details = attrs.feature_details
-  if (season !== undefined && details?.season_number === season) {
+  const episodic = season !== undefined || episode !== undefined
+  if (episodic && details?.feature_type?.toLowerCase() === 'movie') return null
+  const expectedTitle = normalizeTitle(query || parseEpisodeInfo(localName).query)
+  const titles = [
+    details?.parent_title ?? '',
+    parseEpisodeInfo(details?.movie_name ?? '').query,
+    episodic ? '' : details?.title ?? '',
+    fileEpisode.query,
+    releaseEpisode.query
+  ]
+  // Hash associations can be wrong. Shared codec/resolution words are not title evidence.
+  if (!expectedTitle || !titles.some((title) => normalizeTitle(title) === expectedTitle)) return null
+
+  const candidateSeason = fileEpisode.season ?? releaseEpisode.season ?? attrs.feature_details?.season_number
+  const candidateEpisode = fileEpisode.episode ?? releaseEpisode.episode ?? attrs.feature_details?.episode_number
+  // Missing episode information is not a match either, even on a hash hit.
+  if ((season !== undefined && candidateSeason !== season) ||
+      (episode !== undefined && candidateEpisode !== episode)) return null
+
+  let score = attrs.moviehash_match === true ? 1000 : 0
+  const matchReasons: string[] = ['剧名一致']
+  if (attrs.moviehash_match) matchReasons.push('文件 Hash 精确匹配')
+  if (season !== undefined && candidateSeason === season) {
     score += 120
     matchReasons.push('季数一致')
   }
-  if (episode !== undefined && details?.episode_number === episode) {
+  if (episode !== undefined && candidateEpisode === episode) {
     score += 160
     matchReasons.push('集数一致')
   }
@@ -339,7 +381,6 @@ function scoreCandidate(
   }
   score += Math.min(40, Math.log10(Math.max(1, attrs.download_count ?? 0)) * 10)
   if (attrs.hearing_impaired) score -= 5
-  if (!matchReasons.length) matchReasons.push('参考下载量')
   return { score: Math.round(score), matchReasons }
 }
 
@@ -353,9 +394,13 @@ export async function searchOpenSubtitles(options: {
   userAgent: string
   fetchFn: FetchFn
 }): Promise<OnlineSubtitleCandidate[]> {
-  const { apiKey, hash, query, fileName, season, episode, userAgent, fetchFn } = options
+  const { apiKey, hash, fileName, userAgent, fetchFn } = options
+  const searchInfo = parseEpisodeInfo(options.query)
+  const query = (searchInfo.episode !== undefined ? searchInfo.query : options.query).trim()
+  const season = searchInfo.season ?? options.season
+  const episode = searchInfo.episode ?? options.episode
   const searches: URLSearchParams[] = []
-  if (hash) searches.push(new URLSearchParams({ languages: 'en', moviehash: hash }))
+  if (hash) searches.push(new URLSearchParams({ languages: 'en', moviehash: hash, moviehash_match: 'only' }))
   if (query) {
     const params = new URLSearchParams({ languages: 'en', query })
     if (season !== undefined) params.set('season_number', String(season))
@@ -384,6 +429,8 @@ export async function searchOpenSubtitles(options: {
     const attrs = row.attributes ?? {}
     for (const file of attrs.files ?? []) {
       if (!file.file_id) continue
+      const match = scoreCandidate(attrs, file.file_name ?? '', fileName, query, season, episode)
+      if (!match) continue
       const candidate: OnlineSubtitleCandidate = {
         id: `${row.id ?? 'subtitle'}:${file.file_id}`,
         fileId: file.file_id,
@@ -394,7 +441,7 @@ export async function searchOpenSubtitles(options: {
         hearingImpaired: attrs.hearing_impaired === true,
         fps: Number.isFinite(attrs.fps) ? Number(attrs.fps) : null,
         exactMatch: attrs.moviehash_match === true,
-        ...scoreCandidate(attrs, file.file_name ?? '', fileName, season, episode),
+        ...match,
         source: 'opensubtitles'
       }
       const previous = byFile.get(candidate.fileId)

@@ -1,12 +1,8 @@
 import { strokeIcon } from './strokeIcon'
 
-/** 下载/导出（向下箭头入托盘） */
+/** Feather download (MIT), see resources/licenses/lucide.txt. */
 export default function DownloadIcon(): JSX.Element {
-  return strokeIcon(
-    <>
-      <path d="M12 3v12" />
-      <path d="m6 11 6 6 6-6" />
-      <path d="M4 21h16" />
-    </>
-  )
+  return strokeIcon(<>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+  </>)
 }

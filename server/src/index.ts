@@ -1,4 +1,4 @@
-import type { KVNamespace, R2Bucket } from '@cloudflare/workers-types'
+import type { D1Database, KVNamespace, R2Bucket } from '@cloudflare/workers-types'
 import {
   CardRecord,
   CuratedPrefs,
@@ -6,36 +6,55 @@ import {
   Plan,
   UserChannel,
   UserRecord,
-  applyCard,
   chooseMailProvider,
   effectivePlan,
-  grantPlan,
   isValidCardCode,
   isValidEmail,
   isValidVideoId,
   makeCardCode,
+  makeVerificationCode,
   mergePrefs,
   normalizeCardCode,
   normalizeChannelHandle,
-  revokePlan,
   sanitizeAnnounce,
   sanitizePrefs,
+  timingSafeEqualStr,
   toEntitlement
 } from './logic'
 import { ADMIN_PAGE } from './admin-page'
 import { readSession, writeSession } from './session'
+import { handlePipelineControl } from './pipeline-control'
+import { readPipelineMetrics, type PipelineMetrics } from '../../src/shared/pipeline'
 import { isMetadataKey, readContent, writeContent } from './content'
+import {
+  createCardsBatch,
+  ensureUserRecord,
+  getUserRecord,
+  importLegacyPage,
+  listCardRecords,
+  listUserRecords,
+  redeemCardAtomic,
+  resolvePendingCardAtomic,
+  revokeCardAtomic,
+  setUserFilterAtomic,
+  setUserPlanAtomic,
+  storeAuthCode,
+  verifyAuthCodeAtomic
+} from './db'
 
 /**
- * YTenSUB 账号/权益 API（Cloudflare Workers + 单 KV 命名空间，键全带前缀）。
+ * YTenSUB 账号/权益 API（Cloudflare Workers + 私有 D1 数据库 + KV + R2）。
+ *
+ * 私有 D1 表（唯一权威数据源，不经任何公开桶）：
+ *   users             账号、会员档位、到期时间、用户级敏感过滤覆盖
+ *   cards             卡密与使用状态
+ *   card_redemptions  按卡密主键记录的入账凭证（与 cards/users 同事务）
+ *   auth_codes        登录验证码、错误次数与已用标记
  *
  * KV 键布局：
- *   code:<email>      登录验证码 {code}，TTL 10 分钟
  *   rl:code:<email>   发码限流，TTL 60 秒
  *   token:<token>     会话 → email，metadata.expiresAt；有效期 30 天，剩余 ≤7 天时续期
- *   user:<email>      UserRecord（档位/到期）
  *   pref:<email>      CuratedPrefs（精选偏好随账号同步，PUT 需付费档）
- *   card:<code>       CardRecord
  *   uchan:<handle>    UserChannel（用户频道订阅：pending/approved/rejected，approved 进管线）
  *   config:graceDays  离线宽限天数（默认 7，Dashboard/CLI 改）
  *
@@ -43,6 +62,7 @@ import { isMetadataKey, readContent, writeContent } from './content'
  * Vars：DEV_MODE=true 时 /auth/code 直接在响应里返回 devCode（仅本地调试用）
  */
 export interface Env {
+  DB: D1Database
   YTENSUB_KV: KVNamespace
   CONTENT_BUCKET: R2Bucket
   CONTENT_UPLOAD_TOKEN?: string
@@ -56,6 +76,7 @@ export interface Env {
 }
 
 const CODE_TTL_S = 600
+const MAX_CODE_ATTEMPTS = 5
 const DEFAULT_GRACE_DAYS = 7
 const PRODUCTION_API_URL = 'https://ytensub-api.smartosos2020.workers.dev'
 
@@ -100,7 +121,7 @@ async function globalFilterSensitive(env: Env): Promise<boolean> {
 }
 
 async function getUser(env: Env, email: string): Promise<UserRecord | null> {
-  return (await env.YTENSUB_KV.get(`user:${email}`, 'json')) as UserRecord | null
+  return getUserRecord(env.DB, env.YTENSUB_KV, email)
 }
 
 /** Bearer token → 用户记录；临近到期时续期，普通读取不写 KV。 */
@@ -159,12 +180,12 @@ async function handleAuthCode(env: Env, req: Request): Promise<Response> {
   if (await env.YTENSUB_KV.get(`rl:code:${email}`)) {
     return json({ error: 'too frequent, retry in 60s' }, 429)
   }
-  const code = String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')
-  await env.YTENSUB_KV.put(`code:${email}`, JSON.stringify({ code }), { expirationTtl: CODE_TTL_S })
+  const code = makeVerificationCode()
+  await storeAuthCode(env.DB, email, code, Date.now() + CODE_TTL_S * 1000)
   await env.YTENSUB_KV.put(`rl:code:${email}`, '1', { expirationTtl: 60 })
   const sent = await sendCodeEmail(env, email, code)
   if (!sent && env.DEV_MODE !== 'true') return json({ error: 'email not configured' }, 500)
-  // DEV_MODE：本地调试没配邮件服务时直接把码带回，省得查 KV
+  // DEV_MODE：本地调试没配邮件服务时直接把码带回，省得查数据库
   return json(env.DEV_MODE === 'true' ? { ok: true, devCode: code } : { ok: true })
 }
 
@@ -173,16 +194,12 @@ async function handleLogin(env: Env, req: Request): Promise<Response> {
   const email = body?.email?.trim().toLowerCase() ?? ''
   const code = body?.code?.trim() ?? ''
   if (!isValidEmail(email) || !/^\d{6}$/.test(code)) return json({ error: 'bad request' }, 400)
-  const stored = await env.YTENSUB_KV.get(`code:${email}`, 'json') as { code: string } | null
-  if (!stored || stored.code !== code) return json({ error: 'wrong or expired code' }, 401)
-  await env.YTENSUB_KV.delete(`code:${email}`)
 
   const now = Date.now()
-  let user = await getUser(env, email)
-  if (!user) {
-    user = { email, plan: 'free', expiresAt: null, createdAt: now, updatedAt: now }
-    await env.YTENSUB_KV.put(`user:${email}`, JSON.stringify(user))
-  }
+  const verified = await verifyAuthCodeAtomic(env.DB, email, code, MAX_CODE_ATTEMPTS, now)
+  if (!verified.ok) return json({ error: verified.error }, verified.status)
+
+  const user = await ensureUserRecord(env.DB, env.YTENSUB_KV, email, now)
   const token = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '')
   await writeSession(env.YTENSUB_KV, token, email, now)
   return json({ token, entitlement: toEntitlement(user, now, await graceDays(env), await globalFilterSensitive(env)) })
@@ -194,23 +211,12 @@ async function handleRedeem(env: Env, req: Request): Promise<Response> {
   const body = await readJson<{ code?: string }>(req)
   const code = normalizeCardCode(body?.code ?? '')
   if (!isValidCardCode(code)) return json({ error: 'bad code format' }, 400)
-  const card = (await env.YTENSUB_KV.get(`card:${code}`, 'json')) as CardRecord | null
-  if (!card) return json({ error: 'card not found' }, 404)
-  // 幂等：同一用户重复兑同一张卡按成功处理（网络丢响应重试的场景，防"卡被吞"）
-  if (card.usedAt) {
-    if (card.usedBy === user.email) {
-      return json({ entitlement: toEntitlement(user, Date.now(), await graceDays(env), await globalFilterSensitive(env)), alreadyRedeemed: true })
-    }
-    return json({ error: 'card already used' }, 409)
-  }
 
   const now = Date.now()
-  const updated = applyCard(user, card, now)
-  card.usedBy = user.email
-  card.usedAt = now
-  await env.YTENSUB_KV.put(`user:${user.email}`, JSON.stringify(updated))
-  await env.YTENSUB_KV.put(`card:${code}`, JSON.stringify(card))
-  return json({ entitlement: toEntitlement(updated, now, await graceDays(env), await globalFilterSensitive(env)) })
+  const outcome = await redeemCardAtomic(env.DB, env.YTENSUB_KV, user, code, now)
+  if (!outcome.ok) return json({ error: outcome.error }, outcome.status)
+  const entitlement = toEntitlement(outcome.user, now, await graceDays(env), await globalFilterSensitive(env))
+  return json(outcome.alreadyRedeemed ? { entitlement, alreadyRedeemed: true } : { entitlement })
 }
 
 async function handleEntitlement(env: Env, req: Request): Promise<Response> {
@@ -271,8 +277,8 @@ async function handleAdminChannelsList(env: Env, req: Request): Promise<Response
   return json({ channels })
 }
 
-interface ContentPipelineStatus {
-  state: 'running' | 'success' | 'failed'
+interface ContentPipelineStatus extends Partial<PipelineMetrics> {
+  state: 'running' | 'success' | 'partial' | 'failed'
   startedAt: number
   updatedAt: number
   finishedAt?: number
@@ -289,19 +295,18 @@ async function handleAdminContentStatusGet(env: Env): Promise<Response> {
 
 async function handleAdminContentStatusSet(env: Env, req: Request): Promise<Response> {
   const body = await readJson<Partial<ContentPipelineStatus>>(req)
-  if (!body || !['running', 'success', 'failed'].includes(body.state ?? '')) {
+  if (!body || !['running', 'success', 'partial', 'failed'].includes(body.state ?? '')) {
     return json({ error: 'bad pipeline status' }, 400)
   }
   if (!Number.isFinite(body.startedAt) || (body.startedAt ?? 0) <= 0) {
     return json({ error: 'bad startedAt' }, 400)
   }
   const status: ContentPipelineStatus = {
+    ...readPipelineMetrics(body as unknown as Record<string, unknown>),
     state: body.state as ContentPipelineStatus['state'],
     startedAt: body.startedAt!,
     updatedAt: Date.now(),
     ...(Number.isFinite(body.finishedAt) ? { finishedAt: body.finishedAt } : {}),
-    ...(Number.isFinite(body.added) ? { added: Math.max(0, Math.floor(body.added!)) } : {}),
-    ...(Number.isFinite(body.total) ? { total: Math.max(0, Math.floor(body.total!)) } : {}),
     ...(typeof body.published === 'boolean' ? { published: body.published } : {}),
     ...(typeof body.message === 'string' ? { message: body.message.slice(0, 500) } : {})
   }
@@ -430,7 +435,7 @@ async function handleAdminAnnounceSet(env: Env, req: Request): Promise<Response>
 
 function adminOk(env: Env, req: Request): boolean {
   const token = bearer(req)
-  return !!env.ADMIN_TOKEN && !!token && token === env.ADMIN_TOKEN
+  return !!env.ADMIN_TOKEN && !!token && timingSafeEqualStr(token, env.ADMIN_TOKEN)
 }
 
 async function handleAdminCardsCreate(env: Env, req: Request): Promise<Response> {
@@ -439,27 +444,21 @@ async function handleAdminCardsCreate(env: Env, req: Request): Promise<Response>
   const days = Math.floor(body?.days ?? 0)
   const count = Math.min(Math.max(Math.floor(body?.count ?? 1), 1), 100)
   if (!plan || days <= 0 || days > 3650) return json({ error: 'bad plan/days' }, 400)
-  const codes: string[] = []
-  for (let i = 0; i < count; i++) {
-    const code = makeCardCode(Math.random)
-    const card: CardRecord = { code, plan, days }
-    await env.YTENSUB_KV.put(`card:${code}`, JSON.stringify(card))
-    codes.push(code)
-  }
-  return json({ codes })
+  const cards: CardRecord[] = Array.from({ length: count }, () => ({
+    code: makeCardCode(),
+    plan,
+    days
+  }))
+  await createCardsBatch(env.DB, cards)
+  return json({ codes: cards.map((c) => c.code) })
 }
 
 async function handleAdminCardsList(env: Env, req: Request): Promise<Response> {
   const url = new URL(req.url)
   const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '100', 10) || 100, 500)
-  const list = await env.YTENSUB_KV.list({ prefix: 'card:', limit })
-  const cards: CardRecord[] = []
-  for (const k of list.keys) {
-    const c = (await env.YTENSUB_KV.get(k.name, 'json')) as CardRecord | null
-    if (c) cards.push(c)
-  }
-  cards.sort((a, b) => (b.usedAt ?? 0) - (a.usedAt ?? 0))
-  return json({ cards })
+  const migration = await importLegacyPage(env.DB, env.YTENSUB_KV, 'cards')
+  const cards = await listCardRecords(env.DB, limit)
+  return json({ cards, migration })
 }
 
 async function handleAdminUserLookup(env: Env, req: Request): Promise<Response> {
@@ -470,47 +469,63 @@ async function handleAdminUserLookup(env: Env, req: Request): Promise<Response> 
   return json({ user, entitlement: toEntitlement(user, Date.now(), await graceDays(env), await globalFilterSensitive(env)) })
 }
 
-/** 用户级过滤覆盖：mode = inherit（跟随全局）/ on（强制开）/ off（强制关） */
+/** 用户级过滤覆盖：mode = inherit（跟随全局）/ on（强制开）/ off（强制关）；仅更新单字段不碰权益 */
 async function handleAdminUserFilterSet(env: Env, req: Request): Promise<Response> {
   const body = await readJson<{ email?: string; mode?: string }>(req)
   const email = body?.email?.trim().toLowerCase() ?? ''
   if (!isValidEmail(email)) return json({ error: 'invalid email' }, 400)
   const mode = body?.mode
   if (mode !== 'inherit' && mode !== 'on' && mode !== 'off') return json({ error: 'bad mode' }, 400)
-  const user = await getUser(env, email)
+  const filterSensitive = mode === 'inherit' ? null : mode === 'on'
+  const user = await setUserFilterAtomic(env.DB, env.YTENSUB_KV, email, filterSensitive, Date.now())
   if (!user) return json({ error: 'user not found' }, 404)
-  user.filterSensitive = mode === 'inherit' ? null : mode === 'on'
-  user.updatedAt = Date.now()
-  await env.YTENSUB_KV.put(`user:${email}`, JSON.stringify(user))
   const sync = await syncLocalAdminChangeToCloudflare(
     env, req, '/admin/user/filter', { email, mode },
-    (result) => result.filterSensitive === user.filterSensitive
+    (result) => (result.filterSensitive ?? null) === filterSensitive
   )
   if (sync.attempted && !sync.synced) {
     return json({ error: `saved locally, but Cloudflare sync failed: ${sync.error}` }, 502)
   }
   return json({
     ok: true,
-    filterSensitive: user.filterSensitive,
+    filterSensitive,
     ...(sync.attempted ? { cloudflareSynced: true } : {})
   })
 }
 
-/** 会员列表（会员管理模块）：KV 前缀扫描 + 逐条解析生效权益 */
+/** 会员列表（会员管理模块）：单条 D1 查询按到期时间倒序 */
 async function handleAdminUsersList(env: Env, req: Request): Promise<Response> {
   const url = new URL(req.url)
   const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '200', 10) || 200, 500)
-  const list = await env.YTENSUB_KV.list({ prefix: 'user:', limit })
-  const gd = await graceDays(env)
-  const gfs = await globalFilterSensitive(env)
+  const migration = await importLegacyPage(env.DB, env.YTENSUB_KV, 'users')
+  const [records, gd, gfs] = await Promise.all([
+    listUserRecords(env.DB, limit),
+    graceDays(env),
+    globalFilterSensitive(env)
+  ])
   const now = Date.now()
-  const users: { user: UserRecord; entitlement: Entitlement }[] = []
-  for (const k of list.keys) {
-    const u = (await env.YTENSUB_KV.get(k.name, 'json')) as UserRecord | null
-    if (u) users.push({ user: u, entitlement: toEntitlement(u, now, gd, gfs) })
+  const users: { user: UserRecord; entitlement: Entitlement }[] = records.map((u) => ({
+    user: u,
+    entitlement: toEntitlement(u, now, gd, gfs)
+  }))
+  return json({ users, migration })
+}
+
+async function handleLegacyImport(env: Env, req: Request): Promise<Response> {
+  const body = await readJson<{ kind?: string }>(req)
+  if (body?.kind !== 'users' && body?.kind !== 'cards') return json({ error: 'bad migration kind' }, 400)
+  return json(await importLegacyPage(env.DB, env.YTENSUB_KV, body.kind))
+}
+
+async function handlePendingCardResolve(env: Env, req: Request): Promise<Response> {
+  const body = await readJson<{ code?: string; action?: string }>(req)
+  const code = normalizeCardCode(body?.code ?? '')
+  if (!isValidCardCode(code) || (body?.action !== 'credit' && body?.action !== 'confirm')) {
+    return json({ error: 'bad card/action' }, 400)
   }
-  users.sort((a, b) => (b.entitlement.expiresAt ?? 0) - (a.entitlement.expiresAt ?? 0))
-  return json({ users })
+  const result = await resolvePendingCardAtomic(env.DB, env.YTENSUB_KV, code, body.action)
+  if (!result.ok) return json({ error: result.error }, result.status)
+  return json({ ok: true, user: result.user, alreadyResolved: result.alreadyRedeemed })
 }
 
 /** 手动开通/顺延（plan=pro/pro_plus + days）或吊销（plan=free） */
@@ -518,20 +533,20 @@ async function handleAdminUserPlanSet(env: Env, req: Request): Promise<Response>
   const body = await readJson<{ email?: string; plan?: string; days?: number }>(req)
   const email = body?.email?.trim().toLowerCase() ?? ''
   if (!isValidEmail(email)) return json({ error: 'invalid email' }, 400)
-  const user = await getUser(env, email)
-  if (!user) return json({ error: 'user not found' }, 404)
   const now = Date.now()
-  let updated: UserRecord
+  let plan: Plan
+  let days = 0
   if (body?.plan === 'free') {
-    updated = revokePlan(user, now)
+    plan = 'free'
   } else if (body?.plan === 'pro' || body?.plan === 'pro_plus') {
-    const days = Math.floor(body?.days ?? 0)
+    days = Math.floor(body?.days ?? 0)
     if (days <= 0 || days > 3650) return json({ error: 'bad days' }, 400)
-    updated = grantPlan(user, body.plan, days, now)
+    plan = body.plan
   } else {
     return json({ error: 'bad plan' }, 400)
   }
-  await env.YTENSUB_KV.put(`user:${email}`, JSON.stringify(updated))
+  const updated = await setUserPlanAtomic(env.DB, env.YTENSUB_KV, email, plan, days, now)
+  if (!updated) return json({ error: 'user not found' }, 404)
   return json({
     ok: true,
     entitlement: toEntitlement(updated, now, await graceDays(env), await globalFilterSensitive(env))
@@ -543,11 +558,8 @@ async function handleAdminCardRevoke(env: Env, req: Request): Promise<Response> 
   const body = await readJson<{ code?: string }>(req)
   const code = normalizeCardCode(body?.code ?? '')
   if (!isValidCardCode(code)) return json({ error: 'bad code format' }, 400)
-  const key = `card:${code}`
-  const card = (await env.YTENSUB_KV.get(key, 'json')) as CardRecord | null
-  if (!card) return json({ error: 'not found' }, 404)
-  if (card.usedAt) return json({ error: 'card already used, keep for record' }, 409)
-  await env.YTENSUB_KV.delete(key)
+  const outcome = await revokeCardAtomic(env.DB, env.YTENSUB_KV, code)
+  if (!outcome.ok) return json({ error: outcome.error }, outcome.status)
   return json({ ok: true })
 }
 
@@ -586,7 +598,8 @@ export default {
       }
       if (pathname.startsWith('/admin/content/')) {
         const token = bearer(req)
-        if (!adminOk(env, req) && !(env.CONTENT_UPLOAD_TOKEN && token === env.CONTENT_UPLOAD_TOKEN)) {
+        const uploadOk = !!env.CONTENT_UPLOAD_TOKEN && !!token && timingSafeEqualStr(token, env.CONTENT_UPLOAD_TOKEN)
+        if (!adminOk(env, req) && !uploadOk) {
           return json({ error: 'unauthorized' }, 401)
         }
         const key = pathname.slice('/admin/content/'.length)
@@ -612,6 +625,10 @@ export default {
         return new Response(ADMIN_PAGE, {
           headers: { 'Content-Type': 'text/html; charset=utf-8', ...cors() }
         })
+      }
+      if (pathname === '/admin/pipeline' || pathname.startsWith('/admin/pipeline/')) {
+        if (!adminOk(env, req)) return json({ error: 'unauthorized' }, 401)
+        return await handlePipelineControl(env.CONTENT_BUCKET, req)
       }
       if (pathname === '/admin/cards' && req.method === 'POST') {
         if (!adminOk(env, req)) return json({ error: 'unauthorized' }, 401)
@@ -665,6 +682,14 @@ export default {
         if (!adminOk(env, req)) return json({ error: 'unauthorized' }, 401)
         return await handleAdminCardRevoke(env, req)
       }
+      if (pathname === '/admin/cards/resolve' && req.method === 'POST') {
+        if (!adminOk(env, req)) return json({ error: 'unauthorized' }, 401)
+        return await handlePendingCardResolve(env, req)
+      }
+      if (pathname === '/admin/migrate/legacy' && req.method === 'POST') {
+        if (!adminOk(env, req)) return json({ error: 'unauthorized' }, 401)
+        return await handleLegacyImport(env, req)
+      }
       if (pathname === '/admin/config' && req.method === 'GET') {
         if (!adminOk(env, req)) return json({ error: 'unauthorized' }, 401)
         return await handleAdminConfigGet(env)
@@ -675,7 +700,11 @@ export default {
       }
       return json({ error: 'not found' }, 404)
     } catch (e) {
-      return json({ error: 'internal', detail: String(e) }, 500)
+      console.error('[ytensub-api] unhandled error:', e)
+      return json(
+        env.DEV_MODE === 'true' ? { error: 'internal', detail: String(e) } : { error: 'internal' },
+        500
+      )
     }
   }
 }

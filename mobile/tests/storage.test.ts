@@ -1,5 +1,17 @@
-import { describe, expect, it } from 'vitest'
-import { mergeVocab, VocabItem } from '../src/lib/storage'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  favList,
+  favToggle,
+  mergeVocab,
+  vocabAdd,
+  vocabList,
+  vocabRemove,
+  vocabReview,
+  VocabItem
+} from '../src/lib/storage'
+import { pullFromDesktop } from '../src/lib/sync'
+import { __resetAsyncStorage } from './mocks/async-storage'
 
 // mergeVocab 是纯函数，规则与桌面端 src/main/sync.ts 的同名函数一致
 //（逐行比对相同：按词去重，掌握等级取高，其余字段取 addedAt 较新者，
@@ -57,5 +69,121 @@ describe('mergeVocab 生词合并', () => {
     )
     expect(merged[0].reviewLevel).toBe(0)
     expect(merged[0].reviewDue).toBe(50)
+  })
+})
+
+describe('storage 异步并发写串行化', () => {
+  const originalFetch = globalThis.fetch
+
+  beforeEach(() => {
+    __resetAsyncStorage()
+    vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  it('并发 vocabAdd / vocabReview / vocabRemove 不会互相覆盖丢更新', async () => {
+    const origGet = AsyncStorage.getItem.bind(AsyncStorage)
+    const origSet = AsyncStorage.setItem.bind(AsyncStorage)
+    let delayStep = 0
+    vi.spyOn(AsyncStorage, 'getItem').mockImplementation(async (k: string) => {
+      const ms = (delayStep++ % 2 === 0) ? 12 : 2
+      await new Promise((r) => setTimeout(r, ms))
+      return origGet(k)
+    })
+    vi.spyOn(AsyncStorage, 'setItem').mockImplementation(async (k: string, v: string) => {
+      await new Promise((r) => setTimeout(r, 4))
+      return origSet(k, v)
+    })
+
+    const base = { videoId: 'v1', videoTitle: 't1', timestamp: 1, sentence: 's' }
+    await Promise.all([
+      vocabAdd({ ...base, text: 'apple', translation: '苹果' }),
+      vocabAdd({ ...base, text: 'banana', translation: '香蕉' }),
+      vocabAdd({ ...base, text: 'cherry', translation: '樱桃' })
+    ])
+
+    const added = await vocabList()
+    expect(added.map((v) => v.text).sort()).toEqual(['apple', 'banana', 'cherry'])
+
+    const apple = added.find((v) => v.text === 'apple')!
+    const banana = added.find((v) => v.text === 'banana')!
+    const cherry = added.find((v) => v.text === 'cherry')!
+
+    await Promise.all([
+      vocabReview(apple.id, 2),
+      vocabReview(banana.id, 4),
+      vocabRemove(cherry.id)
+    ])
+
+    const after = await vocabList()
+    expect(after.map((v) => v.text).sort()).toEqual(['apple', 'banana'])
+    expect(after.find((v) => v.id === apple.id)?.reviewLevel).toBe(2)
+    expect(after.find((v) => v.id === banana.id)?.reviewLevel).toBe(4)
+  })
+
+  it('并发 favToggle 不会互相覆盖', async () => {
+    const origGet = AsyncStorage.getItem.bind(AsyncStorage)
+    vi.spyOn(AsyncStorage, 'getItem').mockImplementation(async (k: string) => {
+      await new Promise((r) => setTimeout(r, 5))
+      return origGet(k)
+    })
+
+    await Promise.all([
+      favToggle({ videoId: 'v1', title: 'One', channel: 'C1' }),
+      favToggle({ videoId: 'v2', title: 'Two', channel: 'C2' })
+    ])
+
+    const favs = await favList()
+    expect(favs.map((f) => f.videoId).sort()).toEqual(['v1', 'v2'])
+  })
+
+  it('pullFromDesktop 与本地 vocabAdd 交错执行不会覆盖新增生词', async () => {
+    const base = { videoId: 'v1', videoTitle: 't1', timestamp: 1, sentence: 's' }
+    await vocabAdd({ ...base, text: 'initial', translation: '初始' })
+
+    const origGet = AsyncStorage.getItem.bind(AsyncStorage)
+    const origSet = AsyncStorage.setItem.bind(AsyncStorage)
+    vi.spyOn(AsyncStorage, 'getItem').mockImplementation(async (k: string) => {
+      await new Promise((r) => setTimeout(r, 10))
+      return origGet(k)
+    })
+    vi.spyOn(AsyncStorage, 'setItem').mockImplementation(async (k: string, v: string) => {
+      await new Promise((r) => setTimeout(r, 10))
+      return origSet(k, v)
+    })
+
+    globalThis.fetch = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 5))
+      return new Response(
+        JSON.stringify({
+          version: 1,
+          exportedAt: Date.now(),
+          vocab: [vocab('desktop-word', Date.now())],
+          shadowing: []
+        }),
+        { status: 200 }
+      )
+    }) as typeof fetch
+
+    // 拉取同步与本地新增词并发交错
+    const pullPromise = pullFromDesktop('http://127.0.0.1:47832', 'tok')
+    const addDuringPull = new Promise<void>((resolve, reject) => {
+      setTimeout(() => {
+        vocabAdd({ ...base, text: 'added-during-sync', translation: '同步期间新增' })
+          .then(resolve, reject)
+      }, 8)
+    })
+
+    await Promise.all([pullPromise, addDuringPull])
+
+    const finalList = await vocabList()
+    expect(finalList.map((v) => v.text).sort()).toEqual([
+      'added-during-sync',
+      'desktop-word',
+      'initial'
+    ])
   })
 })

@@ -5,7 +5,9 @@
   "description": "YTenSUB account & entitlement API (Cloudflare Workers + KV)",
   "scripts": {
     "dev": "wrangler dev",
+    "predeploy": "node scripts/check-db-config.mjs",
     "deploy": "wrangler deploy",
+    "db:import": "node scripts/migrate-legacy.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

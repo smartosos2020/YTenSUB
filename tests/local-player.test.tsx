@@ -3,12 +3,14 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
 import { DEFAULT_SETTINGS } from '../src/shared/types'
+import type { LocalVideoFile } from '../src/shared/local-media'
 
 const apiMock = vi.hoisted(() => ({
   settingsGet: vi.fn(),
   vocabList: vi.fn(async () => []),
   localPlaylistList: vi.fn(async () => []),
-  localPickVideo: vi.fn(async () => ({
+  localSearchSubtitles: vi.fn(async () => []),
+  localPickVideo: vi.fn(async (): Promise<LocalVideoFile> => ({
     path: 'C:\\video\\episode.mp4', url: 'ytensub-media://test', name: 'episode.mp4',
     query: 'episode', extension: 'mp4', size: 1024, hash: null,
     sidecarSubtitle: { fileName: 'episode.srt', text: '1\n00:00:00,000 --> 00:10:00,000\nHello world\n' }
@@ -67,6 +69,21 @@ async function advance(ms: number): Promise<void> {
 }
 
 describe('本地播放器交互', () => {
+  it('默认搜索词包含剧名和季集，点击搜索才发送完整搜索词', async () => {
+    const video = await apiMock.localPickVideo()
+    apiMock.localPickVideo.mockResolvedValueOnce({
+      ...video, name: 'Young.Sheldon.S01E02.720p.BluRay.x264-GalaxyTV.mkv',
+      query: 'Young Sheldon', season: 1, episode: 2
+    })
+    const view = await openPlayer()
+    expect((view.getByRole('textbox', { name: '字幕搜索词' }) as HTMLInputElement).value).toBe('Young Sheldon S01E02')
+    expect(apiMock.localSearchSubtitles).not.toHaveBeenCalled()
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: '在线找英文字幕' })) })
+    expect(apiMock.localSearchSubtitles).toHaveBeenCalledWith(expect.objectContaining({
+      query: 'Young Sheldon S01E02', season: 1, episode: 2
+    }))
+  })
+
   it('点击画面暂停，再点击恢复，控制条点击不重复切换', async () => {
     const { video, play, pause } = await openPlayer()
     fireEvent.click(video, { detail: 1, clientY: 200 })
@@ -175,6 +192,20 @@ describe('本地播放器交互', () => {
     expect(container.querySelector('video')).toBe(video)
     expect(video.currentTime).toBe(123)
     expect(video.paused).toBe(true)
+  })
+
+  it('从下载任务打开指定视频，离开后返回不重置进度，也不自动搜索字幕', async () => {
+    const picked = await apiMock.localPickVideo()
+    const request = { downloadedVideo: picked, downloadRequest: 'download-1' }
+    const view = render(<MantineProvider><LocalPage isActive openRequest={request} /></MantineProvider>)
+    await act(async () => {})
+    const video = view.container.querySelector('video')!
+    expect(video.getAttribute('src')).toBe(picked.url)
+    expect(apiMock.localSearchSubtitles).not.toHaveBeenCalled()
+    video.currentTime = 42
+    view.rerender(<MantineProvider><LocalPage isActive={false} openRequest={request} /></MantineProvider>)
+    view.rerender(<MantineProvider><LocalPage isActive openRequest={{ ...request }} /></MantineProvider>)
+    expect(video.currentTime).toBe(42)
   })
 
   it('离开页面取消待执行的单击恢复，隐藏时拒绝自动播放和延迟取词', async () => {

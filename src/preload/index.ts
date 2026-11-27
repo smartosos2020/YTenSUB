@@ -3,6 +3,7 @@ import { Favorite, Settings, VocabItem } from '../shared/types'
 import type { AuthSession } from '../shared/auth-api'
 import type { CachedEntitlement } from '../shared/entitlement'
 import type { CuratedFeedback } from '../shared/curated-feedback'
+import type { DownloadSettings, DownloadSnapshot, ResourcePreview, ResourceResult } from '../shared/resources'
 import type { CaptionCacheEntry } from '../main/captions-cache'
 import type { VocabVisualRequest, VocabVisualResult } from '../shared/vocab-visual'
 import type {
@@ -14,6 +15,18 @@ import type {
 } from '../shared/local-media'
 
 const api = {
+  resourceSearch: (query: string): Promise<ResourceResult[]> => ipcRenderer.invoke('resources:search', query),
+  resourceSnapshot: (): Promise<DownloadSnapshot> => ipcRenderer.invoke('resources:snapshot'),
+  resourceSettings: (): Promise<DownloadSettings> => ipcRenderer.invoke('resources:settings'),
+  resourceConfigure: (patch: Partial<Omit<DownloadSettings, 'directory'>>): Promise<DownloadSettings> => ipcRenderer.invoke('resources:configure', patch),
+  resourcePickDirectory: (): Promise<DownloadSettings | null> => ipcRenderer.invoke('resources:directory'),
+  resourcePreview: (magnet: string): Promise<ResourcePreview> => ipcRenderer.invoke('resources:preview', magnet),
+  resourceCancelPreview: (): Promise<void> => ipcRenderer.invoke('resources:cancel-preview'),
+  resourcePickTorrent: (): Promise<ResourcePreview | null> => ipcRenderer.invoke('resources:pick-torrent'),
+  resourceAdd: (token: string, files: number[]): Promise<void> => ipcRenderer.invoke('resources:add', token, files),
+  resourceAction: (id: string, action: 'pause' | 'start' | 'forget'): Promise<void> => ipcRenderer.invoke('resources:action', id, action),
+  resourceOpenFolder: (id: string): Promise<void> => ipcRenderer.invoke('resources:open-folder', id),
+  resourceOpenVideo: (id: string, index: number): Promise<LocalVideoFile> => ipcRenderer.invoke('resources:open-video', id, index),
   translate: (text: string) => ipcRenderer.invoke('translate:text', text),
   translateZhBatch: (texts: string[]) => ipcRenderer.invoke('translate:zh-batch', texts),
 

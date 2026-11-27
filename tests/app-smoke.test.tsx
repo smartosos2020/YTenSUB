@@ -136,4 +136,41 @@ describe('App 冒烟', () => {
     view.unmount()
     expect(video.isConnected).toBe(false)
   })
+
+  it('离开浏览页后，隐藏的 BrowsePage 不再劫持全局快捷键与侧键导航', async () => {
+    const view = render(<MantineProvider><App /></MantineProvider>)
+    await act(async () => { await Promise.resolve() })
+    const webview = view.container.querySelector('webview') as unknown as HTMLElement & {
+      executeJavaScript: ReturnType<typeof vi.fn>
+      goBack: ReturnType<typeof vi.fn>
+    }
+    expect(webview).toBeTruthy()
+    webview.executeJavaScript = vi.fn(async () => undefined)
+    webview.goBack = vi.fn()
+
+    // 在浏览页激活时：空格和 Alt+← 正常触发 webview
+    fireEvent.keyDown(document.body, { key: ' ' })
+    fireEvent.keyDown(document.body, { key: 'ArrowLeft', altKey: true })
+    expect(webview.executeJavaScript).toHaveBeenCalledTimes(1)
+    expect(webview.goBack).toHaveBeenCalledTimes(1)
+
+    // 切到收藏页（BrowsePage 以 display:none 保持挂载）
+    await act(async () => { fireEvent.click(view.getByRole('link', { name: '收藏' })) })
+    webview.executeJavaScript.mockClear()
+    webview.goBack.mockClear()
+
+    fireEvent.keyDown(document.body, { key: ' ' })
+    fireEvent.keyDown(document.body, { key: 'ArrowLeft' })
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    fireEvent.keyDown(document.body, { key: 'ArrowLeft', altKey: true })
+    fireEvent.mouseUp(document.body, { button: 3 })
+    expect(webview.executeJavaScript).not.toHaveBeenCalled()
+    expect(webview.goBack).not.toHaveBeenCalled()
+
+    // 切回浏览页后快捷键恢复生效
+    await act(async () => { fireEvent.click(view.getByRole('link', { name: '浏览' })) })
+    fireEvent.keyDown(document.body, { key: ' ' })
+    expect(webview.executeJavaScript).toHaveBeenCalledTimes(1)
+    view.unmount()
+  })
 })

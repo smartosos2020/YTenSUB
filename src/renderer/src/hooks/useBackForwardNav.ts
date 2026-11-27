@@ -6,8 +6,12 @@ import type { WebviewTag } from 'electron'
  * preventDefault 阻止 Chromium 默认行为触发宿主历史/路由跳转。
  * webview 获得焦点时事件进不了宿主文档，由 webview-preload 做同样拦截。
  */
-export function useBackForwardNav(wvRef: React.RefObject<WebviewTag | null>): void {
+export function useBackForwardNav(
+  wvRef: React.RefObject<WebviewTag | null>,
+  enabled = true
+): void {
   useEffect(() => {
+    if (!enabled) return
     const onKeyDown = (e: KeyboardEvent): void => {
       if (!e.altKey || e.ctrlKey || e.shiftKey || e.metaKey) return
       if (e.key === 'ArrowLeft') {
@@ -38,5 +42,5 @@ export function useBackForwardNav(wvRef: React.RefObject<WebviewTag | null>): vo
       document.removeEventListener('mousedown', onMouseDown)
       document.removeEventListener('mouseup', onMouseUp)
     }
-  }, [wvRef])
+  }, [wvRef, enabled])
 }

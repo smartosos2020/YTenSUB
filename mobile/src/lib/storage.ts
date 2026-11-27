@@ -31,21 +31,27 @@ export const REVIEW_INTERVALS_MS = [
 ]
 export const MASTERED_LEVEL = 5
 
-/** 复习结算：写入新等级并按间隔表算出下次到期时间 */
-export async function vocabReview(id: string, level: number): Promise<void> {
-  const list = await vocabList()
-  const item = list.find((v) => v.id === id)
-  if (!item) return
-  const lv = Math.max(0, Math.min(REVIEW_INTERVALS_MS.length - 1, level))
-  item.reviewLevel = lv
-  item.reviewDue = Date.now() + REVIEW_INTERVALS_MS[lv]
-  await saveAll(list)
+/** 按存储键串行化异步读写，防止并发 read-modify-write 互相覆盖丢更新 */
+const keyQueues = new Map<string, Promise<void>>()
+
+function serialized<T>(key: string, task: () => Promise<T>): Promise<T> {
+  const previous = keyQueues.get(key) ?? Promise.resolve()
+  const result = previous.then(task, task)
+  const tail = result.then(
+    () => {
+      if (keyQueues.get(key) === tail) keyQueues.delete(key)
+    },
+    () => {
+      if (keyQueues.get(key) === tail) keyQueues.delete(key)
+    }
+  )
+  keyQueues.set(key, tail)
+  return result
 }
 
 const KEY = 'ytensub:vocab'
 
-/** 读取整个生词本（新收藏在前） */
-export async function vocabList(): Promise<VocabItem[]> {
+async function readVocab(): Promise<VocabItem[]> {
   try {
     const raw = await AsyncStorage.getItem(KEY)
     const arr = raw ? (JSON.parse(raw) as VocabItem[]) : []
@@ -59,27 +65,61 @@ async function saveAll(list: VocabItem[]): Promise<void> {
   await AsyncStorage.setItem(KEY, JSON.stringify(list))
 }
 
+/** 复习结算：写入新等级并按间隔表算出下次到期时间 */
+export async function vocabReview(id: string, level: number): Promise<void> {
+  return serialized(KEY, async () => {
+    const list = await readVocab()
+    const item = list.find((v) => v.id === id)
+    if (!item) return
+    const lv = Math.max(0, Math.min(REVIEW_INTERVALS_MS.length - 1, level))
+    item.reviewLevel = lv
+    item.reviewDue = Date.now() + REVIEW_INTERVALS_MS[lv]
+    await saveAll(list)
+  })
+}
+
+/** 读取整个生词本（新收藏在前） */
+export async function vocabList(): Promise<VocabItem[]> {
+  return serialized(KEY, readVocab)
+}
+
 /** 收藏生词（统一存词元；同词再次添加=更新翻译与来源、刷新时间） */
 export async function vocabAdd(item: Omit<VocabItem, 'id' | 'addedAt'>): Promise<void> {
-  const list = await vocabList()
-  const key = item.text.trim().toLowerCase()
-  const idx = list.findIndex((v) => v.text.trim().toLowerCase() === key)
-  if (idx >= 0) {
-    list[idx] = { ...list[idx], ...item, addedAt: Date.now() }
-  } else {
-    list.push({ ...item, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, addedAt: Date.now() })
-  }
-  await saveAll(list)
+  return serialized(KEY, async () => {
+    const list = await readVocab()
+    const key = item.text.trim().toLowerCase()
+    const idx = list.findIndex((v) => v.text.trim().toLowerCase() === key)
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...item, addedAt: Date.now() }
+    } else {
+      list.push({ ...item, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, addedAt: Date.now() })
+    }
+    await saveAll(list)
+  })
 }
 
 export async function vocabRemove(id: string): Promise<void> {
-  const list = await vocabList()
-  await saveAll(list.filter((v) => v.id !== id))
+  return serialized(KEY, async () => {
+    const list = await readVocab()
+    await saveAll(list.filter((v) => v.id !== id))
+  })
 }
 
-/** 覆盖式写入整个生词本（同步拉取后用） */
+/** 覆盖式写入整个生词本（测试/明确全量替换用） */
 export async function vocabReplaceAll(list: VocabItem[]): Promise<void> {
-  await saveAll(list)
+  return serialized(KEY, async () => {
+    await saveAll(list)
+  })
+}
+
+/** 原子合并远端生词本：读取当前快照、合并并写回在同一串行任务内完成，避免覆盖期间新增/复习的生词 */
+export async function vocabMerge(incoming: VocabItem[]): Promise<VocabItem[]> {
+  return serialized(KEY, async () => {
+    const local = await readVocab()
+    const merged = mergeVocab(local, incoming)
+    await saveAll(merged)
+    return merged
+  })
 }
 
 // ---------- 跟读脚本（桌面端生成，同步过来） ----------
@@ -102,7 +142,7 @@ export interface ShadowingScript {
 
 const SHADOWING_KEY = 'ytensub:shadowing'
 
-export async function shadowingList(): Promise<ShadowingScript[]> {
+async function readShadowing(): Promise<ShadowingScript[]> {
   try {
     const raw = await AsyncStorage.getItem(SHADOWING_KEY)
     return raw ? Object.values(JSON.parse(raw)) : []
@@ -111,14 +151,20 @@ export async function shadowingList(): Promise<ShadowingScript[]> {
   }
 }
 
+export async function shadowingList(): Promise<ShadowingScript[]> {
+  return serialized(SHADOWING_KEY, readShadowing)
+}
+
 /** 跟读脚本合并：按 videoId，generatedAt 新者胜 */
 export async function shadowingMerge(incoming: ShadowingScript[]): Promise<void> {
-  const local = await shadowingList()
-  const merged = mergeShadowing(local, incoming)
-  await AsyncStorage.setItem(
-    SHADOWING_KEY,
-    JSON.stringify(Object.fromEntries(merged.map((script) => [script.videoId, script])))
-  )
+  return serialized(SHADOWING_KEY, async () => {
+    const local = await readShadowing()
+    const merged = mergeShadowing(local, incoming)
+    await AsyncStorage.setItem(
+      SHADOWING_KEY,
+      JSON.stringify(Object.fromEntries(merged.map((script) => [script.videoId, script])))
+    )
+  })
 }
 
 // ---------- 收藏视频 ----------
@@ -132,8 +178,7 @@ export interface FavoriteItem {
 
 const FAV_KEY = 'ytensub:favorites'
 
-/** 读取收藏列表（新收藏在前） */
-export async function favList(): Promise<FavoriteItem[]> {
+async function readFavs(): Promise<FavoriteItem[]> {
   try {
     const raw = await AsyncStorage.getItem(FAV_KEY)
     const arr = raw ? (JSON.parse(raw) as FavoriteItem[]) : []
@@ -143,13 +188,20 @@ export async function favList(): Promise<FavoriteItem[]> {
   }
 }
 
+/** 读取收藏列表（新收藏在前） */
+export async function favList(): Promise<FavoriteItem[]> {
+  return serialized(FAV_KEY, readFavs)
+}
+
 /** 收藏/取消收藏切换；返回切换后是否已收藏 */
 export async function favToggle(item: { videoId: string; title: string; channel: string }): Promise<boolean> {
-  const list = await favList()
-  const exists = list.some((f) => f.videoId === item.videoId)
-  const next = exists
-    ? list.filter((f) => f.videoId !== item.videoId)
-    : [{ ...item, addedAt: Date.now() }, ...list]
-  await AsyncStorage.setItem(FAV_KEY, JSON.stringify(next))
-  return !exists
+  return serialized(FAV_KEY, async () => {
+    const list = await readFavs()
+    const exists = list.some((f) => f.videoId === item.videoId)
+    const next = exists
+      ? list.filter((f) => f.videoId !== item.videoId)
+      : [{ ...item, addedAt: Date.now() }, ...list]
+    await AsyncStorage.setItem(FAV_KEY, JSON.stringify(next))
+    return !exists
+  })
 }

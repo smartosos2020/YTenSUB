@@ -1,0 +1,6 @@
+rqbit 9.1.0 — https://github.com/ikatson/rqbit/tree/v9.1.0
+Copyright 2021 Igor Katson
+Licensed under the Apache License, Version 2.0.
+The Windows engine is redistributed unmodified from the official v9.1.0 release.
+SHA-256: 9fb0c0dbe63ea7ca04611039e0244e570d115e79d3a0d4ac2bba22b9d80f3cbc
+See APACHE-2.0.txt for the license.

@@ -7,6 +7,18 @@ compatibility_date = "2026-09-01"
 binding = "YTENSUB_KV"
 id = "2a0d5452159940798f6c82416fbd05dd"
 
+# 私有 D1 数据库（账号、卡密、入账凭证与登录验证码的唯一权威源，绝不存公开 R2 桶）
+# 首次部署执行：
+#   npx wrangler d1 create ytensub-db          # 把返回的 database_id 填入下方
+#   npx wrangler d1 migrations apply ytensub-db --remote
+# 本地开发初始化：
+#   npx wrangler d1 migrations apply ytensub-db --local
+[[d1_databases]]
+binding = "DB"
+database_name = "ytensub-db"
+database_id = "aaad5a11-1655-4712-bdeb-7a6101843caf"
+migrations_dir = "migrations"
+
 [[r2_buckets]]
 binding = "CONTENT_BUCKET"
 bucket_name = "ytensub-curated"

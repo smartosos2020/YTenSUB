@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { parseExternalSubtitle } from '../src/shared/captions'
+import youngSheldonSearch from './fixtures/opensubtitles-young-sheldon-s01e02.json'
 import {
   computeHashFromParts,
   downloadOpenSubtitle,
@@ -31,6 +32,12 @@ describe('parseEpisodeInfo', () => {
       query: 'Friends',
       season: 1,
       episode: 2
+    })
+  })
+
+  it('识别以季集结尾、没有文件扩展名的发行名称', () => {
+    expect(parseEpisodeInfo('Young.Sheldon.S01E02')).toEqual({
+      query: 'Young Sheldon', season: 1, episode: 2
     })
   })
 })
@@ -229,6 +236,134 @@ describe('本地播放列表', () => {
 })
 
 describe('在线字幕推荐', () => {
+  it('将完整搜索词解析为剧名与季集过滤条件，并以用户输入的季集为准', async () => {
+    let request: URL | undefined
+    const results = await searchOpenSubtitles({
+      apiKey: 'test-key', hash: null, query: 'Young Sheldon S01E02',
+      fileName: 'Young.Sheldon.S01E01.mkv', season: 1, episode: 1, userAgent: 'test-agent',
+      fetchFn: async (url) => {
+        request = new URL(url)
+        return new Response(JSON.stringify(youngSheldonSearch.query))
+      }
+    })
+    expect(request!.searchParams.get('query')).toBe('Young Sheldon')
+    expect(request!.searchParams.get('season_number')).toBe('1')
+    expect(request!.searchParams.get('episode_number')).toBe('2')
+    expect(results).toHaveLength(10)
+    expect(results.every((candidate) => candidate.fileName.includes('S01E02'))).toBe(true)
+  })
+
+  it('使用实际 API 响应：排除 His House 和 E01，推荐同集的 BluRay 720p 版本', async () => {
+    const results = await searchOpenSubtitles({
+      apiKey: 'test-key', hash: 'test-hash', query: 'Young Sheldon',
+      fileName: 'Young.Sheldon.S01E02.720p.BluRay.x264-GalaxyTV.mkv',
+      season: 1, episode: 2, userAgent: 'test-agent',
+      fetchFn: async (url) => new Response(JSON.stringify(
+        new URL(url).searchParams.has('moviehash') ? youngSheldonSearch.hash : youngSheldonSearch.query
+      ))
+    })
+
+    expect(results).toHaveLength(10)
+    expect(results[0].fileName).toBe('Young.Sheldon.S01E02.720p.BluRay.X264-REWARD')
+    expect(results.every((candidate) => candidate.fileName.includes('S01E02'))).toBe(true)
+    expect(results.some((candidate) => candidate.exactMatch)).toBe(false)
+    expect(results[0].matchReasons).toEqual(expect.arrayContaining(['剧名一致', '季数一致', '集数一致']))
+  })
+
+  it('同季同集的其他剧、缺少季集信息和无法确认剧名的 Hash 结果不能成为候选', async () => {
+    const results = await searchOpenSubtitles({
+      apiKey: 'test-key', hash: 'test-hash', query: 'Young Sheldon',
+      fileName: 'Young.Sheldon.S01E02.720p.BluRay.x264.mkv',
+      season: 1, episode: 2, userAgent: 'test-agent',
+      fetchFn: async () => new Response(JSON.stringify({ data: [
+        { attributes: {
+          moviehash_match: true, feature_details: { parent_title: 'Suits', season_number: 1, episode_number: 2 },
+          files: [{ file_id: 1, file_name: 'Suits.S01E02.720p.BluRay.x264.srt' }]
+        } },
+        { attributes: {
+          moviehash_match: true, feature_details: { parent_title: 'Young Sheldon' },
+          files: [{ file_id: 2, file_name: 'english.srt' }]
+        } },
+        { attributes: {
+          moviehash_match: true, feature_details: { season_number: 1, episode_number: 2 },
+          files: [{ file_id: 3, file_name: 'english.srt' }]
+        } }
+      ] }))
+    })
+
+    expect(results).toEqual([])
+  })
+
+  it('S01E02 排除 Hash、元数据或下载量再高的其他季集字幕', async () => {
+    const requests: URL[] = []
+    const results = await searchOpenSubtitles({
+      apiKey: 'test-key', hash: 'test-hash', query: 'Young Sheldon',
+      fileName: 'Young.Sheldon.S01E02.720p.BluRay.x264.mkv',
+      season: 1, episode: 2, userAgent: 'test-agent',
+      fetchFn: async (url) => {
+        const request = new URL(url)
+        requests.push(request)
+        const data = request.searchParams.has('moviehash') ? [
+          { attributes: {
+            moviehash_match: true,
+            files: [{ file_id: 1, file_name: 'Young.Sheldon.S01E01.720p.BluRay.x264.srt' }]
+          } }
+        ] : [
+          { attributes: {
+            download_count: 100000, feature_details: { season_number: 1, episode_number: 2 },
+            files: [{ file_id: 2, file_name: 'Young.Sheldon.S01E01.srt' }]
+          } },
+          { attributes: {
+            files: [{ file_id: 3, file_name: 'Young.Sheldon.S01E02.srt' }]
+          } },
+          { attributes: {
+            files: [{ file_id: 4, file_name: 'Young.Sheldon.S02E02.srt' }]
+          } },
+          { attributes: {
+            feature_details: { season_number: 1, episode_number: 1 },
+            files: [{ file_id: 5, file_name: 'english.srt' }]
+          } },
+          { attributes: {
+            release: 'Young.Sheldon.S01E01',
+            files: [{ file_id: 6, file_name: 'english.srt' }]
+          } },
+          { attributes: {
+            release: 'Young.Sheldon.S01E02',
+            files: [{ file_id: 7, file_name: 'english.srt' }]
+          } }
+        ]
+        return new Response(JSON.stringify({ data }))
+      }
+    })
+
+    expect(results.map((candidate) => candidate.fileId)).toEqual([3, 7])
+    expect(results.every((candidate) => candidate.matchReasons.includes('集数一致'))).toBe(true)
+    expect(requests).toHaveLength(2)
+    const titleSearch = requests.find((request) => request.searchParams.has('query'))!
+    expect(titleSearch.searchParams.get('season_number')).toBe('1')
+    expect(titleSearch.searchParams.get('episode_number')).toBe('2')
+  })
+
+  it('整季字幕包按每个文件的季集筛选，文件名优先于整包元数据', async () => {
+    const results = await searchOpenSubtitles({
+      apiKey: 'test-key', hash: null, query: 'Young Sheldon',
+      fileName: 'Young.Sheldon.S01E02.mkv', season: 1, episode: 2, userAgent: 'test-agent',
+      fetchFn: async () => new Response(JSON.stringify({ data: [{ attributes: {
+        release: 'Young.Sheldon.S01.COMPLETE',
+        feature_details: { season_number: 1, episode_number: 1 },
+        files: [
+          { file_id: 1, file_name: 'Young.Sheldon.S01E01.srt' },
+          { file_id: 2, file_name: 'Young.Sheldon.S01E02.srt' },
+          { file_id: 3, file_name: 'Young.Sheldon.1x03.srt' }
+        ]
+      } }] }))
+    })
+
+    expect(results.map((candidate) => candidate.fileId)).toEqual([2])
+    expect(results[0].matchReasons).toContain('季数一致')
+    expect(results[0].matchReasons).toContain('集数一致')
+  })
+
   it('精确匹配优先，推荐理由来自实际匹配信息', async () => {
     const results = await searchOpenSubtitles({
       apiKey: 'test-key',
@@ -250,17 +385,17 @@ describe('在线字幕推荐', () => {
         } },
         { id: 'exact', attributes: {
           moviehash_match: true,
+          feature_details: { parent_title: 'Show', season_number: 1, episode_number: 1 },
           files: [{ file_id: 3, file_name: 'exact.srt' }]
         } }
       ] }), { headers: { 'Content-Type': 'application/json' } })
     })
 
-    expect(results.map((candidate) => candidate.fileId)).toEqual([3, 2, 1])
-    expect(results[0].matchReasons).toEqual(['文件 Hash 精确匹配'])
+    expect(results.map((candidate) => candidate.fileId)).toEqual([3, 2])
+    expect(results[0].matchReasons).toContain('文件 Hash 精确匹配')
     expect(results[1].matchReasons).toContain('季数一致')
     expect(results[1].matchReasons).toContain('集数一致')
     expect(results[1].matchReasons.join(' ')).toContain('bluray')
-    expect(results[2].matchReasons).toEqual(['参考下载量'])
   })
 })
 

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import http from 'node:http'
 import os from 'node:os'
 import { Store } from './store'
@@ -33,6 +34,13 @@ export interface SyncServer {
   close: () => void
 }
 
+function tokenMatches(authHeader: string | undefined, token: string): boolean {
+  const expected = Buffer.from(`Bearer ${token}`, 'utf8')
+  const actual = Buffer.from(authHeader ?? '', 'utf8')
+  if (actual.length !== expected.length) return false
+  return crypto.timingSafeEqual(actual, expected)
+}
+
 /**
  * 局域网同步服务：开启后手机端可拉取（GET /export）/推送（POST /import）。
  * 仅监听局域网，数据不加密（家庭网络场景）；服务随关闭动作/退出应用停止。
@@ -47,7 +55,7 @@ export function startSyncServer(store: Store, token: string): Promise<SyncServer
       res.end()
       return
     }
-    if (req.headers.authorization !== `Bearer ${token}`) {
+    if (!tokenMatches(req.headers.authorization, token)) {
       res.writeHead(401, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'pairing required' }))
       return

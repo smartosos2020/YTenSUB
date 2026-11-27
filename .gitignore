@@ -2,6 +2,8 @@ node_modules/
 out/
 dist/
 resources/dict.json
+resources/engines/*.exe
+resources/engines/*.tmp
 *.log
 
 # 内部计划文档（商业策略）与本地密钥

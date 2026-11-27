@@ -23,6 +23,11 @@ export interface CardRecord {
   days: number
   usedBy?: string
   usedAt?: number
+  /** 历史遗留字段，仅用于兼容旧数据识别 */
+  pending?: boolean
+  appliedPlan?: Exclude<Plan, 'free'>
+  appliedExpiresAt?: number
+  revokedAt?: number
 }
 
 export interface Entitlement {
@@ -78,7 +83,39 @@ export function applyCard(user: UserRecord, card: CardRecord, now: number): User
   }
 }
 
-/** 发信服务商：Resend 优先（需自有域名），SendGrid 兜底（单发件人验证即可，无需域名） */export function chooseMailProvider(env: {
+/** 密码学安全随机整数 [0, max)，拒绝采样消除模偏差 */
+export function secureRandomInt(max: number): number {
+  if (!Number.isInteger(max) || max <= 0 || max > 0x1_0000_0000) {
+    throw new RangeError('max must be a positive 32-bit integer')
+  }
+  const limit = Math.floor(0x1_0000_0000 / max) * max
+  const buf = new Uint32Array(1)
+  while (true) {
+    crypto.getRandomValues(buf)
+    if (buf[0] < limit) return buf[0] % max
+  }
+}
+
+/** 生成 6 位登录验证码，默认使用密码学安全随机源 */
+export function makeVerificationCode(randInt: (max: number) => number = secureRandomInt): string {
+  return String(randInt(1_000_000)).padStart(6, '0')
+}
+
+/** 恒定时间字符串比较（UTF-8 逐字节异或，不因前缀不匹配提前返回） */
+export function timingSafeEqualStr(a: string, b: string): boolean {
+  const enc = new TextEncoder()
+  const ba = enc.encode(a)
+  const bb = enc.encode(b)
+  const len = Math.max(ba.length, bb.length)
+  let diff = ba.length ^ bb.length
+  for (let i = 0; i < len; i++) {
+    diff |= (ba[i] ?? 0) ^ (bb[i] ?? 0)
+  }
+  return diff === 0
+}
+
+/** 发信服务商：Resend 优先（需自有域名），SendGrid 兜底（单发件人验证即可，无需域名） */
+export function chooseMailProvider(env: {
   RESEND_API_KEY?: string
   SENDGRID_API_KEY?: string
 }): 'resend' | 'sendgrid' | null {
@@ -90,9 +127,10 @@ export function applyCard(user: UserRecord, card: CardRecord, now: number): User
 /** 去除易混淆字符（0/O/1/I/L）的卡密字符集 */
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 
-/** 生成 YTS-XXXX-XXXX-XXXX 格式卡密；rand 返回 [0,1)，可注入以便测试 */
-export function makeCardCode(rand: () => number): string {
-  const pick = () => CODE_ALPHABET[Math.floor(rand() * CODE_ALPHABET.length)]
+/** 生成 YTS-XXXX-XXXX-XXXX 格式卡密；默认使用密码学安全随机源，也支持注入 rand 便于测试 */
+export function makeCardCode(rand?: () => number): string {
+  const pick = () =>
+    CODE_ALPHABET[rand ? Math.floor(rand() * CODE_ALPHABET.length) : secureRandomInt(CODE_ALPHABET.length)]
   const group = () => pick() + pick() + pick() + pick()
   return `YTS-${group()}-${group()}-${group()}`
 }

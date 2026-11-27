@@ -11,22 +11,23 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
+import { readContentEnv } from './content-api.mjs'
+import { acquirePipelineLock } from './pipeline-lock.mjs'
+import { createPipelineNetwork } from './pipeline-network.mjs'
+import { finishPipeline } from './pipeline-result.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.join(__dirname, '..')
 
-// .env 手工解析（不引依赖）
-const envText = fs.existsSync(path.join(root, '.env'))
-  ? fs.readFileSync(path.join(root, '.env'), 'utf8')
-  : ''
-const apiKey = /YOUTUBE_API_KEY=(\S+)/.exec(envText)?.[1]
+const env = readContentEnv()
+const apiKey = env.YOUTUBE_API_KEY
 if (!apiKey) {
   console.error('缺少 YOUTUBE_API_KEY：请在项目根目录 .env 写入 YOUTUBE_API_KEY=...')
   process.exit(1)
 }
 // C1 用户频道合并（可选）：缺任一键就当纯种子跑，不报错
-const apiUrl = /AUTH_API_URL=(\S+)/.exec(envText)?.[1] ?? 'https://ytensub-api.smartosos2020.workers.dev'
-const adminToken = /ADMIN_TOKEN=(\S+)/.exec(envText)?.[1]
+const apiUrl = env.AUTH_API_URL ?? 'https://ytensub-api.smartosos2020.workers.dev'
+const adminToken = env.ADMIN_TOKEN
 
 const seedPath = path.join(root, 'scripts', 'seed-channels.json')
 
@@ -58,6 +59,7 @@ if (!fs.existsSync(dictPath)) {
   process.exit(1)
 }
 
+const releaseLock = await acquirePipelineLock('collection')
 const require2 = createRequire(import.meta.url)
 const esbuild = require2('esbuild')
 const outFile = path.join(root, 'node_modules', '.cache', 'curated-run.cjs')
@@ -78,6 +80,7 @@ const statusPath = path.join(contentDir, 'pipeline-status.json')
 const startedAt = Date.now()
 let lastStatusReportAt = 0
 let pipelineState = {
+  ...(env.PIPELINE_JOB_ID ? { jobId: env.PIPELINE_JOB_ID } : {}),
   state: 'running',
   startedAt,
   updatedAt: startedAt,
@@ -109,7 +112,13 @@ async function reportStatus(state, patch = {}, force = false) {
   }
 }
 
-reportStatus('running', {}, true)
+let network
+await reportStatus('running', {}, true)
+  .then(async () => {
+    network = createPipelineNetwork(env)
+    await reportStatus('running', { message: '检查 YouTube 连接：' + network.description })
+    await network.check()
+  })
   .then(() => loadUserSeeds())
   .then((extraSeeds) =>
     runCuratedPipeline({
@@ -118,7 +127,8 @@ reportStatus('running', {}, true)
       seedPath,
       dictPath,
       extraSeeds,
-      fetchFn: (u, i) => fetch(u, i),
+      fetchFn: (u, i) => network.fetch(u, i),
+      onProgress: (metrics) => { void reportStatus('running', metrics) },
       onLog: (m) => {
         console.log(m)
         void reportStatus('running', { message: m })
@@ -126,21 +136,18 @@ reportStatus('running', {}, true)
     })
   )
   .then(async (summary) => {
-    // 管线完成后通过 Worker 发布内容；发布失败进入 failed 状态。
-    const { uploadSnapshot } = await import('./upload-snapshot.mjs')
-    const published = await uploadSnapshot(dbPath, (m) => {
-      console.log(m)
-      void reportStatus('running', { message: m })
+    const state = await finishPipeline(summary, {
+      report: reportStatus,
+      publish: async () => {
+        const { uploadSnapshot } = await import('./upload-snapshot.mjs')
+        return uploadSnapshot(dbPath, (m) => { console.log(m); void reportStatus('running', { message: m }) })
+      }
     })
-    await reportStatus('success', {
-      ...summary,
-      published,
-      finishedAt: Date.now(),
-      message: `完成：新增 ${summary.added} 部，库共 ${summary.total} 部；R2${published ? '已发布' : '未发布'}`
-    }, true)
+    if (state === 'failed') process.exitCode = 1
   })
-  .catch((e) => {
+  .catch(async (e) => {
     console.error('管线失败：', e)
-    void reportStatus('failed', { finishedAt: Date.now(), message: String(e).slice(0, 500) }, true)
+    await reportStatus('failed', { published: false, finishedAt: Date.now(), message: String(e).slice(0, 500) }, true)
     process.exitCode = 1
   })
+  .finally(async () => { await network?.close(); await releaseLock() })

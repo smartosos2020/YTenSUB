@@ -16,6 +16,13 @@ export interface LocalVideoFile {
   sidecarSubtitle?: LocalSubtitleFile
 }
 
+export function formatSubtitleSearchQuery(video: Pick<LocalVideoFile, 'query' | 'season' | 'episode'>): string {
+  if (video.season === undefined || video.episode === undefined) return video.query
+  const season = String(video.season).padStart(2, '0')
+  const episode = String(video.episode).padStart(2, '0')
+  return `${video.query} S${season}E${episode}`.trim()
+}
+
 export interface LocalPlaylistVideo {
   path: string
   name: string

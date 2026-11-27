@@ -5,6 +5,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { Store } from './store'
+import { ResourceDownloads } from './resource-downloads'
+import { searchResources } from './resource-search'
+import type { DownloadSettings } from '../shared/resources'
 import { CaptionsCache, CaptionCacheEntry } from './captions-cache'
 import { startSyncServer, SyncServer } from './sync'
 import { Dict } from './dict'
@@ -84,6 +87,13 @@ function migrateLegacyData(): void {
 migrateLegacyData()
 
 const store = new Store(dataFile)
+const resourceDownloads = new ResourceDownloads({
+  binary: app.isPackaged ? path.join(process.resourcesPath, 'engines', 'rqbit.exe')
+    : path.join(__dirname, '..', '..', 'resources', 'engines', 'rqbit.exe'),
+  dataDirectory: path.join(app.getPath('userData'), 'resource-downloads'),
+  defaultDirectory: path.join(app.getPath('downloads'), 'YTenSUB'),
+  proxy: () => store.getSettings().proxy
+})
 // 字幕缓存：独立文件，命中/写入都刷新"最近观看锚点"，LRU 淘汰
 const captionsCache = new CaptionsCache(
   path.join(app.getPath('userData'), 'captions-cache.json')
@@ -352,8 +362,8 @@ function registerIpc(): void {
         const hit = dict.lookup(w)
         return hit ? { translation: hit.t, phonetic: hit.p } : null
       },
-      googleTranslate: (t) => googleTranslateFree(t, async (u) => {
-        const response = await net.fetch(u)
+      googleTranslate: (t) => googleTranslateFree(t, async (u, init) => {
+        const response = await net.fetch(u, init)
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         return response
       }),
@@ -425,7 +435,7 @@ function registerIpc(): void {
       if (hit) return hit
       const r = await translateText(t, {
         localLookup: () => null, // 整句翻译不查单词词典
-        googleTranslate: (x) => googleTranslateFree(x, (u) => net.fetch(u)),
+        googleTranslate: (x) => googleTranslateFree(x, (u, init) => net.fetch(u, init)),
         llmTranslate: (x) => llmTranslate(x, s.llm, (u, init) => net.fetch(u, init)),
         enabled
       })
@@ -634,6 +644,42 @@ function registerIpc(): void {
     return video
   })
 
+  ipcMain.handle('resources:search', (_event, query: string) => searchResources(query, (url, init) => net.fetch(url, init)))
+  ipcMain.handle('resources:snapshot', () => resourceDownloads.snapshot())
+  ipcMain.handle('resources:settings', () => resourceDownloads.getSettings())
+  ipcMain.handle('resources:configure', (_event, patch: Partial<Omit<DownloadSettings, 'directory'>>) => resourceDownloads.configure(patch))
+  ipcMain.handle('resources:directory', async () => {
+    if (!mainWin) return null
+    const result = await dialog.showOpenDialog(mainWin, { title: '选择下载文件夹', properties: ['openDirectory', 'createDirectory'] })
+    return result.canceled || !result.filePaths[0] ? null : resourceDownloads.setDirectory(result.filePaths[0])
+  })
+  ipcMain.handle('resources:preview', (_event, magnet: string) => resourceDownloads.previewMagnet(magnet))
+  ipcMain.handle('resources:cancel-preview', () => resourceDownloads.cancelPreview())
+  ipcMain.handle('resources:pick-torrent', async () => {
+    if (!mainWin) return null
+    const result = await dialog.showOpenDialog(mainWin, {
+      title: '添加种子文件', filters: [{ name: 'BitTorrent 种子', extensions: ['torrent'] }], properties: ['openFile']
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    const stat = await fs.promises.stat(result.filePaths[0])
+    if (stat.size > 8 * 1024 * 1024) throw new Error('种子文件超过 8 MB')
+    return resourceDownloads.previewTorrent(await fs.promises.readFile(result.filePaths[0]))
+  })
+  ipcMain.handle('resources:add', (_event, token: string, files: number[]) => resourceDownloads.add(token, files))
+  ipcMain.handle('resources:action', (_event, id: string, action: 'pause' | 'start' | 'forget') => resourceDownloads.action(id, action))
+  ipcMain.handle('resources:open-folder', async (_event, id: string) => {
+    const folder = await resourceDownloads.filePath(id)
+    const error = await shell.openPath(folder)
+    if (error) throw new Error(error)
+  })
+  ipcMain.handle('resources:open-video', async (_event, id: string, fileIndex: number) => {
+    const filePath = await resourceDownloads.filePath(id, fileIndex)
+    const video = await readLocalVideo(filePath)
+    allowedLocalMedia.add(video.path)
+    store.addLocalVideoFolder(path.dirname(video.path))
+    return video
+  })
+
   ipcMain.handle('local:playlist-list', () =>
     Promise.all(store.listLocalVideoFolders().map(readLocalVideoFolder))
   )
@@ -774,26 +820,62 @@ function registerIpc(): void {
     }
   })
 
-  // 真人发音：dictionaryapi.dev 免费接口，查到音频 URL 交给渲染进程播放；进程内缓存
+  // 真人发音：dictionaryapi.dev 免费接口，查到音频 URL 交给渲染进程播放；进程内有界缓存
+  const PRONOUNCE_CACHE_MAX = 1000
+  const PRONOUNCE_TIMEOUT_MS = 8_000
   const pronounceCache = new Map<string, string | null>()
+  const cachePronounce = (key: string, value: string | null): void => {
+    if (pronounceCache.size >= PRONOUNCE_CACHE_MAX) {
+      const keys = pronounceCache.keys()
+      for (let i = 0; i < Math.floor(PRONOUNCE_CACHE_MAX / 2); i++) {
+        const k = keys.next()
+        if (k.done) break
+        pronounceCache.delete(k.value)
+      }
+    }
+    pronounceCache.set(key, value)
+  }
   ipcMain.handle('dict:pronounce', async (_e, word: string) => {
     const w = String(word ?? '').trim().toLowerCase()
     if (!/^[a-z][a-z'-]*$/.test(w)) return null
     const cached = pronounceCache.get(w)
     if (cached !== undefined) return cached
     let url: string | null = null
+    let shouldCache = false
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        controller.abort()
+        reject(new Error('ERR_TIMEOUT'))
+      }, PRONOUNCE_TIMEOUT_MS)
+      timer.unref?.()
+    })
     try {
-      const res = await net.fetch(
-        'https://api.dictionaryapi.dev/api/v2/entries/en/' + encodeURIComponent(w)
-      )
-      if (res.ok) {
-        const data = (await res.json()) as { phonetics?: { audio?: string }[] }[]
-        url = data?.[0]?.phonetics?.map((p) => p?.audio).find((a) => !!a) ?? null
-      }
+      const outcome = await Promise.race([
+        (async () => {
+          const res = await net.fetch(
+            'https://api.dictionaryapi.dev/api/v2/entries/en/' + encodeURIComponent(w),
+            { signal: controller.signal }
+          )
+          if (res.ok) {
+            const data = (await res.json()) as { phonetics?: { audio?: string }[] }[]
+            const audio = data?.[0]?.phonetics?.map((p) => p?.audio).find((a) => !!a) ?? null
+            return { url: audio, shouldCache: true }
+          }
+          if (res.status === 404) return { url: null, shouldCache: true }
+          return { url: null, shouldCache: false }
+        })(),
+        deadline
+      ])
+      url = outcome.url
+      shouldCache = outcome.shouldCache
     } catch {
-      // 网络失败按无发音处理
+      // 网络失败/超时按无发音处理，且不缓存，避免网络恢复后永久失声
+    } finally {
+      if (timer !== undefined) clearTimeout(timer)
     }
-    pronounceCache.set(w, url)
+    if (shouldCache) cachePronounce(w, url)
     return url
   })
 
@@ -879,7 +961,7 @@ function registerIpc(): void {
     const translateOne = async (t: string): Promise<string | null> => {
       const r = await translateText(t, {
         localLookup: () => null,
-        googleTranslate: (x) => googleTranslateFree(x, (u) => net.fetch(u)),
+        googleTranslate: (x) => googleTranslateFree(x, (u, init) => net.fetch(u, init)),
         llmTranslate: (x) => llmTranslate(x, s.llm, (u, init) => net.fetch(u, init)),
         enabled: ['google', 'llm']
       })
@@ -1095,8 +1177,19 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', () => {
+  let resourceShutdownComplete = false
+let resourceShutdownStarted = false
+app.on('before-quit', (event) => {
   store.flush()
   captionsCache.flush()
   vocabVisuals.flush()
+  if (!resourceShutdownComplete) {
+    event.preventDefault()
+    if (resourceShutdownStarted) return
+    resourceShutdownStarted = true
+    void resourceDownloads.stop().finally(() => {
+      resourceShutdownComplete = true
+      app.quit()
+    })
+  }
 })

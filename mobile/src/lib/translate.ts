@@ -50,23 +50,39 @@ export function wordTierTag(word: string): string | null {
   return '雅思'
 }
 
-/** Google 免费翻译接口（与桌面端同一端点） */
+/** Google 免费翻译接口（与桌面端同一端点）；超时覆盖完整请求与正文读取 */
 async function googleTranslate(text: string): Promise<TranslateResult | null> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      reject(new Error('ERR_TIMEOUT'))
+    }, 10_000)
+  })
   try {
     const url =
       'https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-CN&dt=t&q=' +
       encodeURIComponent(text)
-    const r = await fetch(url, { signal: AbortSignal.timeout(10_000) })
-    const data = (await r.json()) as unknown[]
-    const segs = (data?.[0] as unknown[]) ?? []
-    const translation = segs
-      .map((s) => (Array.isArray(s) ? String(s[0] ?? '') : ''))
-      .join('')
-      .trim()
-    if (!translation) return null
-    return { translation, source: 'google' }
+    return await Promise.race([
+      (async () => {
+        const r = await fetch(url, { signal: controller.signal })
+        if (!r.ok) return null
+        const data = (await r.json()) as unknown[]
+        const segs = (data?.[0] as unknown[]) ?? []
+        const translation = segs
+          .map((s) => (Array.isArray(s) ? String(s[0] ?? '') : ''))
+          .join('')
+          .trim()
+        if (!translation) return null
+        return { translation, source: 'google' as const }
+      })(),
+      deadline
+    ])
   } catch {
     return null
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
   }
 }
 

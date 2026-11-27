@@ -14,6 +14,7 @@ export const ADMIN_PAGE = `<!doctype html>
   h1 { font-size: 18px; } h2 { font-size: 14px; margin-top: 32px; border-bottom: 1px solid #333; padding-bottom: 6px; }
   input, select, button { font: inherit; padding: 6px 10px; background: #1c1c1c; color: #eee; border: 1px solid #444; border-radius: 6px; }
   button { cursor: pointer; background: #2d2d2d; } button:hover { background: #3a3a3a; }
+  button:disabled { opacity: .45; cursor: default; }
   .row { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; align-items: center; }
   pre { background: #161616; border: 1px solid #2a2a2a; border-radius: 8px; padding: 12px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; }
   .used { color: #888; } .ok { color: #7dd787; } .err { color: #ff7b72; }
@@ -116,6 +117,15 @@ export const ADMIN_PAGE = `<!doctype html>
   <pre id="chOut">—</pre>
   <div id="chActions"></div>
 
+  <h2>内容管线</h2>
+  <div class="row">
+    <button id="pipelineRun" onclick="startContentPipeline()" disabled>运行内容管线</button>
+    <button onclick="loadPipelineStatus()">刷新状态</button>
+    <span id="pipelineMsg" role="status"></span>
+  </div>
+  <p style="color:#999;font-size:12px">采集电脑上的执行端需保持在线；点击后采集频道、更新内容库并自动发布。</p>
+  <pre id="pipelineOut" aria-live="polite">切换到内容管理后读取执行端状态</pre>
+
   <h2>内容库概况</h2>
   <div class="row"><button onclick="loadContentStats()">刷新内容统计与管线状态</button></div>
   <pre id="contentOut">—</pre>
@@ -160,6 +170,7 @@ function switchTab(name) {
   for (var i = 0; i < panels.length; i++) panels[i].classList.toggle('on', panels[i].id === 'tab-' + name)
   var btns = document.querySelectorAll('.tabs button')
   for (var j = 0; j < btns.length; j++) btns[j].classList.toggle('on', btns[j].getAttribute('data-tab') === name)
+  if (name === 'content') { loadPipelineStatus(); loadContentStats() }
 }
 async function api(path, opts) {
   const r = await fetch(path, {
@@ -195,8 +206,15 @@ function fmtFilter(user, ent) {
 // ---------- 会员管理 ----------
 var usersCache = []
 var selectedEmail = ''
+async function fetchLegacyList(path, messageId) {
+  while (true) {
+    const d = await api(path)
+    if (!d.migration || d.migration.complete) return d
+    document.getElementById(messageId).textContent = '正在导入旧数据，已检查 ' + d.migration.scanned + ' 条；中断后刷新可继续'
+  }
+}
 async function fetchUsers() {
-  const d = await api('/admin/users?limit=200')
+  const d = await fetchLegacyList('/admin/users?limit=200', 'usersMsg')
   usersCache = d.users || []
   return usersCache
 }
@@ -314,7 +332,7 @@ async function genCards() {
 }
 async function listCards() {
   try {
-    const d = await api('/admin/cards?limit=100')
+    const d = await fetchLegacyList('/admin/cards?limit=100', 'cardsMsg')
     const body = document.getElementById('cardsBody')
     body.innerHTML = ''
     ;(d.cards || []).forEach(function (c) {
@@ -322,11 +340,19 @@ async function listCards() {
       tr.appendChild(el('td', c.code))
       tr.appendChild(el('td', c.plan))
       tr.appendChild(el('td', c.days + 'd'))
-      const status = el('td', c.usedAt ? ('已用 ' + (c.usedBy || '') + '  ' + fmtTime(c.usedAt)) : '未用')
+      const status = el('td', c.pending
+        ? ('待核对 ' + (c.usedBy || '') + '；上次目标到期 ' + fmtTime(c.appliedExpiresAt))
+        : c.usedAt ? ('已用 ' + (c.usedBy || '') + '  ' + fmtTime(c.usedAt)) : '未用')
       if (c.usedAt) status.className = 'used'
       tr.appendChild(status)
       const op = document.createElement('td')
-      if (!c.usedAt) {
+      if (c.pending) {
+        ;[['credit', '补发权益'], ['confirm', '确认已到账']].forEach(function (action) {
+          const btn = el('button', action[1])
+          btn.onclick = function () { resolvePendingCard(c, action[0]) }
+          op.appendChild(btn)
+        })
+      } else if (!c.usedAt) {
         const btn = el('button', '吊销')
         btn.onclick = function () { revokeCard(c.code) }
         op.appendChild(btn)
@@ -344,6 +370,17 @@ async function revokeCard(code) {
     await api('/admin/cards/revoke', { method: 'POST', body: JSON.stringify({ code: code }) })
     flash('cardsMsg', '已吊销 ' + code, false)
     listCards()
+  } catch (e) { flash('cardsMsg', String(e), true) }
+}
+async function resolvePendingCard(card, action) {
+  const message = action === 'credit'
+    ? '确认 ' + card.usedBy + ' 尚未收到此卡权益？将补发 ' + card.days + ' 天。已到账请选“确认已到账”。'
+    : '确认已核实 ' + card.usedBy + ' 收到此卡权益？此操作只完成核对，不增加时长。'
+  if (!confirm(message)) return
+  try {
+    await api('/admin/cards/resolve', { method: 'POST', body: JSON.stringify({ code: card.code, action: action }) })
+    await listCards()
+    flash('cardsMsg', '已处理 ' + card.code, false)
   } catch (e) { flash('cardsMsg', String(e), true) }
 }
 async function listExpiring() {
@@ -402,10 +439,71 @@ async function decide(handle, status) {
     listChannels()
   } catch (e) { show('chOut', String(e), true) }
 }
+var lastPipelineState = ''
+function formatPipelineStats(stats) {
+  if (!stats) return '旧任务未记录明细'
+  const names = { 'network-error': '网络异常', 'rate-limited': '限流429', 'http-error': 'HTTP错误', 'player-error': '播放器拒绝或需验证', 'invalid-response': '响应异常', 'empty-captions': '字幕响应为空' }
+  const reasons = {}
+  Object.keys(stats.failureReasons || {}).forEach(function (key) { reasons[names[key] || key] = stats.failureReasons[key] })
+  return { 待采集或刷新: stats.candidates, 通过基本筛选: stats.eligible, 字幕请求视频数: stats.captionAttempts,
+    字幕成功: stats.captionSucceeded, 无英文字幕: stats.noCaptions, 视频不可用: stats.unavailable,
+    字幕请求失败: stats.captionFailures, 频道失败: stats.channelFailures, 失败分类: reasons }
+}
+function renderPipelineStatus(data) {
+  const job = data.job
+  const busy = job && (job.state === 'queued' || job.state === 'running')
+  const button = document.getElementById('pipelineRun')
+  button.disabled = !data.online || !!busy
+  button.textContent = busy ? (job.state === 'queued' ? '等待采集端接收…' : '管线运行中…') : '运行内容管线'
+  button.title = data.online ? '' : '请先在采集电脑启动执行端'
+  const names = { queued: '排队中', running: '运行中', success: '成功', partial: '部分完成', failed: '失败' }
+  show('pipelineOut', {
+    采集端: data.online ? '在线' : '离线',
+    最近连接: data.lastSeenAt ? new Date(data.lastSeenAt).toLocaleString() : '尚未连接',
+    最近任务: job ? {
+      状态: names[job.state] || job.state,
+      提交时间: new Date(job.requestedAt).toLocaleString(),
+      开始时间: job.startedAt ? new Date(job.startedAt).toLocaleString() : '—',
+      更新时间: new Date(job.updatedAt).toLocaleString(),
+      完成时间: job.finishedAt ? new Date(job.finishedAt).toLocaleString() : '—',
+      新增条目: job.added ?? '—', 刷新旧条目: job.refreshed ?? '—', 补全旧条目: job.repaired ?? '—', 库总量: job.total ?? '—',
+      采集统计: formatPipelineStats(job.stats),
+      发布结果: typeof job.published === 'boolean' ? (job.published ? '已发布' : '未发布') : '—',
+      进度: job.message || '—'
+    } : '尚无后台触发记录'
+  })
+  if (lastPipelineState === 'running' && job && ['success', 'partial', 'failed'].includes(job.state)) loadContentStats()
+  lastPipelineState = job ? job.state : ''
+}
+async function loadPipelineStatus() {
+  try { renderPipelineStatus(await api('/admin/pipeline')) }
+  catch (e) { document.getElementById('pipelineRun').disabled = true; show('pipelineOut', String(e), true) }
+}
+async function startContentPipeline() {
+  const button = document.getElementById('pipelineRun')
+  if (button.disabled) return
+  button.disabled = true
+  button.textContent = '正在提交…'
+  const msg = document.getElementById('pipelineMsg')
+  msg.textContent = ''
+  try {
+    const data = await api('/admin/pipeline/run', { method: 'POST' })
+    renderPipelineStatus(data)
+    msg.textContent = '任务已提交，进度会自动更新'
+    msg.className = 'ok'
+  } catch (e) {
+    msg.textContent = String(e); msg.className = 'err'
+    await loadPipelineStatus()
+  }
+}
+setInterval(function () {
+  if (!document.hidden && document.getElementById('tab-content').classList.contains('on') && tokInput.value.trim()) loadPipelineStatus()
+}, 5000)
+
 async function loadContentStats() {
   try {
     const [r, pipelineResult] = await Promise.all([
-      fetch('https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/content-db.json'),
+      fetch('/content/content-db.json', { cache: 'no-store' }),
       api('/admin/content-status')
     ])
     if (!r.ok) throw new Error(r.status + ' ' + r.statusText)
@@ -426,7 +524,7 @@ async function loadContentStats() {
     const tagLines = {}
     top.forEach(function (t) { tagLines[t] = tagCount[t] })
     const pipeline = pipelineResult.status
-    const stateNames = { running: '运行中', success: '成功', failed: '失败' }
+    const stateNames = { running: '运行中', success: '成功', partial: '部分完成', failed: '失败' }
     show('contentOut', {
       最近管线: pipeline ? {
         状态: stateNames[pipeline.state] || pipeline.state,
@@ -434,6 +532,8 @@ async function loadContentStats() {
         更新时间: pipeline.updatedAt ? new Date(pipeline.updatedAt).toLocaleString() : '—',
         完成时间: pipeline.finishedAt ? new Date(pipeline.finishedAt).toLocaleString() : '运行中/未完成',
         新增条目: pipeline.added ?? '—',
+        刷新旧条目: pipeline.refreshed ?? '—', 补全旧条目: pipeline.repaired ?? '—',
+        采集统计: formatPipelineStats(pipeline.stats),
         库总量: pipeline.total ?? '—',
         R2发布: typeof pipeline.published === 'boolean' ? (pipeline.published ? '已发布' : '未发布') : '—',
         进度: pipeline.message || '—'

@@ -1,21 +1,16 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { CuratedPipeline, filterVideo, CuratedVideo, SeedChannel } from './curated'
-import { fetchEnglishCues } from './shadowing'
+import { fetchEnglishCues, type EnglishCuesResult } from './shadowing'
 import { estimateLevelByFreq } from './cefr'
 import { Dict } from './dict'
 import { mapYtCategoryToTag } from '../shared/types'
+import { emptyPipelineStats, type PipelineMetrics, type PipelineSummary } from '../shared/pipeline'
 
-/** 30 天前的条目重抓刷新（YouTube API ToS 数据新鲜度要求） */
 const REFRESH_MS = 30 * 86_400_000
-
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 
-/**
- * Phase 0 管线主流程（由 scripts/content-pipeline.mjs 打包运行）：
- * 种子频道逐个拉新视频 → 过滤 → 抓字幕定级 → 打标签 → 增量写入 content-db.json。
- * 解析到的 channelId 回写种子文件，下次省一次解析。
- */
+/** Local collection. Preserve partial results, but never report failed collection as success. */
 export async function runCuratedPipeline(opts: {
   apiKey: string
   dbPath: string
@@ -23,154 +18,132 @@ export async function runCuratedPipeline(opts: {
   dictPath: string
   fetchFn: FetchLike
   onLog: (m: string) => void
-  /** 额外种子（如已审核用户频道），与文件种子一起采集但不回写种子文件 */
+  onProgress?: (metrics: PipelineMetrics) => void
   extraSeeds?: SeedChannel[]
-}): Promise<{ added: number; total: number }> {
+  sleep?: (ms: number) => Promise<void>
+}): Promise<PipelineSummary> {
   const log = opts.onLog
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)))
   const pipe = new CuratedPipeline({ apiKey: opts.apiKey, fetchFn: opts.fetchFn, onLog: log })
   const fileSeeds = JSON.parse(fs.readFileSync(opts.seedPath, 'utf8')) as SeedChannel[]
-  // 用户频道排最前：付费功能优先采集，避免种子列表中途遇 429 收工导致用户频道饿死
-  const seeds = opts.extraSeeds?.length ? opts.extraSeeds.concat(fileSeeds) : fileSeeds
-  const db: Record<string, CuratedVideo> = fs.existsSync(opts.dbPath)
-    ? (JSON.parse(fs.readFileSync(opts.dbPath, 'utf8')) as Record<string, CuratedVideo>)
-    : {}
+  const seeds = [...(opts.extraSeeds ?? []), ...fileSeeds]
+  const db: Record<string, CuratedVideo> = fs.existsSync(opts.dbPath) ? JSON.parse(fs.readFileSync(opts.dbPath, 'utf8')) : {}
   const dict = new Dict(opts.dictPath)
   const now = Date.now()
-  let added = 0
+  const stats = emptyPipelineStats()
+  const repaired = new Set<string>()
+  const visited = new Set<string>()
+  const captions = new Map<string, EnglishCuesResult>()
+  let added = 0, refreshed = 0, consecutiveFail = 0, stopped = ''
+  const metrics = (): PipelineMetrics => ({ added, refreshed, repaired: repaired.size, total: Object.keys(db).length,
+    stats: { ...stats, failureReasons: { ...stats.failureReasons } } })
+  const progress = (): void => { opts.onProgress?.(metrics()) }
+  const getCues = async (videoId: string): Promise<EnglishCuesResult> => {
+    const cached = captions.get(videoId)
+    if (cached) return cached
+    stats.captionAttempts++
+    let result = await fetchEnglishCues(videoId, opts.fetchFn)
+    if ('error' in result && (result.error === 'rate-limited' || result.error === 'network-error' || result.error === 'http-error' && (result.status ?? 0) >= 500)) {
+      await sleep(result.error === 'rate-limited' ? 4000 : 1000)
+      result = await fetchEnglishCues(videoId, opts.fetchFn)
+    }
+    captions.set(videoId, result)
+    if ('cues' in result) {
+      stats.captionSucceeded++
+      consecutiveFail = 0
+    } else if (result.error === 'no-captions' || result.error === 'video-unavailable') {
+      if (result.error === 'no-captions') stats.noCaptions++; else stats.unavailable++
+      consecutiveFail = 0
+      log('  跳过 ' + videoId + '：' + (result.error === 'no-captions' ? '无英文字幕轨' : '视频不可用') + (result.reason ? '（' + result.reason + '）' : ''))
+    } else {
+      stats.captionFailures++
+      stats.failureReasons[result.error] = (stats.failureReasons[result.error] ?? 0) + 1
+      const detail = [result.error, result.stage, result.status ? 'HTTP ' + result.status : '', result.reason].filter(Boolean).join('；')
+      log('  ✗ ' + videoId + ' 字幕获取失败：' + detail)
+      if (++consecutiveFail >= 3) stopped = '连续 3 个视频字幕请求失败（' + detail + '），已停止采集，请检查网络、代理或字幕接口后重试'
+    }
+    progress()
+    await sleep(300)
+    return result
+  }
 
-  // 官方分类 ID → 名字（打标签用）；innertube 的 ANDROID 响应没有 microformat，走官方 API
   const catMap = await pipe.videoCategoryMap()
   const catName = (id: string): string => catMap.get(id) ?? ''
-
-  // 回填：库里 tags 为空的老条目，按 categoryId 补打（不动 level）
-  const untagged = Object.values(db).filter((e) => (e.tags ?? []).length === 0)
-  if (untagged.length > 0) {
-    const idMap = await pipe.videoCategoryIds(untagged.map((e) => e.videoId))
-    let fixed = 0
-    for (const e of untagged) {
-      const tag = mapYtCategoryToTag(catName(idMap.get(e.videoId) ?? ''))
-      if (tag) {
-        e.tags = [tag]
-        e.categoryId = idMap.get(e.videoId) ?? ''
-        fixed++
+  const untagged = Object.values(db).filter(e => !(e.tags ?? []).length)
+  if (untagged.length) {
+    try {
+      const idMap = await pipe.videoCategoryIds(untagged.map(e => e.videoId))
+      for (const e of untagged) {
+        const tag = mapYtCategoryToTag(catName(idMap.get(e.videoId) ?? ''))
+        if (tag) { e.tags = [tag]; e.categoryId = idMap.get(e.videoId) ?? ''; repaired.add(e.videoId) }
       }
-    }
-    if (fixed > 0) log(`回填标签：${fixed} 部`)
+    } catch { stats.channelFailures++; log('回填分类失败，请检查 YouTube Data API；继续保留已有分类') }
   }
 
-  // 回填：level 为空的老条目，重抓字幕（innertube，非 Data API）按新阈值补估
-  const noLevel = Object.values(db).filter((e) => !e.level)
-  if (noLevel.length > 0) {
-    let fixedLv = 0
-    for (const e of noLevel) {
-      const caps = await fetchEnglishCues(e.videoId, opts.fetchFn)
-      if ('cues' in caps) {
-        const lv = estimateLevelByFreq(caps.cues, dict)
-        if (lv) {
-          e.level = lv
-          fixedLv++
-        }
+  // A single request repairs both missing level and missing cues. Reuse existing cues first.
+  for (const e of Object.values(db)) {
+    if (stopped) break
+    if (e.level && e.cues?.length) continue
+    const result = e.cues?.length ? { cues: e.cues } : await getCues(e.videoId)
+    if ('cues' in result) {
+      if (!e.cues?.length) { e.cues = result.cues; repaired.add(e.videoId) }
+      if (!e.level) {
+        const level = estimateLevelByFreq(result.cues, dict)
+        if (level) { e.level = level; repaired.add(e.videoId) }
       }
-      await new Promise((r) => setTimeout(r, 400))
     }
-    log(`回填难度：${fixedLv}/${noLevel.length} 部`)
   }
-
-  // 回填：没有字幕的老条目，抓字幕存进快照（客户端免抓直接用）
-  const noCues = Object.values(db).filter((e) => !(e.cues ?? []).length)
-  if (noCues.length > 0) {
-    let fixedCues = 0
-    let cueFail = 0
-    for (const e of noCues) {
-      const caps = await fetchEnglishCues(e.videoId, opts.fetchFn)
-      if ('cues' in caps) {
-        e.cues = caps.cues
-        fixedCues++
-        cueFail = 0
-      } else if (caps.error === 'rate-limited' && ++cueFail >= 3) {
-        log('回填字幕遇限流，暂停（下次续传）')
-        break
-      }
-      // no-captions：视频本身没字幕轨，不计入限流，直接跳过
-      await new Promise((r) => setTimeout(r, 400))
-    }
-    log(`回填字幕：${fixedCues}/${noCues.length} 部`)
-  }
+  if (repaired.size) log('补全旧条目：' + repaired.size + ' 部')
+  progress()
 
   for (const seed of seeds) {
+    if (stopped) break
     try {
       const cid = await pipe.resolveChannelId(seed)
-      if (!cid) {
-        log(`✗ ${seed.name}：频道解析失败（handle 可能不对）`)
-        continue
-      }
-      if (!seed.channelId) seed.channelId = cid // 缓存，省下次解析
+      if (!cid) { stats.channelFailures++; log('✗ ' + seed.name + '：频道解析失败'); continue }
+      if (!seed.channelId) seed.channelId = cid
       const ids = await pipe.listRecentVideoIds(cid, 15)
-      const fresh = ids.filter((id) => !db[id] || now - db[id].fetchedAt > REFRESH_MS)
-      if (fresh.length === 0) {
-        log(`= ${seed.name}：无新视频`)
-        continue
-      }
+      const fresh = ids.filter(id => !visited.has(id) && (!db[id] || now - db[id].fetchedAt > REFRESH_MS))
+      fresh.forEach(id => visited.add(id))
+      stats.candidates += fresh.length
+      if (!fresh.length) { log('= ' + seed.name + '：无待采集或刷新视频'); continue }
       const details = (await pipe.detailVideos(fresh)).filter(filterVideo)
-      log(`· ${seed.name}：${fresh.length} 新视频，${details.length} 部合格`)
-      let consecutiveFail = 0
+      stats.eligible += details.length
+      log('· ' + seed.name + '：' + fresh.length + ' 部待采集或刷新，' + details.length + ' 部通过基本筛选')
+      progress()
       for (const v of details) {
-        try {
-          // 限流（429）重试一次，连续 3 次提前收工；视频本身没字幕轨直接跳过不误判
-          let caps = await fetchEnglishCues(v.videoId, opts.fetchFn)
-          if ('error' in caps && caps.error === 'rate-limited') {
-            await new Promise((r) => setTimeout(r, 4000))
-            caps = await fetchEnglishCues(v.videoId, opts.fetchFn)
-          }
-          if ('error' in caps) {
-            if (caps.error === 'no-captions') continue // 没字幕轨：跳过，不算限流
-            consecutiveFail++
-            if (consecutiveFail >= 3) {
-              log('连续 3 部字幕被限流（429）——今天到此为止，明天再跑即可增量续传')
-              throw new Error('rate-limited')
-            }
-            continue
-          }
-          consecutiveFail = 0
-          const level = estimateLevelByFreq(caps.cues, dict)
-          const tag = mapYtCategoryToTag(catName(v.categoryId)) || mapYtCategoryToTag(caps.category)
-          db[v.videoId] = {
-            videoId: v.videoId,
-            title: v.title,
-            channel: v.channelTitle,
-            channelId: v.channelId,
-            duration: v.durationSec,
-            level,
-            tags: tag ? [tag] : [],
-            ytCategory: caps.category,
-            categoryId: v.categoryId,
-            thumbnail: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
-            publishedAt: Date.parse(v.publishedAt) || 0,
-            fetchedAt: now,
-            cues: caps.cues // 字幕随快照分发：客户端打开精选视频直接用，不必再抓（限流环境下也秒出）
-          }
-          added++
-          await new Promise((r) => setTimeout(r, 250)) // 字幕抓取限速，温柔一点
-        } catch (e) {
-          if ((e as Error).message === 'rate-limited') throw e // 限流哨兵穿透
-          log(`  ✗ ${v.videoId} 字幕/定级失败：${String(e)}`)
+        if (stopped) break
+        const caps = await getCues(v.videoId)
+        if ('error' in caps) continue
+        const level = estimateLevelByFreq(caps.cues, dict)
+        const tag = mapYtCategoryToTag(catName(v.categoryId)) || mapYtCategoryToTag(caps.category)
+        const existed = !!db[v.videoId]
+        db[v.videoId] = {
+          videoId: v.videoId, title: v.title, channel: v.channelTitle, channelId: v.channelId,
+          duration: v.durationSec, level, tags: tag ? [tag] : [], ytCategory: caps.category,
+          categoryId: v.categoryId, thumbnail: 'https://i.ytimg.com/vi/' + v.videoId + '/hqdefault.jpg',
+          publishedAt: Date.parse(v.publishedAt) || 0, fetchedAt: now, cues: caps.cues
         }
+        if (existed) refreshed++; else added++
+        progress()
       }
-    } catch (e) {
-      if ((e as Error).message === 'rate-limited') {
-        log('管线提前结束（限流），已入库部分已保存')
-        break
-      }
-      log(`✗ ${seed.name}：${String(e)}`)
+    } catch (error) {
+      stats.channelFailures++
+      // YouTube API errors only include operation + status, never credential-bearing URLs.
+      log('✗ ' + seed.name + '：' + (error instanceof Error && /^YouTube API \w+ HTTP \d+$/.test(error.message) ? error.message : '频道采集失败，请检查网络或 API 配置'))
     }
   }
 
-  // 回写只落文件种子（缓存解析到的 channelId）；extraSeeds 每次从服务端重拉，不写入
   fs.writeFileSync(opts.seedPath, JSON.stringify(fileSeeds, null, 2), 'utf8')
-  const tmp = opts.dbPath + '.tmp'
-  fs.mkdirSync(path.dirname(opts.dbPath), { recursive: true })
-  fs.writeFileSync(tmp, JSON.stringify(db, null, 2), 'utf8')
-  fs.renameSync(tmp, opts.dbPath)
-  log(`完成：新增 ${added} 部，库共 ${Object.keys(db).length} 部`)
-  return { added, total: Object.keys(db).length }
+  if (added || refreshed || repaired.size || !fs.existsSync(opts.dbPath)) {
+    fs.mkdirSync(path.dirname(opts.dbPath), { recursive: true })
+    fs.writeFileSync(opts.dbPath + '.tmp', JSON.stringify(db, null, 2), 'utf8')
+    fs.renameSync(opts.dbPath + '.tmp', opts.dbPath)
+  }
+  const incomplete = !!stopped || stats.captionFailures > 0 || stats.channelFailures > 0
+  const state = incomplete ? added + refreshed + repaired.size > 0 ? 'partial' : 'failed' : 'success'
+  const counts = '新增 ' + added + ' 部，刷新 ' + refreshed + ' 部，补全 ' + repaired.size + ' 部，库共 ' + Object.keys(db).length + ' 部；字幕成功 ' + stats.captionSucceeded + '/' + stats.captionAttempts + '，无英文字幕 ' + stats.noCaptions + '，请求失败 ' + stats.captionFailures
+  const message = (state === 'success' ? '完成' : state === 'partial' ? '部分完成' : '采集失败') + '：' + counts + (stopped ? '；' + stopped : '')
+  log(message)
+  return { ...metrics(), state, message }
 }

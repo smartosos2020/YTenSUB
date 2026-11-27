@@ -1,10 +1,13 @@
 {
   "name": "ytensub",
-  "version": "0.1.15",
+  "version": "0.1.17",
   "private": true,
   "description": "Desktop YouTube player for English learning: bilingual (EN/ZH) subtitles, subtitle word translation, vocabulary book, favorites",
   "main": "out/main/index.js",
   "scripts": {
+    "predev": "node scripts/prepare-rqbit.mjs",
+    "prebuild": "node scripts/prepare-rqbit.mjs",
+    "predist": "node scripts/prepare-rqbit.mjs",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
@@ -14,7 +17,9 @@
     "build:icon": "node scripts/build-icon.mjs",
     "dist": "electron-vite build && electron-builder",
     "release": "npm run dist && node scripts/upload-release.mjs",
-    "pipeline": "node scripts/content-pipeline.mjs"
+    "pipeline": "node scripts/content-pipeline.mjs",
+    "pipeline:runner": "node scripts/pipeline-runner.mjs",
+    "pipeline:runner:start": "node scripts/start-pipeline-runner.mjs"
   },
   "dependencies": {
     "@mantine/core": "^7.17.8",
@@ -48,6 +53,7 @@
     "jsdom": "^29.1.1",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.67.0",
+    "undici": "^7.30.2",
     "vite": "^5.4.10",
     "vitest": "^2.1.4"
   },
@@ -56,7 +62,17 @@
     "productName": "YTenSUB",
     "files": [
       "out/**",
-      "resources/**"
+      "resources/**",
+      "!resources/engines/**"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/engines",
+        "to": "engines",
+        "filter": [
+          "rqbit.exe"
+        ]
+      }
     ],
     "publish": [
       {

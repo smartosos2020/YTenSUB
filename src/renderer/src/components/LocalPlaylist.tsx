@@ -30,7 +30,7 @@ export default function LocalPlaylist({ currentPath, openingPath, onPlay, action
       .catch(() => { if (alive) setError('无法读取播放列表，请点击刷新重试') })
       .finally(() => { if (alive) setBusy(false) })
     return () => { alive = false }
-  }, [])
+  }, [currentPath])
 
   const refresh = async (): Promise<void> => {
     onShowPlaylist()

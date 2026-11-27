@@ -9,6 +9,7 @@ import {
   isValidEmail,
   isValidVideoId,
   makeCardCode,
+  makeVerificationCode,
   mergePrefs,
   normalizeCardCode,
   normalizeChannelHandle,
@@ -16,6 +17,7 @@ import {
   revokePlan,
   sanitizeAnnounce,
   sanitizePrefs,
+  timingSafeEqualStr,
   toEntitlement
 } from '../server/src/logic'
 
@@ -219,5 +221,21 @@ describe('resolveFilterSensitive', () => {
   it('toEntitlement 叠加用户覆盖', () => {
     const u = { ...user('pro', NOW + 1), filterSensitive: false }
     expect(toEntitlement(u, NOW, 7, true).filterSensitive).toBe(false)
+  })
+})
+
+describe('安全随机数与常量时间比较', () => {
+  it('默认密码学随机生成卡密与 6 位验证码均符合格式', () => {
+    for (let i = 0; i < 30; i++) {
+      expect(isValidCardCode(makeCardCode())).toBe(true)
+      expect(makeVerificationCode()).toMatch(/^\d{6}$/)
+    }
+  })
+
+  it('timingSafeEqualStr 精确匹配字符串', () => {
+    expect(timingSafeEqualStr('secret-token', 'secret-token')).toBe(true)
+    expect(timingSafeEqualStr('secret-token', 'secret-tokeN')).toBe(false)
+    expect(timingSafeEqualStr('short', 'longer-string')).toBe(false)
+    expect(timingSafeEqualStr('', '')).toBe(true)
   })
 })

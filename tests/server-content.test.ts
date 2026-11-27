@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import worker, { type Env } from '../server/src/index'
 import { MAX_CONTENT_BYTES } from '../server/src/content'
+import { createSqliteD1 } from './helpers/d1-sqlite'
 
 const ID = 'abcdefghijk'
 const BASE = 'https://api.example'
 const metadata = { [ID]: { videoId: ID, title: 'Example' } }
 function setup(plan = 'pro_plus') {
+  const { db } = createSqliteD1()
   const objects = new Map<string, string>([
     ['content-db.json', JSON.stringify(metadata)],
     [`cues/${ID}.json`, JSON.stringify([{ start: 0, dur: 1, text: 'Hello' }])]
@@ -22,6 +24,7 @@ function setup(plan = 'pro_plus') {
     return { httpEtag: '"new"' }
   })
   const env = {
+    DB: db,
     ADMIN_TOKEN: 'admin', CONTENT_UPLOAD_TOKEN: 'uploader', CONTENT_BUCKET: { get, put },
     YTENSUB_KV: {
       getWithMetadata: vi.fn(async (key: string) => ({
