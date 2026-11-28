@@ -17,6 +17,7 @@ export function readContentEnv() {
 }
 
 export function createContentApi({ apiUrl, uploadToken, fetchFn = fetch }) {
+  if (!apiUrl) throw new Error('缺少 AUTH_API_URL，请显式配置要发布的服务地址')
   const origin = new URL(apiUrl)
   if (origin.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(origin.hostname)) {
     throw new Error('Content API requires HTTPS')

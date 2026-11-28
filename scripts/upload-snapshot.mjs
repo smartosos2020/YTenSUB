@@ -9,7 +9,7 @@ const INDEX_KEEP = 20
 export async function uploadSnapshot(dbPath, onLog, options = {}) {
   const env = readContentEnv()
   const api = options.api ?? createContentApi({
-    apiUrl: env.AUTH_API_URL || 'https://ytensub-api.smartosos2020.workers.dev',
+    apiUrl: env.AUTH_API_URL,
     uploadToken: env.CONTENT_UPLOAD_TOKEN || env.ADMIN_TOKEN
   })
   if (!fs.existsSync(dbPath)) throw new Error('content-db.json 不存在，无法发布')

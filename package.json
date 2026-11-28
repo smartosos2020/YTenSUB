@@ -15,8 +15,9 @@
     "lint": "eslint src tests",
     "build:dict": "node scripts/build-dict.mjs",
     "build:icon": "node scripts/build-icon.mjs",
-    "dist": "electron-vite build && electron-builder",
-    "release": "npm run dist && node scripts/upload-release.mjs",
+    "dist": "node scripts/package-desktop.mjs",
+    "dist:official": "node scripts/package-desktop.mjs --official",
+    "release": "npm run dist:official && node scripts/upload-release.mjs",
     "pipeline": "node scripts/content-pipeline.mjs",
     "pipeline:runner": "node scripts/pipeline-runner.mjs",
     "pipeline:runner:start": "node scripts/start-pipeline-runner.mjs"
@@ -72,13 +73,6 @@
         "filter": [
           "rqbit.exe"
         ]
-      }
-    ],
-    "publish": [
-      {
-        "provider": "generic",
-        "url": "https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/releases",
-        "channel": "latest"
       }
     ],
     "win": {

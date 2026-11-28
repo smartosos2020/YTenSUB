@@ -20,6 +20,7 @@ import type { CuratedFeedback } from '../shared/curated-feedback'
 import { estimateLevelByFreq } from './cefr'
 import { CURATED_SNAPSHOT_URL, CURATED_INDEX_URL, CURATED_INC_URL_BASE } from '../shared/curated-config'
 import { VocabVisuals, isLikelyConcreteNoun } from './vocab-visuals'
+import { UPDATE_URL, INSTALLER_URL } from './update-config'
 import type { VocabVisualRequest } from '../shared/vocab-visual'
 import type { LocalVideoFile } from '../shared/local-media'
 import {
@@ -546,10 +547,12 @@ function registerIpc(): void {
     }
     return undefined
   })
-  ipcMain.on('update:install', () => autoUpdater.quitAndInstall())
+  ipcMain.on('update:install', () => {
+    if (app.isPackaged && UPDATE_URL) autoUpdater.quitAndInstall()
+  })
   // 手动检查更新（点侧栏版本号触发）：返回结果供渲染进程给瞬时反馈
   ipcMain.handle('update:check', async (): Promise<'available' | 'latest' | 'error'> => {
-    if (!app.isPackaged) return 'error' // dev 环境无更新源（app-update.yml），检查必然失败
+    if (!app.isPackaged || !UPDATE_URL) return 'error'
     try {
       const r = await checkForUpdatesWithTimeout(() => autoUpdater.checkForUpdates())
       const latest = r?.updateInfo?.version
@@ -558,11 +561,9 @@ function registerIpc(): void {
       return 'error'
     }
   })
-  // 自动更新不可用时的兜底：浏览器打开 R2 固定名安装包直接下载
+  // Fallback uses the same explicitly configured update service.
   ipcMain.on('update:open-releases', () => {
-    void shell.openExternal(
-      'https://pub-c1dea26a05844ec7959997061df9f305.r2.dev/releases/YTenSUB-Setup-latest.exe'
-    )
+    if (app.isPackaged && INSTALLER_URL) void shell.openExternal(INSTALLER_URL)
   })
 
   // 字幕正文抓取：webview 里不带 cookie 的 timedtext 请求会被 YouTube 拖进慢车道（实测 35s+），
@@ -1095,8 +1096,8 @@ app.whenReady().then(() => {
   createWindow()
   // 代理设置（启动时从存储加载；目标用户需要自备网络环境时配）
   applyProxy(store.getSettings().proxy ?? '')
-  // 自动更新：dev 环境跳过（无 app-update.yml，检查了也必然失败）
-  if (app.isPackaged) setupAutoUpdater()
+  // Only packaged builds with an explicit update service may contact the update provider.
+  if (app.isPackaged && UPDATE_URL) setupAutoUpdater()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

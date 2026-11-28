@@ -26,7 +26,7 @@ if (!apiKey) {
   process.exit(1)
 }
 // C1 用户频道合并（可选）：缺任一键就当纯种子跑，不报错
-const apiUrl = env.AUTH_API_URL ?? 'https://ytensub-api.smartosos2020.workers.dev'
+const apiUrl = env.AUTH_API_URL
 const adminToken = env.ADMIN_TOKEN
 
 const seedPath = path.join(root, 'scripts', 'seed-channels.json')

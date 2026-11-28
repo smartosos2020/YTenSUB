@@ -11,11 +11,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
+import { loadReleaseConfig } from './client-config.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.join(__dirname, '..')
 const PREFIX = 'releases'
-const PUBLIC_BASE = 'https://pub-c1dea26a05844ec7959997061df9f305.r2.dev'
 const FIXED_NAME = 'YTenSUB-Setup-latest.exe'
 
 function readEnv() {
@@ -42,6 +42,9 @@ async function main() {
     console.log('R2 未配置（.env 缺 R2_*），跳过上传')
     return
   }
+
+  const { updateUrl } = loadReleaseConfig(root)
+  if (new URL(updateUrl).pathname !== `/${PREFIX}`) throw new Error('Release upload requires an update URL ending in /releases')
 
   const dist = path.join(root, 'dist')
   const ymlPath = path.join(dist, 'latest.yml')
@@ -94,12 +97,12 @@ async function main() {
   await put(`${PREFIX}/latest.yml`, ymlPath, 'no-cache')
 
   // 回读校验：公开地址应立刻能拿到刚传的 latest.yml，且版本与本地一致
-  const res = await fetch(`${PUBLIC_BASE}/${PREFIX}/latest.yml`, { cache: 'no-store' })
+  const res = await fetch(`${updateUrl}/latest.yml`, { cache: 'no-store' })
   if (!res.ok) throw new Error(`回读 latest.yml 失败：HTTP ${res.status}`)
   const remoteVersion = parseVersion(await res.text())
   console.log(`已上传 releases/：latest.yml + ${binaries.length} 个产物 + 固定名副本 ${FIXED_NAME}（源：${installer}）`)
   console.log(
-    `回读校验：${PUBLIC_BASE}/${PREFIX}/latest.yml → version ${remoteVersion}` +
+    `回读校验：${updateUrl}/latest.yml → version ${remoteVersion}` +
       `（本地 ${localVersion}）${remoteVersion === localVersion ? '，一致' : '，不一致！'}`
   )
   if (remoteVersion !== localVersion) process.exitCode = 1

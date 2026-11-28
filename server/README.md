@@ -50,7 +50,7 @@ npm run db:import -- --base-url https://你的Worker地址 # 导入并核对旧�
 
 > 两个邮件 key 都配时 Resend 优先；只配 SendGrid 也能跑（适合没域名阶段），有了域名把 RESEND_API_KEY 配上即完成迁移。
 
-部署后把 Worker 地址填到桌面端 `src/shared/auth-config.ts` 与手机端 `mobile/src/lib/auth.ts`。
+部署后通过客户端环境变量填写自己的 Worker 地址：桌面端根目录 `.env.local` 的 `YTENSUB_API_URL`，Android 的 `mobile/.env.local` 中的 `EXPO_PUBLIC_YTENSUB_API_URL`。无需修改源码，默认只连接本地 `http://127.0.0.1:8787`。官方发布配置见根目录 README。
 
 管理页：`https://<worker>/admin`（输入 ADMIN_TOKEN）。
 
@@ -70,7 +70,7 @@ npm run db:import -- --base-url https://你的Worker地址 # 导入并核对旧�
 
 `.dev.vars`（已 gitignore）里放本地密钥；`wrangler.toml` 的 `DEV_MODE = "true"` 时 `/auth/code` 直接返回 `devCode`，不配邮件也能走完登录。
 
-本地管理页保存全局或单账户敏感过滤设置时，会先保存本地，再同步到生产 Worker；全局配置在 KV，账号覆盖在 D1。默认复用 `ADMIN_TOKEN` 作为生产管理 token；若本地管理 token 与生产 token 不同，可在 `.dev.vars` 单独设置 `PRODUCTION_ADMIN_TOKEN`。同步失败时页面会显示错误（本地值已保存），修复网络或 token 后再次保存即可重试。
+本地管理页默认只修改本地数据，不访问生产 Worker。只有在 `server/.dev.vars` 中显式配置 `PRODUCTION_API_URL=https://你的生产Worker地址` 后，保存全局或单账户敏感过滤设置才会同步到指定生产服务；全局配置在 KV，账号覆盖在 D1。此时默认复用 `ADMIN_TOKEN` 作为生产管理 token；若本地管理 token 与生产 token 不同，可单独设置 `PRODUCTION_ADMIN_TOKEN`。同步失败时页面会显示错误（本地值已保存），修复网络或 token 后再次保存即可重试。
 
 ```bash
 npm run dev      # http://127.0.0.1:8787

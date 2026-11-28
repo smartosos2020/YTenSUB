@@ -67,6 +67,8 @@ YTenSUB 是面向英语学习的 Windows 桌面应用与 Android 客户端，将
 
 Windows 安装包与自动更新文件通过 Cloudflare R2 分发。
 
+官方安装版连接项目官方服务。源码运行及普通自行打包默认连接本机 `http://127.0.0.1:8787`，且关闭自动更新，不会默认访问官方 Cloudflare。自建服务与官方发布的配置方式见下文。
+
 ### 开始学习
 
 1. 在浏览页打开 YouTube 视频，或在桌面端本地模块打开视频文件。
@@ -111,8 +113,9 @@ npm run build:dict -- path/to/ecdict.csv
 | `npm run lint` | 执行代码检查。 |
 | `npx tsc --noEmit` | 执行 TypeScript 类型检查。 |
 | `npm test` | 运行根目录测试。 |
-| `npm run dist` | 生成 Windows 安装包与自动更新文件。 |
-| `npm run release` | 打包并上传到配置的 Cloudflare R2 发布位置。 |
+| `npm run dist` | 生成自行分发的 Windows 安装包；默认连接本地服务，关闭自动更新。 |
+| `npm run dist:official` | 显式加载本机发布配置，生成连接指定服务并带更新源的安装包。 |
+| `npm run release` | 使用本机发布配置打包，并上传到配置的 Cloudflare R2 发布位置。 |
 
 ### Android 客户端
 
@@ -137,13 +140,42 @@ npm test
 
 ## 配置与自建服务
 
+### 客户端服务隔离
+
+桌面端和 Android 共用账号及精选服务配置，但不内置官方生产地址：
+
+| 场景 | 配置方式 | 默认值 |
+| --- | --- | --- |
+| 桌面开发、自行打包 | 根目录 `.env.local` 中的 `YTENSUB_API_URL` | `http://127.0.0.1:8787` |
+| 桌面更新 | 同文件中的 `YTENSUB_UPDATE_URL` | 空，关闭更新检查、自动下载及安装包跳转 |
+| Android 开发、自行打包 | `mobile/.env.local` 中的 `EXPO_PUBLIC_YTENSUB_API_URL` | `http://127.0.0.1:8787` |
+| 采集与内容发布 | 根目录 `.env` 中的 `AUTH_API_URL` | 必须显式配置，不影响客户端地址 |
+
+例如，自建服务的桌面配置：
+
+```dotenv
+YTENSUB_API_URL=https://your-api.example.com
+# 可选；未设置时安装版也不检查更新。
+YTENSUB_UPDATE_URL=https://your-download.example.com/releases
+```
+
+Android 可参考 [mobile/.env.example](mobile/.env.example)。真机访问本地 Worker 时可执行 `adb reverse tcp:8787 tcp:8787`；模拟器也可使用 `http://10.0.2.2:8787`，局域网连接则填写电脑 IP。未启动或未配置后端时，账号及精选在线功能不可用，本地学习功能仍可使用。修改地址后需重新启动开发进程或重新构建应用。
+
+### 官方发布配置
+
+维护者在根目录创建不提交 Git 的 `.env.release.local`，显式填写 `YTENSUB_API_URL` 和 `YTENSUB_UPDATE_URL`（均为 HTTPS），然后执行 `npm run dist:official` 或 `npm run release`。普通 `dev`、`build` 和 `dist` 不读取该发布文件。缺少发布地址时，官方打包在构建前直接失败。
+
+Android 维护者可在 `mobile/` 执行 `npm run android:official`，使用同一发布配置构建并运行 release 版；使用 EAS 时，在对应构建环境显式配置 `EXPO_PUBLIC_YTENSUB_API_URL`。客户端变量均为公开地址，不能放管理令牌或 R2 密钥。
+
+### 功能与运维配置
+
 | 配置场景 | 入口 |
 | --- | --- |
 | 翻译与 LLM | 在桌面应用设置中选择翻译源，填写可选的 OpenAI 兼容服务地址、模型与 API Key。 |
 | 在线英文字幕 | 在桌面应用设置中填写 OpenSubtitles API Key，再从本地播放器手动搜索。 |
 | 精选内容采集 | 将根目录 [.env.example](.env.example) 复制为本地 `.env`，配置 YouTube API、Worker 地址和发布令牌。 |
 | 桌面安装包发布 | 为发布脚本配置 `.env` 中的 R2 S3 凭据，执行 `npm run release`。 |
-| 独立部署账号服务 | 按 [服务端部署指南](server/README.md) 创建自己的 Cloudflare 资源，并更新 `server/wrangler.toml` 与 [客户端服务地址](src/shared/api-config.ts)。 |
+| 独立部署账号服务 | 按 [服务端部署指南](server/README.md) 创建自己的 Cloudflare 资源，更新 `server/wrangler.toml`，再通过上述环境变量配置客户端地址。 |
 
 ### 服务端架构
 

@@ -22,7 +22,8 @@ export function readJobReport(filename, jobId) {
 
 export async function runPipelineRunner({ env = readContentEnv(), fetchFn = fetch, spawnFn = spawn,
   lockFn = acquirePipelineLock, intervalMs = HEARTBEAT_MS, disconnectMs = DISCONNECT_MS, signal } = {}) {
-  const base = new URL(env.AUTH_API_URL || 'https://ytensub-api.smartosos2020.workers.dev')
+  if (!env.AUTH_API_URL) throw new Error('执行端需要显式配置 AUTH_API_URL')
+  const base = new URL(env.AUTH_API_URL)
   if (base.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(base.hostname)) throw new Error('Pipeline API requires HTTPS')
   if (!env.ADMIN_TOKEN || !env.YOUTUBE_API_KEY) throw new Error('执行端需要 .env 中的 ADMIN_TOKEN 和 YOUTUBE_API_KEY')
   if (!fs.existsSync(path.join(root, 'resources', 'dict.json'))) throw new Error('请先运行 npm run build:dict')

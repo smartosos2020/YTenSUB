@@ -15,6 +15,13 @@ const { acquirePipelineLock } = await import(lockModule)
 afterEach(() => vi.restoreAllMocks())
 
 describe('本机采集执行端', () => {
+  it('未配置服务地址时在任何网络或采集操作前停止', async () => {
+    const fetchFn = vi.fn()
+    const spawnFn = vi.fn()
+    await expect(runPipelineRunner({ env: { ADMIN_TOKEN: 'test', YOUTUBE_API_KEY: 'test' }, fetchFn, spawnFn })).rejects.toThrow('AUTH_API_URL')
+    expect(fetchFn).not.toHaveBeenCalled()
+    expect(spawnFn).not.toHaveBeenCalled()
+  })
   it.each(['success', 'partial', 'failed'])('领取后台任务、忽略旧结果并在上报重试后正确保留%s结果', async terminalState => {
     vi.spyOn(console, 'log').mockImplementation(() => {})
     const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'ytensub-runner-test-'))

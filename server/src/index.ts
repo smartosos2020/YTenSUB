@@ -72,13 +72,14 @@ export interface Env {
   ADMIN_TOKEN?: string
   /** Optional production token override for local admin saves; defaults to ADMIN_TOKEN. */
   PRODUCTION_ADMIN_TOKEN?: string
+  /** Explicit opt-in for local admin forwarding; absent means local writes only. */
+  PRODUCTION_API_URL?: string
   DEV_MODE?: string
 }
 
 const CODE_TTL_S = 600
 const MAX_CODE_ATTEMPTS = 5
 const DEFAULT_GRACE_DAYS = 7
-const PRODUCTION_API_URL = 'https://ytensub-api.smartosos2020.workers.dev'
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -356,7 +357,7 @@ type CloudflareSyncResult =
   | { attempted: true; synced: true }
   | { attempted: true; synced: false; error: string }
 
-/** Local admin saves must mirror configuration/user overrides into production KV. */
+/** Local admin saves mirror to a remote service only when explicitly configured. */
 async function syncLocalAdminChangeToCloudflare(
   env: Env,
   req: Request,
@@ -369,6 +370,7 @@ async function syncLocalAdminChangeToCloudflare(
   const hostname = new URL(req.url).hostname.replace(/^\[|\]$/g, '')
   const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
   if (!isLocal) return { attempted: false }
+  if (!env.PRODUCTION_API_URL) return { attempted: false }
 
   const token = env.PRODUCTION_ADMIN_TOKEN || env.ADMIN_TOKEN
   if (!token) {
@@ -382,7 +384,11 @@ async function syncLocalAdminChangeToCloudflare(
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 10_000)
   try {
-    const upstream = await fetch(`${PRODUCTION_API_URL}${path}`, {
+    const target = new URL(env.PRODUCTION_API_URL)
+    if (target.protocol !== 'https:' || target.username || target.password || target.search || target.hash) {
+      return { attempted: true, synced: false, error: 'PRODUCTION_API_URL must be an HTTPS service URL' }
+    }
+    const upstream = await fetch(`${target.href.replace(/\/+$/, '')}${path}`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,

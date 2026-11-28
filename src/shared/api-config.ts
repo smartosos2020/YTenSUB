@@ -1,2 +1,2 @@
-/** Public service origin shared by the desktop and Android clients. */
-export const AUTH_API_URL = 'https://ytensub-api.smartosos2020.workers.dev'
+/** Inlined by Electron/Vite and Expo. No production service is used by default. */
+export const AUTH_API_URL = (process.env.EXPO_PUBLIC_YTENSUB_API_URL || 'http://127.0.0.1:8787').replace(/\/+$/, '')
